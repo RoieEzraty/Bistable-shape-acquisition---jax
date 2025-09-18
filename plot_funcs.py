@@ -2,7 +2,10 @@ import jax.numpy as jnp
 import numpy as np
 import matplotlib.pyplot as plt
 
+from matplotlib.animation import FuncAnimation, PillowWriter  # for GIF export
+
 import colors
+
 
 def plot_arm(pos_vec: jnp.ndarray, L: float) -> None:
     """
@@ -44,3 +47,77 @@ def plot_arm(pos_vec: jnp.ndarray, L: float) -> None:
     plt.ylabel("y")
     plt.title(f"Tip (x, y)=({xs[-1]:.2f}, {ys[-1]:.2f})")
     plt.show()
+
+
+def animate_arm(traj_pos, L, stride=1, interval_ms=30, save_path=None, fps=30, show_inline = False):
+    """
+    Animate an N-link arm over time.
+    traj_pos: array-like, shape (T, N, 2), positions over time
+    L: reference link length (used only for nice padding if needed)
+    interval_ms: delay between frames (for interactive playback)
+    save_path: if provided, writes an animation ('.gif' or '.mp4')
+    fps: frames per second when saving
+
+    Returns: (fig, anim) so you can display or save later.
+    """
+    pos = np.asarray(traj_pos)              # (T, N, 2)
+    assert pos.ndim == 3 and pos.shape[2] == 2
+
+    # --- downsample time ---
+    pos = pos[::max(1, int(stride))]
+    T, N, _ = pos.shape
+
+    # Precompute axes limits from the entire trajectory (stable view)
+    x_min, x_max = pos[...,0].min(), pos[...,0].max()
+    y_min, y_max = pos[...,1].min(), pos[...,1].max()
+    pad = 0.25 * max(1e-6, x_max - x_min, y_max - y_min, L)
+    x_min, x_max = x_min - pad, x_max + pad
+    y_min, y_max = y_min - pad, y_max + pad
+
+    fig, ax = plt.subplots(figsize=(4, 4))
+    ax.set_aspect('equal', adjustable='box')
+    ax.set_xlim(x_min, x_max)
+    ax.set_ylim(y_min, y_max)
+    ax.set_xlabel("x")
+    ax.set_ylabel("y")
+
+    # Polyline + joints + tip label
+    line,   = ax.plot([], [], linewidth=4)
+    scat     = ax.scatter([], [], s=60, zorder=3)
+    tip_text = ax.text(0, 0, "", va="bottom", ha="left")
+
+    def init():
+        line.set_data([], [])
+        scat.set_offsets(np.empty((0, 2)))
+        tip_text.set_text("")
+        return line, scat, tip_text
+
+    def update(ti):
+        pts = pos[ti]                    # (N, 2)
+        xs, ys = pts[:,0], pts[:,1]
+        line.set_data(xs, ys)
+        scat.set_offsets(pts)
+        tip_text.set_position((xs[-1], ys[-1]))
+        tip_text.set_text(f"Tip ({xs[-1]:.2f}, {ys[-1]:.2f})")
+        ax.set_title(f"Frame {ti+1}/{T}")
+        return line, scat, tip_text
+
+    anim = FuncAnimation(fig, update, frames=T, init_func=init,
+                         interval=interval_ms, blit=True)
+
+    if save_path is not None:
+        if save_path.lower().endswith(".gif"):
+            anim.save(save_path, writer=PillowWriter(fps=fps))
+        elif save_path.lower().endswith(".mp4"):
+            # Requires ffmpeg installed
+            anim.save(save_path, writer="ffmpeg", fps=fps)
+        else:
+            raise ValueError("save_path must end with .gif or .mp4")
+
+    # ---- Inline display (keep small!) ----
+    if show_inline:
+        # reduce embed size by downsampling and smaller fig/dpi
+        from IPython.display import HTML
+        return HTML(anim.to_jshtml())
+
+    return fig, anim

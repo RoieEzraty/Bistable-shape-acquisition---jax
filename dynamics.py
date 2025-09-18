@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Callable, Union, Optional
 if TYPE_CHECKING:
     from StructureClass import StructureClass
     from VariablesClass import VariablesClass
+    from StateClass import StateClass
 
 
 # ===================================================
@@ -24,103 +25,89 @@ if TYPE_CHECKING:
 
 
 def solve_dynamics(
-    self,
     time_points,
     state_0: jax.Array,
     Variabs: "VariablesClass",
     Strctr: "StructureClass",
+    State: "StateClass",
     force_function: jax.Array[jnp.float_] = None,
     fixed_DOFs: jax.Array[bool] = None,
     imposed_disp_DOFs: jax.Array[bool] = None,
     imposed_disp_values: jax.Array[jnp.float_] = None,  # function of time
     # simulation parameters
-    damping: float = 0.01,
+    damping: float = 8.00,
     rtol: float = 1e-2,
     maxsteps: int = 100,
 ):
     # print(state_0.shape)
     if force_function is None:
-        force_function = lambda t: jnp.zeros_like(self.pos_arr).flatten()
+        force_function = lambda t: jnp.zeros_like(State.pos_arr).flatten()
 
     if fixed_DOFs is None:
-        fixed_DOFs = jnp.zeros_like(self.pos_arr).flatten().astype(bool)
+        fixed_DOFs = jnp.zeros_like(State.pos_arr).flatten().astype(bool)
     else:
         fixed_DOFs = jnp.array(fixed_DOFs).flatten().astype(bool)
 
     if imposed_disp_DOFs is None:
-        imposed_disp_DOFs = (
-            jnp.zeros_like(self.pos_arr).flatten().astype(bool)
-        )
-        imposed_disp_values = lambda t: jnp.zeros_like(self.pos_arr).flatten()
-        imposed_disp_speed_values = lambda t: jnp.zeros_like(self.pos_arr).flatten()
+        imposed_disp_DOFs = (jnp.zeros_like(State.pos_arr).flatten().astype(bool))
     else:
         imposed_disp_DOFs = jnp.array(imposed_disp_DOFs).flatten().astype(bool)
 
-        # the speed at each DOF is just the derivative of the displacement
-        # Create a function to compute displacement speed (derivative) using jax.grad
-        # Since imposed_disp_values is a function t -> vector, we need to use vmap to apply grad to each component
-        def compute_disp_speed(disp_func):
-            # This function returns another function that calculates the derivative of displacement at time t
-            def disp_speed(t):
-                # For each DOF where displacement is imposed, compute the derivative with respect to time
-                # Use vmap to compute the derivative for all components efficiently
-                # For each i, we create a function that gets the i-th component and compute its gradient
-                component_grad = lambda i, t: jax.grad(lambda t_: disp_func(t_)[i])(t)
-                # Apply this function to all indices using vmap
-                full_derivative = jax.vmap(lambda i: component_grad(i, t))(jnp.arange(len(disp_func(t))))
-                return full_derivative
-            return disp_speed
+    if imposed_disp_values is None:     
+        imposed_disp_values = lambda t: State.pos_arr.flatten()      
+    else:
+        imposed_disp_values = jnp.array(State.pos_arr).flatten()
 
-        # Create the speed function by applying the derivative computation
-        imposed_disp_speed_values = compute_disp_speed(imposed_disp_values)
-        # imposed_disp_speed_values = grad(imposed_disp_values)
-        # WIP, adapt to a function the size of the origami pts
+    # imposed_disp_speed_values = lambda t: jnp.zeros_like(imposed_disp_DOFs).flatten()
+
+    # the speed at each DOF is just the derivative of the displacement
+    # Create a function to compute displacement speed (derivative) using jax.grad
+    # Since imposed_disp_values is a function t -> vector, we need to use vmap to apply grad to each component
+    def compute_disp_speed(disp_func):
+        # This function returns another function that calculates the derivative of displacement at time t
+        def disp_speed(t):
+            # For each DOF where displacement is imposed, compute the derivative with respect to time
+            # Use vmap to compute the derivative for all components efficiently
+            # For each i, we create a function that gets the i-th component and compute its gradient
+            component_grad = lambda i, t: jax.grad(lambda t_: disp_func(t_)[i])(t)
+            # Apply this function to all indices using vmap
+            full_derivative = jax.vmap(lambda i: component_grad(i, t))(jnp.arange(len(disp_func(t))))
+            return full_derivative
+        return disp_speed
+
+    # Create the speed function by applying the derivative computation
+    imposed_disp_speed_values = compute_disp_speed(imposed_disp_values)
+    # imposed_disp_speed_values = grad(imposed_disp_values)
+    # WIP, adapt to a function the size of the origami pts
 
     free_DOFs = jnp.logical_not(imposed_disp_DOFs | fixed_DOFs)
 
     n_free_DOFs = jnp.sum(free_DOFs)
 
-    n_nodes = self.pos_arr.size
-
-    def total_potential_energy_free(Variabs: "VariablesClass", Strctr: "StructureClass", t: float, x_free: jax.Array):
-        """Total potential energy function that only returns the free DOFs."""
-        x_full = jnp.zeros_like(self.pos_arr).flatten()
-        x_full = x_full.at[free_DOFs].set(x_free)
-        x_full = jnp.where(fixed_DOFs, 0.0, x_full)
-        x_full = jnp.where(imposed_disp_DOFs, imposed_disp_values(t), x_full)
-        return self.total_potential_energy(Variabs, Strctr, x_full)
-
-    def potential_force_free_en(Variabs: "VariablesClass", Strctr: "StructureClass", t: float, x_free: jax.Array):
-        # lambda t: grad(lambda x: -total_potential_energy_free(t, x))
-        return grad(lambda x: -total_potential_energy_free(Variabs, Strctr, t, x))(x_free)
-
-    potential_force = grad(lambda x: -self.total_potential_energy(Variabs, Strctr, x))
-
-    def potential_force_free(t: float, x_free: jax.Array):
-        # NOTE WIP Do this with the energy and not the force
-        x_full = jnp.zeros_like(self.pos_arr).flatten()
-        x_full = x_full.at[free_DOFs].set(x_free)
-        x_full = jnp.where(fixed_DOFs, 0.0, x_full)
-        x_full = jnp.where(imposed_disp_DOFs, imposed_disp_values(t), x_full)
-        return potential_force(x_full)[free_DOFs]
-
-    def force_function_free(t: float):
-        """Force function that only returns the free DOFs."""
-        return force_function(t)[free_DOFs]
+    n_coords = State.pos_arr.size
 
     state_0 = state_0.flatten()
-    state_0_x, state_0_x_dot = state_0[:n_nodes], state_0[n_nodes:]
-
+    state_0_x, state_0_x_dot = state_0[:n_coords], state_0[n_coords:]
     state_0_x_free = state_0_x[free_DOFs]
     state_0_x_dot_free = state_0_x_dot[free_DOFs]
-
     state_0_free = jnp.concatenate([state_0_x_free, state_0_x_dot_free])
+
+    potential_force = grad(lambda x: -State.total_potential_energy(Variabs, Strctr, x))
 
     @jit
     def rhs(state_free: jax.Array, t: float):
-        x_free, x_dot_free = state_free[:n_free_DOFs], state_free[n_free_DOFs:]
-        accel = (force_function_free(t) + potential_force_free(t, x_free) - damping * x_dot_free) / 20.0
-        return jnp.array([x_dot_free, accel], axis=0).flatten()
+        x_free, xdot_free = state_free[:n_free_DOFs], state_free[n_free_DOFs:]
+        f_ext = State.force_function_free(t, force_function, free_mask=free_DOFs)
+        f_pot = State.potential_force_free(
+            Variabs, Strctr, t, x_free,
+            free_mask=free_DOFs,
+            fixed_mask=fixed_DOFs,
+            imposed_mask=imposed_disp_DOFs,
+            imposed_disp_values=imposed_disp_values
+        )
+        mass = 20.0
+        accel = (f_ext + f_pot - damping * xdot_free) / mass
+        return jnp.concatenate([xdot_free, accel], axis=0)
 
     @jit
     def rhs_diffrax(t: float, state_free: jax.Array, args):
@@ -157,7 +144,7 @@ def solve_dynamics(
     vel_mask = free_DOFs
     mask_free_both = jnp.concatenate([pos_mask, vel_mask], axis=0)
 
-    res = jnp.zeros((res_free.shape[0], n_nodes * 2), dtype=res_free.dtype)
+    res = jnp.zeros((res_free.shape[0], n_coords * 2), dtype=res_free.dtype)
     res = res.at[:, mask_free_both].set(res_free)
 
     mask_fixed_both = jnp.concatenate([fixed_DOFs, fixed_DOFs], axis=0)
@@ -169,7 +156,7 @@ def solve_dynamics(
     res = res.at[:, mask_imposed_pos].set(vmap(imposed_disp_values)(time_points)[:, imposed_disp_DOFs])
     res = res.at[:, mask_imposed_vel].set(vmap(imposed_disp_speed_values)(time_points)[:, imposed_disp_DOFs])
 
-    # res = jnp.zeros((res_free.shape[0], n_nodes * 2))
+    # res = jnp.zeros((res_free.shape[0], n_coords * 2))
     # res = res.at[:, jnp.concatenate([free_DOFs, free_DOFs])].set(res_free)
     # res = res.at[:, jnp.concatenate([fixed_DOFs, fixed_DOFs])].set(0.0)
     # res = res.at[
@@ -182,17 +169,17 @@ def solve_dynamics(
     # res.block_until_ready()
     print(f"Integration done in {time.time() - t1:.2f} s")
 
-    final_disp = res[-1, :n_nodes].reshape(self.pos_arr.shape)
+    final_disp = res[-1, :n_coords].reshape(State.pos_arr.shape)
 
-    displacements = res[:, :n_nodes].reshape((len(res), self.pos_arr.shape[0], self.pos_arr.shape[1]))
+    displacements = res[:, :n_coords].reshape((len(res), State.pos_arr.shape[0], State.pos_arr.shape[1]))
     # .block_until_ready()
 
     # Get velocities from the last part of the state vector
-    velocities = res[:, n_nodes:].reshape(
+    velocities = res[:, n_coords:].reshape(
         (
             len(res),
-            self.pos_arr.shape[0],
-            self.pos_arr.shape[1],
+            State.pos_arr.shape[0],
+            State.pos_arr.shape[1],
         )
     )
     # .block_until_ready()
@@ -200,7 +187,7 @@ def solve_dynamics(
     # we put the - to have the force as a reaction force
     potential_force_evolution = vmap(
         lambda x: -potential_force(
-            x[:n_nodes].reshape(self.initial_points.shape).flatten()
+            x[:n_coords].reshape(State.pos_arr.shape).flatten()
         )
     )(res)
     # potential_force_evolution.block_until_ready()

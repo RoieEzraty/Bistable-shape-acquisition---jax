@@ -40,7 +40,7 @@ class VariablesClass(eqx.Module):
     """`(1, )` stiffnesses of rods, very large so rods are stiff""" 
     
     def __init__(self, Strctr: "StructureClass", k_soft: jax.Array = None, k_stiff: jax.Array = None, thetas_ss: jax.Array = None,
-                 stretch_scale: float = 50.0):
+                 stretch_scale: float = 1e3):
     
         H, S = Strctr.hinges, Strctr.shims
         self.k_soft = jnp.ones((H, S), jnp.float32) if k_soft is None else jnp.asarray(k_soft,  jnp.float32)

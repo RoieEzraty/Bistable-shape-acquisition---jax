@@ -68,6 +68,10 @@ class StructureClass(eqx.Module):
     def _get_theta(self, pos_arr: jax.Array, hinge: int):
         """Angle at a hinge (radians), CCW positive."""
         fourpoints = pos_arr[self.edges_arr[self.hinges_arr[hinge]]]  # (2,2,2) coords for each edge's endpoints
+        # print('pos_arr in _get_theta ', pos_arr)
+        # print('edges_arr ', self.edges_arr)
+        # print('hinges_arr ', self.hinges_arr)
+        # print('fourpoints ', fourpoints)
         vecs = fourpoints[:, 1, :] - fourpoints[:, 0, :]   # (2,2)
         u, v = vecs[:-1], vecs[1:]
         dot = jnp.sum(u * v, axis=-1)
