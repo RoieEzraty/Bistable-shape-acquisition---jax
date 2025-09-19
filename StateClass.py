@@ -1,239 +1,109 @@
 from __future__ import annotations
-from IPython.display import HTML
 
-import time
+import numpy as np
 import copy
 import diffrax
 import jax
 import jax.numpy as jnp
 import equinox as eqx
 from jax import grad, jit, vmap
-from jax.experimental.ode import odeint
 
 from typing import Tuple, List
 from numpy import array, zeros
 from numpy.typing import NDArray
 from typing import TYPE_CHECKING, Callable, Union, Optional
 
-import dynamics, plot_funcs
+import dynamics
 
 if TYPE_CHECKING:
     from StructureClass import StructureClass
+    from EquilibriumClass import EquilibriumClass
     from VariablesClass import VariablesClass
 
 
 # ===================================================
-# Class - State Variables - node positions etc.
+# Class - State Variables - node positions, forcing, etc.
 # ===================================================
 
 
-class StateClass(eqx.Module):
+class StateClass:
     """
     Dynamic state of the chain (positions + hinge stiffness regime).
-    """
-    
-    # ---- state / derived ----
-    rest_lengths: jax.Array        # (H+1,) edge rest lengths (from initial pos)
-    initial_hinge_angles: jax.Array  # (H,) hinge angles at rest (usually zeros)  
-    pos_arr: jax.Array = eqx.field(init=False)   # (hinges+2, 2) integer coordinates
-    # pos_arr_in_t: jax.Array = eqx.field(default=None, init=False)   # (hinges+2, 2, t) integer coordinates
-    # dynamics_last_step: jax.Array = eqx.field(default=None, init=False)
-    # vel_last_step: jax.Array = eqx.field(default=None, init=False)
-    # potential_force_last_step: jax.Array = eqx.field(default=None, init=False)
-    buckle: jax.Array           # (H,) ∈ {+1,-1} per hinge/shim (direction of stiff side)
-    
-    def __init__(self, Strctr: "StructureClass", buckle: jax.Array):
-        # default buckle: all +1
-        if buckle is None:
-            self.buckle = jnp.ones((Strctr.hinges, Strctr.shims), dtype=jnp.int32)
-        else:
-            self.buckle = buckle
-            assert self.buckle.shape == (Strctr.hinges, Strctr.shims)
-            
-        self.pos_arr = self._initiate_pos(Strctr.hinges)  # (N=hinges+2, 2)
-        # with a straight chain, each edge's rest length = init_spacing
-        self.rest_lengths = jnp.full((Strctr.hinges + 1,), Strctr.L, dtype=jnp.float32)
-        # straight chain -> 0 resting hinge angles
-        self.initial_hinge_angles = jnp.zeros((Strctr.hinges,), dtype=jnp.float32)
+    """   
+    def __init__(self, Variabs: "VariablesClass", Strctr: "StructureClass", T: int) -> None:
+        
+        self.pos_arr = jnp.array([Strctr.edges, ])  # (H, T) hinge angles at rest (usually zeros) 
+        self.theta_arr = jnp.array([Strctr.hinges, ])
+        self.buckle = jnp.array([Strctr.hinges, Strctr.shims])
+        self.pos_arr_in_t = jnp.array([Strctr.edges, T])
+        self.theta_arr_in_t = jnp.array([Strctr.hinges, T])  # (H, T) hinge angles at rest (usually zeros)  
+        self.buckle_in_t = jnp.array([Strctr.hinges, Strctr.shims, T])
 
-        # self.dynamics_last_step = jnp.zeros((self.pos_arr, t_for_dynamics), dtype=jnp.float32)
-        # self.vel_last_step = jnp.full((Strctr.hinges + 1,), Strctr.L, dtype=jnp.float32)
-        # self.potential_force_last_step = jnp.full((Strctr.hinges + 1,), Strctr.L, dtype=jnp.float32)
-
-    def calculate_state(self, Variabs: "VariablesClass", Strctr: "StructureClass"):
-        n_coords = self.pos_arr.size                # = 2 * (H+2)
-
-        # -------- masks (boolean) ----------
-        # We impose node 0 at (0,0). No other fixed DOFs.
-        fixed_DOFs = jnp.zeros((n_coords,), dtype=bool)
-
-        imposed_disp_DOFs = jnp.zeros((n_coords,), dtype=bool)
-        imposed_disp_DOFs = imposed_disp_DOFs.at[self.dof_idx(0, 0)].set(True)   # x of node 0
-        imposed_disp_DOFs = imposed_disp_DOFs.at[self.dof_idx(0, 1)].set(True)   # y of node 0
-        imposed_disp_DOFs = imposed_disp_DOFs.at[self.dof_idx(1, 0)].set(True)   # x of node 0
-        imposed_disp_DOFs = imposed_disp_DOFs.at[self.dof_idx(1, 1)].set(True)   # y of node 0
-
-        # -------- initial state (positions & velocities) ----------
-        x0 = self.pos_arr.flatten()                  # start from current geometry
-        v0 = jnp.zeros_like(x0)                    # start at rest
-        state_0 = jnp.concatenate([x0, v0], axis=0)
-
-        # -------- time grid ----------
-        dt = 1e-3
-        t0, t1, n_steps = 0.0, 800.0, int(1/dt)
-        time_points = jnp.linspace(t0, t1, n_steps)
-
-        # -------- run dynamics ----------
-        final_pos, pos_in_t, vel_in_t, potential_force_evolution = dynamics.solve_dynamics(
-            time_points,
-            state_0,
-            Variabs,
-            Strctr,
-            self,
-            force_function = None,
-            fixed_DOFs = fixed_DOFs,
-            imposed_disp_DOFs = imposed_disp_DOFs,
-            imposed_disp_values = None
-        )
-
-        return final_pos, pos_in_t, vel_in_t, potential_force_evolution
-
-        # self.pos_arr_in_t = final_pos
-        # self.dynamics_last_step = pos_in_t
-        # self.vel_last_step = vel_in_t
-        # self.potential_force_last_step = potential_force_evolution
-            
-    # --- build ---
-    @staticmethod
-    def _initiate_pos(hinges: int) -> jax.Array:
-        """`(hinges+2, 2)` each pair is (xi, yi) of point i going like [[0, 0], [1, 0], [2, 0], etc]"""
-        x = jnp.arange(hinges + 2, dtype=jnp.float32)
-        pos_arr = jnp.stack([x, jnp.zeros_like(x)], axis=1)
-        # pos_arr_in_t = copy.copy(pos_arr)
-        # return pos_arr, pos_arr_in_t
-        return pos_arr
-
-    # --- reshape ---
-    @staticmethod
-    def _assemble_full(x_free: jax.Array,
-                       free_mask: jax.Array,       # bool (n_coords,)
-                       fixed_mask: jax.Array,      # bool (n_coords,)
-                       imposed_mask: jax.Array,    # bool (n_coords,)
-                       imposed_vals_t: jax.Array,  # (n_coords,)
-                       n_coords: int) -> jax.Array:
-        """Build full flattened x from free DOFs + constraints at time t."""
-        x_full = jnp.zeros((n_coords,), dtype=imposed_vals_t.dtype)
-        x_full = x_full.at[free_mask].set(x_free)
-        x_full = jnp.where(fixed_mask, 0.0, x_full)
-        x_full = jnp.where(imposed_mask, imposed_vals_t, x_full)
-        return x_full
-
-    # Helper to map (node, component) -> flat DOF index
-    # component: 0 = x, 1 = y
-    @staticmethod
-    def dof_idx(node: int, comp: int) -> int:
-        return 2*node + comp
-
-    # -------- imposed displacement function ----------
-    # Must return a length-n_coords vector (flattened order) for any time t
-    def imposed_disp_values(self, t: float) -> jnp.ndarray:
-        vals = jnp.zeros((self.pos_arr.size,), dtype=self.pos_arr.dtype)
-        # First node pinned at (0,0) → both DOFs are zero; nothing else imposed.
-        # If you ever want a moving base, set these two entries to your function of t.
-        return vals
-
-    # -------- external forces (optional) ----------
-    def force_function(self, t: float) -> jnp.ndarray:
-        # No external forces; you can add tip forces here if needed
-        return jnp.zeros((self.pos_arr.size,), dtype=self.pos_arr.dtype)
+    # ---------- helpers ----------
 
     @staticmethod
-    def _reshape_pos_arr_2_state(pos_arr: jnp.Array[jnp.float_]) -> jnp.Array[jnp.float_]:
-        first_half = pos_arr.flatten()
-        second_half = jnp.zeros_like(first_half)
-        return jnp.concatenate([first_half, second_half])
+    def _compute_thetas_over_traj(Strctr: "StructureClass", traj_pos: jax.Array) -> jax.Array:
+        """
+        Compute hinge angles (T,H) from a trajectory of positions (T,N,2)
+        using StructureClass.hinge_angle(pos, h). Returns radians.
+        """
+        H = Strctr.hinges
+        hinge_ids = jnp.arange(H, dtype=jnp.int32)
 
-    @staticmethod
-    def _reshape_state_2_pos_arr(state: jnp.Array[jnp.float_], pos_arr) -> jnp.Array[jnp.float_]:
-        return state.reshape(pos_arr.shape)
+        # vmaps: over time, then over hinges
+        per_time = jax.vmap(lambda P: jax.vmap(lambda h: Strctr.hinge_angle(P, h))(hinge_ids))
+        return per_time(traj_pos)  # (T,H)
 
-    # --- energy ---
-    @eqx.filter_jit
-    def energy(self, Variabs: "VariablesClass", Strctr: "StructureClass", pos_arr: jnp.Array) -> jnp.Array[float]:
-        """Compute the potential energy of the origami with the resting positions as reference"""
+     # ---------- ingest from EquilibriumClass ----------
 
-        thetas = vmap(lambda h: Strctr._get_theta(pos_arr, h))(jnp.arange(Strctr.hinges))
-        # print(thetas)
-        # jax.debug.print("thetas = {}", thetas)
-        edges_length = vmap(lambda e: Strctr._get_edge_length(pos_arr, e))(jnp.arange(Strctr.edges))
-        T = thetas[:, None]                 # (H,1)
-        TH = Variabs.thetas_ss[:, None]      # (H,1)
-        B = self.buckle                     # (H,S)
+    def _save_data(self, Strctr: "StructureClass", compute_thetas_if_missing: bool = True) -> None:
+        """
+        Copy arrays from an EquilibriumClass instance into this StateClass.
+        Expected attributes on Eq:
+          - final_pos : (N,2)
+          - Eq.traj_pos  : (T,N,2)
+          - Eq.traj_vel  : (T,N,2)  [optional, not stored here but available if you want]
+          - optionally Eq.traj_thetas : (T,H)
+          - optionally Eq.final_thetas: (H,)
+          - optionally Eq.buckle, Eq.buckle_in_t
 
-        # torques on hinges
-        stiff_mask = ((B == 1) & (T > -TH)) | ((B == -1) & (T < TH))
-        k_rot_state = jnp.where(stiff_mask, Variabs.k_stiff, Variabs.k_soft)  # (H,S)
-        rotation_energy = 0.5 * jnp.sum(k_rot_state * (T - TH) ** 2)
+        If thetas are missing and compute_thetas_if_missing=True, they are computed from traj_pos.
+        """
+        # positions
+        if hasattr(Eq, "final_pos"):
+            self.pos_arr = jnp.asarray(Eq.final_pos, dtype=jnp.float32)
+        if hasattr(Eq, "traj_pos"):
+            self.pos_arr_in_t = jnp.asarray(Eq.traj_pos, dtype=jnp.float32)
 
-        # stretch of material - should not stretch at all
-        stretch_energy = 0.5 * jnp.sum(Variabs.k_stretch * (edges_length - Strctr.rest_lengths) ** 2)
+        # buckle (if provided by Eq); otherwise keep defaults
+        if hasattr(Eq, "buckle"):
+            self.buckle = jnp.asarray(Eq.buckle, dtype=jnp.int32)
+            # update time-broadcast
+            self.buckle_in_t = jnp.broadcast_to(self.buckle, (self.T, self.H, self.S))
+        if hasattr(Eq, "buckle_in_t"):
+            self.buckle_in_t = jnp.asarray(Eq.buckle_in_t, dtype=jnp.int32)
 
-        # total
-        total_energy = rotation_energy + stretch_energy
-        return jnp.array([total_energy, rotation_energy, stretch_energy])
+        # thetas
+        if hasattr(Eq, "final_thetas"):
+            self.theta_arr = jnp.asarray(Eq.final_thetas, dtype=jnp.float32)
+        if hasattr(Eq, "traj_thetas"):
+            self.theta_arr_in_t = jnp.asarray(Eq.traj_thetas, dtype=jnp.float32)
+        elif compute_thetas_if_missing and hasattr(Eq, "traj_pos"):
+            # compute from geometry if not present
+            self.theta_arr_in_t = self._compute_thetas_over_traj(Strctr, self.pos_arr_in_t)
+            # also fill the snapshot from the last frame
+            self.theta_arr = self.theta_arr_in_t[-1]
 
-    @eqx.filter_jit
-    def total_potential_energy(self, variabs: "VariablesClass", strctr: "StructureClass",
-                               x_full: jax.Array) -> jax.Array[jnp.float_]:
-        pos_arr = self._reshape_state_2_pos_arr(x_full, self.pos_arr)
-        print('pos_arr in total_potential_energy ', pos_arr)
-        return self.energy(variabs, strctr, pos_arr)[0]
+    # ---------- convenience: numpy views for plotting ----------
 
-    def total_potential_energy_free(self,
-                                    Variabs: "VariablesClass",
-                                    Strctr: "StructureClass",
-                                    t: float,
-                                    x_free: jax.Array,
-                                    *,
-                                    free_mask: jax.Array,
-                                    fixed_mask: jax.Array,
-                                    imposed_mask: jax.Array,
-                                    imposed_disp_values: Callable[[float], jax.Array]
-                                    ) -> jax.Array:
-        """Total potential energy evaluated only on the free DOFs."""
-        n_coords = self.pos_arr.size
-        imp_vals_t = imposed_disp_values(t)                 # (n_coords,)
-        x_full = self._assemble_full(x_free, free_mask, fixed_mask, imposed_mask,
-                                     imp_vals_t, n_coords)
-        return self.total_potential_energy(Variabs, Strctr, x_full)
+    def np_pos(self) -> NDArray[np.float_]:
+        return np.asarray(self.pos_arr)
 
-    def potential_force_free(self,
-                             Variabs: "VariablesClass",
-                             Strctr: "StructureClass",
-                             t: float,
-                             x_free: jax.Array,
-                             *,
-                             free_mask: jax.Array,
-                             fixed_mask: jax.Array,
-                             imposed_mask: jax.Array,
-                             imposed_disp_values: Callable[[float], jax.Array]
-                             ) -> jax.Array:
-        """-∂E/∂x on the free DOFs."""
-        # jax.debug.print("imposed_disp_value inside potential_force_free = {}", imposed_disp_values)
-        return jax.grad(
-            lambda x: -self.total_potential_energy_free(
-                Variabs, Strctr, t, x,
-                free_mask=free_mask,
-                fixed_mask=fixed_mask,
-                imposed_mask=imposed_mask,
-                imposed_disp_values=imposed_disp_values
-            )
-        )(x_free)
+    def np_traj_pos(self) -> NDArray[np.float_]:
+        return np.asarray(self.pos_arr_in_t)
 
-    def force_function_free(self,
-                            t: float,
-                            force_function: Callable[[float], jax.Array],
-                            *,
-                            free_mask: jax.Array) -> jax.Array:
-        """External force restricted to free DOFs."""
-        return force_function(t)[free_mask]
+    def np_thetas(self) -> NDArray[np.float_]:
+        return np.asarray(self.theta_arr)
+
+    def np_traj_thetas(self) -> NDArray[np.float_]:
+        return np.asarray(self.theta_arr_in_t)
