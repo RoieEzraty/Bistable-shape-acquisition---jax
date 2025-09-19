@@ -27,6 +27,8 @@ class VariablesClass(eqx.Module):
     Attributes computed by the class:
         
     """
+    T: int = eqx.field(init=True)  # total training time (not physical time for equilibration)
+
     k_soft: jax.Array = eqx.field(init=False)
     """`(hinges, shims)` stiffnesses in soft direction"""
 
@@ -38,11 +40,17 @@ class VariablesClass(eqx.Module):
     
     k_stretch: jax.Array = eqx.field(init=False)
     """`(1, )` stiffnesses of rods, very large so rods are stiff""" 
-    
-    def __init__(self, Strctr: "StructureClass", k_soft: jax.Array = None, k_stiff: jax.Array = None, thetas_ss: jax.Array = None,
-                 stretch_scale: float = 1e3):
+
+    def __init__(self,
+                 Strctr: "StructureClass",
+                 T: int,
+                 k_soft: jax.Array = None,
+                 k_stiff: jax.Array = None,
+                 thetas_ss: jax.Array = None,
+                 stretch_scale: float = 1e2) -> None:
     
         H, S = Strctr.hinges, Strctr.shims
+        self.T = T  # total training set size (and algorithm time, not to confuse with time to reach equilibrium state)
         self.k_soft = jnp.ones((H, S), jnp.float32) if k_soft is None else jnp.asarray(k_soft,  jnp.float32)
         self.k_stiff = jnp.ones((H, S), jnp.float32) if k_stiff is None else jnp.asarray(k_stiff, jnp.float32)
         self.thetas_ss = jnp.ones((H, S), jnp.float32) if thetas_ss is None else jnp.asarray(thetas_ss, jnp.float32)

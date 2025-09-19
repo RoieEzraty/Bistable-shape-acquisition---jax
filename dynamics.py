@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Callable, Union, Optional
 if TYPE_CHECKING:
     from StructureClass import StructureClass
     from VariablesClass import VariablesClass
-    from StateClass import StateClass
+    from EqClass import EqClass
 
 
 # ===================================================
@@ -29,7 +29,7 @@ def solve_dynamics(
     state_0: jax.Array,
     Variabs: "VariablesClass",
     Strctr: "StructureClass",
-    State: "StateClass",
+    Eq: "EqClass",
     force_function: jax.Array[jnp.float_] = None,
     fixed_DOFs: jax.Array[bool] = None,
     imposed_disp_DOFs: jax.Array[bool] = None,
@@ -41,22 +41,22 @@ def solve_dynamics(
 ):
     # print(state_0.shape)
     if force_function is None:
-        force_function = lambda t: jnp.zeros_like(State.pos_arr).flatten()
+        force_function = lambda t: jnp.zeros_like(Eq.init_pos).flatten()
 
     if fixed_DOFs is None:
-        fixed_DOFs = jnp.zeros_like(State.pos_arr).flatten().astype(bool)
+        fixed_DOFs = jnp.zeros_like(Eq.init_pos).flatten().astype(bool)
     else:
         fixed_DOFs = jnp.array(fixed_DOFs).flatten().astype(bool)
 
     if imposed_disp_DOFs is None:
-        imposed_disp_DOFs = (jnp.zeros_like(State.pos_arr).flatten().astype(bool))
+        imposed_disp_DOFs = (jnp.zeros_like(Eq.init_pos).flatten().astype(bool))
     else:
         imposed_disp_DOFs = jnp.array(imposed_disp_DOFs).flatten().astype(bool)
 
     if imposed_disp_values is None:     
-        imposed_disp_values = lambda t: State.pos_arr.flatten()      
+        imposed_disp_values = lambda t: Eq.init_pos.flatten()      
     else:
-        imposed_disp_values = jnp.array(State.pos_arr).flatten()
+        imposed_disp_values = jnp.array(Eq.init_pos).flatten()
 
     # imposed_disp_speed_values = lambda t: jnp.zeros_like(imposed_disp_DOFs).flatten()
 
@@ -84,21 +84,20 @@ def solve_dynamics(
 
     n_free_DOFs = jnp.sum(free_DOFs)
 
-    n_coords = State.pos_arr.size
-
     state_0 = state_0.flatten()
-    state_0_x, state_0_x_dot = state_0[:n_coords], state_0[n_coords:]
+    state_0_x, state_0_x_dot = state_0[:Strctr.n_coords], state_0[Strctr.n_coords:]
     state_0_x_free = state_0_x[free_DOFs]
     state_0_x_dot_free = state_0_x_dot[free_DOFs]
     state_0_free = jnp.concatenate([state_0_x_free, state_0_x_dot_free])
 
-    potential_force = grad(lambda x: -State.total_potential_energy(Variabs, Strctr, x))
+    potential_force = grad(lambda x: -Eq.total_potential_energy(Variabs, Strctr, x))
 
     @jit
     def rhs(state_free: jax.Array, t: float):
         x_free, xdot_free = state_free[:n_free_DOFs], state_free[n_free_DOFs:]
-        f_ext = State.force_function_free(t, force_function, free_mask=free_DOFs)
-        f_pot = State.potential_force_free(
+        print('x_free ', x_free)
+        f_ext = Eq.force_function_free(t, force_function, free_mask=free_DOFs)
+        f_pot = Eq.potential_force_free(
             Variabs, Strctr, t, x_free,
             free_mask=free_DOFs,
             fixed_mask=fixed_DOFs,
@@ -144,7 +143,7 @@ def solve_dynamics(
     vel_mask = free_DOFs
     mask_free_both = jnp.concatenate([pos_mask, vel_mask], axis=0)
 
-    res = jnp.zeros((res_free.shape[0], n_coords * 2), dtype=res_free.dtype)
+    res = jnp.zeros((res_free.shape[0], Strctr.n_coords * 2), dtype=res_free.dtype)
     res = res.at[:, mask_free_both].set(res_free)
 
     mask_fixed_both = jnp.concatenate([fixed_DOFs, fixed_DOFs], axis=0)
@@ -156,30 +155,20 @@ def solve_dynamics(
     res = res.at[:, mask_imposed_pos].set(vmap(imposed_disp_values)(time_points)[:, imposed_disp_DOFs])
     res = res.at[:, mask_imposed_vel].set(vmap(imposed_disp_speed_values)(time_points)[:, imposed_disp_DOFs])
 
-    # res = jnp.zeros((res_free.shape[0], n_coords * 2))
-    # res = res.at[:, jnp.concatenate([free_DOFs, free_DOFs])].set(res_free)
-    # res = res.at[:, jnp.concatenate([fixed_DOFs, fixed_DOFs])].set(0.0)
-    # res = res.at[
-    #     :, jnp.concatenate([imposed_disp_DOFs, jnp.zeros_like(imposed_disp_DOFs)])
-    # ].set(vmap(imposed_disp_values)(time_points)[:, imposed_disp_DOFs])
-    # res = res.at[
-    #     :, jnp.concatenate([jnp.zeros_like(imposed_disp_DOFs), imposed_disp_DOFs])
-    # ].set(vmap(imposed_disp_speed_values)(time_points)[:, imposed_disp_DOFs])
-
     # res.block_until_ready()
     print(f"Integration done in {time.time() - t1:.2f} s")
 
-    final_disp = res[-1, :n_coords].reshape(State.pos_arr.shape)
+    final_disp = res[-1, :Strctr.n_coords].reshape(Eq.init_pos.shape)
 
-    displacements = res[:, :n_coords].reshape((len(res), State.pos_arr.shape[0], State.pos_arr.shape[1]))
+    displacements = res[:, :Strctr.n_coords].reshape((len(res), Eq.init_pos.shape[0], Eq.init_pos.shape[1]))
     # .block_until_ready()
 
     # Get velocities from the last part of the state vector
-    velocities = res[:, n_coords:].reshape(
+    velocities = res[:, Strctr.n_coords:].reshape(
         (
             len(res),
-            State.pos_arr.shape[0],
-            State.pos_arr.shape[1],
+            Eq.init_pos.shape[0],
+            Eq.init_pos.shape[1],
         )
     )
     # .block_until_ready()
@@ -187,7 +176,7 @@ def solve_dynamics(
     # we put the - to have the force as a reaction force
     potential_force_evolution = vmap(
         lambda x: -potential_force(
-            x[:n_coords].reshape(State.pos_arr.shape).flatten()
+            x[:Strctr.n_coords].reshape(Eq.init_pos.shape).flatten()
         )
     )(res)
     # potential_force_evolution.block_until_ready()

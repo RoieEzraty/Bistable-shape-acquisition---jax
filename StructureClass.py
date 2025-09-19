@@ -25,8 +25,10 @@ class StructureClass(eqx.Module):
     # --- computed in __init__ ---
     edges_arr:  jax.Array = eqx.field(init=False)   # (hinges+1, 2) point indices
     edges: int = eqx.field(init=False)
+    nodes: int = eqx.field(init=False)
+    n_coords: int = eqx.field(init=False)
     hinges_arr: jax.Array = eqx.field(init=False)   # (hinges, 2)  edge indices
-    rest_lengths: jax.Array = eqx.field(init=False) # (H+1,)   floats
+    rest_lengths: jax.Array = eqx.field(init=False)  # (H+1,)   floats
 
     def __init__(self, hinges: int, shims: int, L: float, rest_lengths:  Optional[jax.Array] = None):
         self.hinges = int(hinges)
@@ -35,6 +37,8 @@ class StructureClass(eqx.Module):
 
         self.edges_arr = self._build_edges()            # (E=hinges+1, 2)
         self.edges = jnp.shape(self.edges_arr)[0]
+        self.nodes = self.edges + 1
+        self.n_coords = self.nodes * 2 
         self.hinges_arr = self._build_hinges()           # (H=hinges, 2)
         
         self.rest_lengths = self._build_rest_lengths(rest_lengths=rest_lengths)  # rest lengths (float32)
