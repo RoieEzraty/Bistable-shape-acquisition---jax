@@ -38,7 +38,7 @@ class StateClass:
         self.theta_arr = np.zeros((Strctr.hinges,))    # (H,) hinge angles  
         self.theta_arr_in_t = np.zeros((Strctr.hinges, Variabs.T))    # (H,) hinge angles in training time (usually zeros)  
 
-        self.buckle = np.zeros((Strctr.hinges, Strctr.shims))
+        self.buckle = - np.ones((Strctr.hinges, Strctr.shims))
         self.buckle_in_t = np.zeros((Strctr.hinges, Strctr.shims, Variabs.T))
 
     # ---------- ingest from EquilibriumClass ----------

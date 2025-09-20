@@ -2,12 +2,13 @@ import jax.numpy as jnp
 import numpy as np
 import matplotlib.pyplot as plt
 
+from matplotlib import patches
 from matplotlib.animation import FuncAnimation, PillowWriter  # for GIF export
 
 import colors
 
 
-def plot_arm(pos_vec: jnp.ndarray, L: float) -> None:
+def plot_arm(pos_vec: np.ndarray, buckle: np.array, thetas, L: float, arc_scale: float = 0.2) -> None:
     """
     Plot an N-link arm given all joint positions.
     
@@ -35,14 +36,40 @@ def plot_arm(pos_vec: jnp.ndarray, L: float) -> None:
     plt.scatter(xs, ys, s=60, zorder=3, color=colors_lst[0])
     plt.scatter([0], [0], s=60, zorder=3, color='k')
 
+    # ---- draw hinge arcs with buckle-directed orientation ----
+    r = arc_scale * float(L)
+
+    cumsum_thetas1 = np.cumsum(thetas)
+    cumsum_thetas2 = cumsum_thetas1-cumsum_thetas1[0]+180
+
+    for i in range(0, buckle.size):
+        p = pos[i+1]
+
+        # if CW desired (sgn=-1), theta2 < theta1 makes the arc go CW visually
+        if buckle[i] == -1:
+            theta1 = cumsum_thetas1[i]
+            theta2 = cumsum_thetas2[i]
+        else:
+            theta1 = cumsum_thetas2[i]
+            theta2 = cumsum_thetas1[i]
+
+        arc = patches.Arc(
+            xy=(p[0], p[1]),
+            width=2*r, height=2*r,
+            angle=0.0,
+            theta1=theta1, theta2=theta2,
+            linewidth=2, zorder=2
+        )
+        plt.gca().add_patch(arc)
+
     # annotate tip
     plt.annotate("Tip", xy=(xs[-1], ys[-1]),
                  xytext=(xs[-1]+0.05, ys[-1]+0.05))
 
     # aesthetics
     plt.axis('equal')
-    # plt.xlim(xs.min() - 0.5*L, xs.max() + 0.5*L)
-    # plt.ylim(ys.min() - 0.5*L, ys.max() + 0.5*L)
+    plt.xlim(xs.min() - 0.5*L, xs.max() + 0.5*L)
+    plt.ylim(ys.min() - 0.5*L, ys.max() + 0.5*L)
     plt.xlabel("x")
     plt.ylabel("y")
     plt.title(f"Tip (x, y)=({xs[-1]:.2f}, {ys[-1]:.2f})")
