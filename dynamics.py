@@ -33,8 +33,8 @@ def solve_dynamics(
     force_function: jax.Array[jnp.float_] = None,
     fixed_DOFs: jax.Array[bool] = None,
     fixed_vals: jax.Array = None,
-    imposed_disp_DOFs: jax.Array[bool] = None,
-    imposed_disp_values: jax.Array[jnp.float_] = None,  # function of time
+    imposed_DOFs: jax.Array[bool] = None,
+    imposed_vals: jax.Array[jnp.float_] = None,  # function of time
     # simulation parameters
     damping: float = 8.00,
     rtol: float = 1e-2,
@@ -59,27 +59,27 @@ def solve_dynamics(
     else:
         fixed_vals = jnp.asarray(fixed_vals, dtype=Eq.init_pos.dtype).reshape((Eq.init_pos.size,))
 
-    if imposed_disp_DOFs is None:
-        imposed_disp_DOFs = jnp.zeros((Eq.init_pos.size,), dtype=bool)
+    if imposed_DOFs is None:
+        imposed_DOFs = jnp.zeros((Eq.init_pos.size,), dtype=bool)
     else:
-        imposed_disp_DOFs = jnp.asarray(imposed_disp_DOFs, dtype=bool).reshape((Eq.init_pos.size,))
+        imposed_DOFs = jnp.asarray(imposed_DOFs, dtype=bool).reshape((Eq.init_pos.size,))
 
     # --- imposed displacement values: callable or constant vector ---
-    if imposed_disp_values is None:
+    if imposed_vals is None:
         base = jnp.asarray(Eq.init_pos, dtype=Eq.init_pos.dtype).reshape((Eq.init_pos.size,))
-        imposed_disp_values = lambda t, base=base: base
-    elif callable(imposed_disp_values):
+        imposed_vals = lambda t, base=base: base
+    elif callable(imposed_vals):
         # leave as-is
         pass
     else:
-        ivec = jnp.asarray(imposed_disp_values, dtype=Eq.init_pos.dtype).reshape((Eq.init_pos.size,))
-        imposed_disp_values = lambda t, ivec=ivec: ivec
+        ivec = jnp.asarray(imposed_vals, dtype=Eq.init_pos.dtype).reshape((Eq.init_pos.size,))
+        imposed_vals = lambda t, ivec=ivec: ivec
 
-    # imposed_disp_speed_values = lambda t: jnp.zeros_like(imposed_disp_DOFs).flatten()
+    # imposed_disp_speed_values = lambda t: jnp.zeros_like(imposed_DOFs).flatten()
 
     # the speed at each DOF is just the derivative of the displacement
     # Create a function to compute displacement speed (derivative) using jax.grad
-    # Since imposed_disp_values is a function t -> vector, we need to use vmap to apply grad to each component
+    # Since imposed_vals is a function t -> vector, we need to use vmap to apply grad to each component
     def compute_disp_speed(disp_func):
         # This function returns another function that calculates the derivative of displacement at time t
         def disp_speed(t):
@@ -93,11 +93,11 @@ def solve_dynamics(
         return disp_speed
 
     # Create the speed function by applying the derivative computation
-    imposed_disp_speed_values = compute_disp_speed(imposed_disp_values)
-    # imposed_disp_speed_values = grad(imposed_disp_values)
+    imposed_disp_speed_values = compute_disp_speed(imposed_vals)
+    # imposed_disp_speed_values = grad(imposed_vals)
     # WIP, adapt to a function the size of the origami pts
 
-    free_DOFs = jnp.logical_not(imposed_disp_DOFs | fixed_DOFs)
+    free_DOFs = jnp.logical_not(imposed_DOFs | fixed_DOFs)
     n_free_DOFs = jnp.sum(free_DOFs)
 
     state_0 = state_0.flatten()
@@ -118,8 +118,8 @@ def solve_dynamics(
             free_mask=free_DOFs,
             fixed_mask=fixed_DOFs,
             fixed_vals=fixed_vals,
-            imposed_mask=imposed_disp_DOFs,
-            imposed_disp_values=imposed_disp_values
+            imposed_mask=imposed_DOFs,
+            imposed_vals=imposed_vals
         )
         mass = 20.0
         accel = (f_ext + f_pot - damping * xdot_free) / mass
@@ -149,11 +149,11 @@ def solve_dynamics(
     mask_fixed_both = jnp.concatenate([fixed_DOFs, fixed_DOFs], axis=0)
     res = res.at[:, mask_fixed_both].set(0.0)
 
-    mask_imposed_pos = jnp.concatenate([imposed_disp_DOFs, jnp.zeros_like(imposed_disp_DOFs)], axis=0)
-    mask_imposed_vel = jnp.concatenate([jnp.zeros_like(imposed_disp_DOFs), imposed_disp_DOFs], axis=0)
+    mask_imposed_pos = jnp.concatenate([imposed_DOFs, jnp.zeros_like(imposed_DOFs)], axis=0)
+    mask_imposed_vel = jnp.concatenate([jnp.zeros_like(imposed_DOFs), imposed_DOFs], axis=0)
 
-    res = res.at[:, mask_imposed_pos].set(vmap(imposed_disp_values)(time_points)[:, imposed_disp_DOFs])
-    res = res.at[:, mask_imposed_vel].set(vmap(imposed_disp_speed_values)(time_points)[:, imposed_disp_DOFs])
+    res = res.at[:, mask_imposed_pos].set(vmap(imposed_vals)(time_points)[:, imposed_DOFs])
+    res = res.at[:, mask_imposed_vel].set(vmap(imposed_disp_speed_values)(time_points)[:, imposed_DOFs])
 
     # res.block_until_ready()
     print(f"Integration done in {time.time() - t1:.2f} s")

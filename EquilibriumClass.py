@@ -74,23 +74,29 @@ class EquilibriumClass(eqx.Module):
         # fixed values = initial positions (flattened)
         fixed_vals = self.init_pos.flatten() 
 
-        imposed_disp_DOFs = jnp.zeros((n_coords,), dtype=bool)
+        print('fixed DOFs', fixed_DOFs)
+        print('fixed vals', fixed_vals)
+
+        imposed_DOFs = jnp.zeros((n_coords,), dtype=bool)
 
         # Build a callable (always), even if mask is all False.
         base_vec = fixed_vals                          # start from initial positions
 
         if tip_loc is None:
-            imposed_disp_DOFs = jnp.zeros((n_coords,), bool)
+            imposed_DOFs = jnp.zeros((n_coords,), bool)
             base_vec = fixed_vals
-            imposed_disp_values = (lambda t, v=base_vec: v)
+            imposed_vals = (lambda t, v=base_vec: v)
         else:
             tip_xy = jnp.asarray(tip_loc, dtype=self.init_pos.dtype).reshape((2,))
             idx_x = self.dof_idx(last, 0)
             idx_y = self.dof_idx(last, 1)
-            imposed_disp_DOFs = (jnp.zeros((n_coords,), bool)
+            imposed_DOFs = (jnp.zeros((n_coords,), bool)
                                  .at[idx_x].set(True).at[idx_y].set(True))
             targ_vec = base_vec.at[idx_x].set(tip_xy[0]).at[idx_y].set(tip_xy[1])
-            imposed_disp_values = (lambda t, v=targ_vec: v)
+            imposed_vals = (lambda t, v=targ_vec: v)
+
+        print('imposed DOFs', imposed_DOFs)
+        print('imposed vals', imposed_vals)
 
         # -------- initial state (positions & velocities) ----------
         x0 = self.init_pos.flatten()                  # start from current geometry
@@ -112,8 +118,8 @@ class EquilibriumClass(eqx.Module):
             force_function=None,
             fixed_DOFs=fixed_DOFs,
             fixed_vals=fixed_vals,
-            imposed_disp_DOFs=imposed_disp_DOFs,
-            imposed_disp_values=imposed_disp_values,
+            imposed_DOFs=imposed_DOFs,
+            imposed_vals=imposed_vals,
         )
 
         return final_pos, pos_in_t, vel_in_t, potential_force_evolution
@@ -131,7 +137,7 @@ class EquilibriumClass(eqx.Module):
 
     # -------- imposed displacement function ----------
     # Must return a length-n_coords vector (flattened order) for any time t
-    def imposed_disp_values(self, t: float) -> jnp.ndarray:
+    def imposed_vals(self, t: float) -> jnp.ndarray:
         vals = jnp.zeros((self.init_pos.size,), dtype=self.init_pos.dtype)
         # First node pinned at (0,0) → both DOFs are zero; nothing else imposed.
         # If you ever want a moving base, set these two entries to your function of t.
@@ -182,11 +188,11 @@ class EquilibriumClass(eqx.Module):
     #                                 free_mask: jax.Array,
     #                                 fixed_mask: jax.Array,
     #                                 imposed_mask: jax.Array,
-    #                                 imposed_disp_values: Callable[[float], jax.Array]
+    #                                 imposed_vals: Callable[[float], jax.Array]
     #                                 ) -> jax.Array:
     #     """Total potential energy evaluated only on the free DOFs."""
     #     # n_coords = self.init_pos.size
-    #     imp_vals_t = imposed_disp_values(t)                 # (n_coords,)
+    #     imp_vals_t = imposed_vals(t)                 # (n_coords,)
     #     x_full = helpers_builders._assemble_full(x_free, free_mask, fixed_mask, imposed_mask, imp_vals_t, Strctr.n_coords)
     #     return self.total_potential_energy(Variabs, Strctr, x_full)
 
@@ -199,33 +205,33 @@ class EquilibriumClass(eqx.Module):
     #                          free_mask: jax.Array,
     #                          fixed_mask: jax.Array,
     #                          imposed_mask: jax.Array,
-    #                          imposed_disp_values: Callable[[float], jax.Array]) -> jax.Array:
+    #                          imposed_vals: Callable[[float], jax.Array]) -> jax.Array:
     #     """-∂E/∂x on the free DOFs."""
-    #     # jax.debug.print("imposed_disp_value inside potential_force_free = {}", imposed_disp_values)
+    #     # jax.debug.print("imposed_disp_value inside potential_force_free = {}", imposed_vals)
     #     return jax.grad(lambda x: -self.total_potential_energy_free(Variabs, 
     #                                                                 Strctr, t, x,
     #                                                                 free_mask=free_mask,
     #                                                                 fixed_mask=fixed_mask,
     #                                                                 imposed_mask=imposed_mask,
-    #                                                                 imposed_disp_values=imposed_disp_values))(x_free)
+    #                                                                 imposed_vals=imposed_vals))(x_free)
 
     # EquilibriumClass.py
     def total_potential_energy_free(self, Variabs, Strctr, t, x_free, *,
                                     free_mask, fixed_mask, fixed_vals, imposed_mask,
-                                    imposed_disp_values):
-        imp_vals_t = imposed_disp_values(t)                          # (nb,)
+                                    imposed_vals):
+        imp_vals_t = imposed_vals(t)                          # (nb,)
         x_full = helpers_builders._assemble_full(x_free, free_mask, fixed_mask, fixed_vals, imposed_mask, imp_vals_t)
         return self.total_potential_energy(Variabs, Strctr, x_full)
 
     def potential_force_free(self, Variabs, Strctr, t, x_free, *,
                              free_mask, fixed_mask, fixed_vals, imposed_mask,
-                             imposed_disp_values):
+                             imposed_vals):
         return jax.grad(
             lambda xf: -self.total_potential_energy_free(
                 Variabs, Strctr, t, xf,
                 free_mask=free_mask, fixed_mask=fixed_mask,
                 fixed_vals=fixed_vals, imposed_mask=imposed_mask,
-                imposed_disp_values=imposed_disp_values)
+                imposed_vals=imposed_vals)
         )(x_free)
 
     def force_function_free(self,
