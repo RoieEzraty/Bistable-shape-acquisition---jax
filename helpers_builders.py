@@ -126,11 +126,11 @@ def _initiate_buckle(hinges: int, shims: int, numpify: bool = False) -> jax.Arra
 
 
 # --- DOFs - free and essential ---
-def _assemble_full(x_free: jax.Array,
-                   free_mask: jax.Array,       # bool (n_coords,)
+def _assemble_full(free_mask: jax.Array,       # bool (n_coords,)
                    fixed_mask: jax.Array,      # bool (n_coords,)
-                   fixed_vals: jax.Array,
                    imposed_mask: jax.Array,    # bool (n_coords,)
+                    x_free: jax.Array,
+                   fixed_vals_t: jax.Array,
                    imposed_vals_t: jax.Array,  # (n_coords,)
                    ) -> jax.Array:
     """
@@ -162,9 +162,9 @@ def _assemble_full(x_free: jax.Array,
     # x_full = jnp.where(fixed_mask, 0.0, x_full)
     # x_full = jnp.where(imposed_mask, imposed_vals_t, x_full)
     # return x_full
-    x_full = jnp.zeros_like(fixed_vals)
+    x_full = jnp.zeros((free_mask.size,), dtype=fixed_vals_t.dtype)
     x_full = x_full.at[free_mask].set(x_free)
-    x_full = jnp.where(fixed_mask, fixed_vals, x_full)
+    x_full = jnp.where(fixed_mask, fixed_vals_t, x_full)
     x_full = jnp.where(imposed_mask, imposed_vals_t, x_full)
     return x_full
 

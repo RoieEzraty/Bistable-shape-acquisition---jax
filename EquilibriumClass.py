@@ -63,19 +63,31 @@ class EquilibriumClass(eqx.Module):
         last = N - 1
 
         # ---------- masks ----------
+        # fixed_DOFs = jnp.zeros((n_coords,), dtype=bool)
+        # # fix node 0 (x,y)
+        # fixed_DOFs = fixed_DOFs.at[self.dof_idx(0, 0)].set(True)
+        # fixed_DOFs = fixed_DOFs.at[self.dof_idx(0, 1)].set(True)
+        # # fix node 1 (x,y)
+        # fixed_DOFs = fixed_DOFs.at[self.dof_idx(1, 0)].set(True)
+        # fixed_DOFs = fixed_DOFs.at[self.dof_idx(1, 1)].set(True)
+
+        # # fixed values = initial positions (flattened)
+        # fixed_vals_temp = self.init_pos.flatten() 
+        # base_vec = fixed_vals_temp
+        # fixed_arr = base_vec.at[fixed_DOFs].set(fixed_vals_temp[fixed_DOFs])
+        # fixed_vals = (lambda t, v=fixed_arr: v)
+
+        # print('fixed DOFs', fixed_DOFs)
+        # print('fixed vals', fixed_vals)
+
+        # ---- fixed: nodes 0 and 1 ----
         fixed_DOFs = jnp.zeros((n_coords,), dtype=bool)
-        # fix node 0 (x,y)
-        fixed_DOFs = fixed_DOFs.at[self.dof_idx(0, 0)].set(True)
-        fixed_DOFs = fixed_DOFs.at[self.dof_idx(0, 1)].set(True)
-        # fix node 1 (x,y)
-        fixed_DOFs = fixed_DOFs.at[self.dof_idx(1, 0)].set(True)
-        fixed_DOFs = fixed_DOFs.at[self.dof_idx(1, 1)].set(True)
+        for node in (0, 1):
+            fixed_DOFs = fixed_DOFs.at[self.dof_idx(node, 0)].set(True)
+            fixed_DOFs = fixed_DOFs.at[self.dof_idx(node, 1)].set(True)
 
-        # fixed values = initial positions (flattened)
-        fixed_vals = self.init_pos.flatten() 
-
-        print('fixed DOFs', fixed_DOFs)
-        print('fixed vals', fixed_vals)
+        # constant vector (NOT a function)
+        fixed_vals = self.init_pos.reshape((-1,))  # (n_coords,)
 
         imposed_DOFs = jnp.zeros((n_coords,), dtype=bool)
 
@@ -83,20 +95,14 @@ class EquilibriumClass(eqx.Module):
         base_vec = fixed_vals                          # start from initial positions
 
         if tip_loc is None:
-            imposed_DOFs = jnp.zeros((n_coords,), bool)
-            base_vec = fixed_vals
             imposed_vals = (lambda t, v=base_vec: v)
         else:
             tip_xy = jnp.asarray(tip_loc, dtype=self.init_pos.dtype).reshape((2,))
             idx_x = self.dof_idx(last, 0)
             idx_y = self.dof_idx(last, 1)
-            imposed_DOFs = (jnp.zeros((n_coords,), bool)
-                                 .at[idx_x].set(True).at[idx_y].set(True))
-            targ_vec = base_vec.at[idx_x].set(tip_xy[0]).at[idx_y].set(tip_xy[1])
-            imposed_vals = (lambda t, v=targ_vec: v)
-
-        print('imposed DOFs', imposed_DOFs)
-        print('imposed vals', imposed_vals)
+            imposed_DOFs = imposed_DOFs.at[idx_x].set(True).at[idx_y].set(True)
+            imposed_arr = base_vec.at[idx_x].set(tip_xy[0]).at[idx_y].set(tip_xy[1])
+            imposed_vals = (lambda t, v=imposed_arr: v)
 
         # -------- initial state (positions & velocities) ----------
         x0 = self.init_pos.flatten()                  # start from current geometry
@@ -104,7 +110,7 @@ class EquilibriumClass(eqx.Module):
         state_0 = jnp.concatenate([x0, v0], axis=0)
 
         # -------- time grid ----------
-        dt = 1e-3
+        dt = 1e-2
         t0, t1, n_steps = 0.0, 800.0, int(1/dt)
         time_points = jnp.linspace(t0, t1, n_steps)
 
@@ -217,10 +223,11 @@ class EquilibriumClass(eqx.Module):
 
     # EquilibriumClass.py
     def total_potential_energy_free(self, Variabs, Strctr, t, x_free, *,
-                                    free_mask, fixed_mask, fixed_vals, imposed_mask,
+                                    free_mask, fixed_mask, imposed_mask, fixed_vals,
                                     imposed_vals):
-        imp_vals_t = imposed_vals(t)                          # (nb,)
-        x_full = helpers_builders._assemble_full(x_free, free_mask, fixed_mask, fixed_vals, imposed_mask, imp_vals_t)
+        fixed_vals_t = fixed_vals(t)
+        imposed_vals_t = imposed_vals(t)
+        x_full = helpers_builders._assemble_full(free_mask, fixed_mask, imposed_mask, x_free, fixed_vals_t, imposed_vals_t)
         return self.total_potential_energy(Variabs, Strctr, x_full)
 
     def potential_force_free(self, Variabs, Strctr, t, x_free, *,
@@ -229,8 +236,7 @@ class EquilibriumClass(eqx.Module):
         return jax.grad(
             lambda xf: -self.total_potential_energy_free(
                 Variabs, Strctr, t, xf,
-                free_mask=free_mask, fixed_mask=fixed_mask,
-                fixed_vals=fixed_vals, imposed_mask=imposed_mask,
+                free_mask=free_mask, fixed_mask=fixed_mask, imposed_mask=imposed_mask, fixed_vals=fixed_vals,
                 imposed_vals=imposed_vals)
         )(x_free)
 

@@ -32,11 +32,11 @@ def solve_dynamics(
     Eq: "EqClass",
     force_function: jax.Array[jnp.float_] = None,
     fixed_DOFs: jax.Array[bool] = None,
-    fixed_vals: jax.Array = None,
+    fixed_vals: jax.Array[jnp.float_] = None,
     imposed_DOFs: jax.Array[bool] = None,
     imposed_vals: jax.Array[jnp.float_] = None,  # function of time
     # simulation parameters
-    damping: float = 8.00,
+    damping: float = 5.00,
     rtol: float = 1e-2,
     maxsteps: int = 100,
 ):
@@ -56,8 +56,13 @@ def solve_dynamics(
 
     if fixed_vals is None:
         fixed_vals = jnp.asarray(Eq.init_pos, dtype=Eq.init_pos.dtype).reshape((Eq.init_pos.size,))
+    elif callable(fixed_vals):
+        # leave as-is
+        pass
     else:
-        fixed_vals = jnp.asarray(fixed_vals, dtype=Eq.init_pos.dtype).reshape((Eq.init_pos.size,))
+        # fixed_vals = jnp.asarray(fixed_vals, dtype=Eq.init_pos.dtype).reshape((Eq.init_pos.size,))
+        ivec = jnp.asarray(fixed_vals, dtype=Eq.init_pos.dtype).reshape((Eq.init_pos.size,))
+        fixed_vals = lambda t, ivec=ivec: ivec
 
     if imposed_DOFs is None:
         imposed_DOFs = jnp.zeros((Eq.init_pos.size,), dtype=bool)
@@ -111,7 +116,6 @@ def solve_dynamics(
     @jit
     def rhs(state_free: jax.Array, t: float):
         x_free, xdot_free = state_free[:n_free_DOFs], state_free[n_free_DOFs:]
-        print('x_free ', x_free)
         f_ext = Eq.force_function_free(t, force_function, free_mask=free_DOFs)
         f_pot = Eq.potential_force_free(
             Variabs, Strctr, t, x_free,
@@ -146,8 +150,10 @@ def solve_dynamics(
     res = jnp.zeros((res_free.shape[0], Strctr.n_coords * 2), dtype=res_free.dtype)
     res = res.at[:, mask_free_both].set(res_free)
 
-    mask_fixed_both = jnp.concatenate([fixed_DOFs, fixed_DOFs], axis=0)
-    res = res.at[:, mask_fixed_both].set(0.0)
+    mask_fixed_pos = jnp.concatenate([fixed_DOFs, jnp.zeros_like(fixed_DOFs)], axis=0)
+    mask_fixed_vel = jnp.concatenate([jnp.zeros_like(fixed_DOFs), fixed_DOFs], axis=0)
+    res = res.at[:, mask_fixed_pos].set(vmap(fixed_vals)(time_points)[:, fixed_DOFs])
+    res = res.at[:, mask_fixed_vel].set(0.0)
 
     mask_imposed_pos = jnp.concatenate([imposed_DOFs, jnp.zeros_like(imposed_DOFs)], axis=0)
     mask_imposed_vel = jnp.concatenate([jnp.zeros_like(imposed_DOFs), imposed_DOFs], axis=0)
