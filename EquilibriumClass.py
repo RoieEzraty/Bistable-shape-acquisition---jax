@@ -39,7 +39,7 @@ class EquilibriumClass(eqx.Module):
     # vel_last_step: jax.Array = eqx.field(default=None, init=False)
     # potential_force_last_step: jax.Array = eqx.field(default=None, init=False)
     
-    def __init__(self, Strctr: "StructureClass", buckle: jax.Array, pos_arr: jax.Array = None):
+    def __init__(self, Strctr: "StructureClass", buckle: jax.Array = None, pos_arr: jax.Array = None):
         # default buckle: all +1
         if buckle is None:
             self.buckle = jnp.ones((Strctr.hinges, Strctr.shims), dtype=jnp.int32)
@@ -56,19 +56,41 @@ class EquilibriumClass(eqx.Module):
         # straight chain -> 0 resting hinge angles
         self.initial_hinge_angles = jnp.zeros((Strctr.hinges,), dtype=jnp.float32)
 
-    def calculate_state(self, Variabs: "VariablesClass", Strctr: "StructureClass"):
+    def calculate_state(self, Variabs: "VariablesClass", Strctr: "StructureClass", tip_loc: jax.Array = None):
         
-        # n_coords = self.init_pos.size                # = 2 * (H+2)
+        n_coords = Strctr.n_coords                     # = 2 * (H+2)
+        N = Strctr.hinges + 2                          # number of nodes
+        last = N - 1
 
-        # -------- masks (boolean) ----------
-        # We impose node 0 at (0,0). No other fixed DOFs.
-        fixed_DOFs = jnp.zeros((Strctr.n_coords,), dtype=bool)
+        # ---------- masks ----------
+        fixed_DOFs = jnp.zeros((n_coords,), dtype=bool)
+        # fix node 0 (x,y)
+        fixed_DOFs = fixed_DOFs.at[self.dof_idx(0, 0)].set(True)
+        fixed_DOFs = fixed_DOFs.at[self.dof_idx(0, 1)].set(True)
+        # fix node 1 (x,y)
+        fixed_DOFs = fixed_DOFs.at[self.dof_idx(1, 0)].set(True)
+        fixed_DOFs = fixed_DOFs.at[self.dof_idx(1, 1)].set(True)
 
-        imposed_disp_DOFs = jnp.zeros((Strctr.n_coords,), dtype=bool)
-        imposed_disp_DOFs = imposed_disp_DOFs.at[self.dof_idx(0, 0)].set(True)   # x of node 0
-        imposed_disp_DOFs = imposed_disp_DOFs.at[self.dof_idx(0, 1)].set(True)   # y of node 0
-        imposed_disp_DOFs = imposed_disp_DOFs.at[self.dof_idx(1, 0)].set(True)   # x of node 0
-        imposed_disp_DOFs = imposed_disp_DOFs.at[self.dof_idx(1, 1)].set(True)   # y of node 0
+        # fixed values = initial positions (flattened)
+        fixed_vals = self.init_pos.flatten() 
+
+        imposed_disp_DOFs = jnp.zeros((n_coords,), dtype=bool)
+
+        # Build a callable (always), even if mask is all False.
+        base_vec = fixed_vals                          # start from initial positions
+
+        if tip_loc is None:
+            imposed_disp_DOFs = jnp.zeros((n_coords,), bool)
+            base_vec = fixed_vals
+            imposed_disp_values = (lambda t, v=base_vec: v)
+        else:
+            tip_xy = jnp.asarray(tip_loc, dtype=self.init_pos.dtype).reshape((2,))
+            idx_x = self.dof_idx(last, 0)
+            idx_y = self.dof_idx(last, 1)
+            imposed_disp_DOFs = (jnp.zeros((n_coords,), bool)
+                                 .at[idx_x].set(True).at[idx_y].set(True))
+            targ_vec = base_vec.at[idx_x].set(tip_xy[0]).at[idx_y].set(tip_xy[1])
+            imposed_disp_values = (lambda t, v=targ_vec: v)
 
         # -------- initial state (positions & velocities) ----------
         x0 = self.init_pos.flatten()                  # start from current geometry
@@ -87,10 +109,11 @@ class EquilibriumClass(eqx.Module):
             Variabs,
             Strctr,
             self,
-            force_function = None,
-            fixed_DOFs = fixed_DOFs,
-            imposed_disp_DOFs = imposed_disp_DOFs,
-            imposed_disp_values = None
+            force_function=None,
+            fixed_DOFs=fixed_DOFs,
+            fixed_vals=fixed_vals,
+            imposed_disp_DOFs=imposed_disp_DOFs,
+            imposed_disp_values=imposed_disp_values,
         )
 
         return final_pos, pos_in_t, vel_in_t, potential_force_evolution
@@ -150,41 +173,60 @@ class EquilibriumClass(eqx.Module):
         pos_arr = helpers_builders._reshape_state_2_pos_arr(x_full, self.init_pos)
         return self.energy(variabs, strctr, pos_arr)[0]
 
-    def total_potential_energy_free(self,
-                                    Variabs: "VariablesClass",
-                                    Strctr: "StructureClass",
-                                    t: float,
-                                    x_free: jax.Array,
-                                    *,
-                                    free_mask: jax.Array,
-                                    fixed_mask: jax.Array,
-                                    imposed_mask: jax.Array,
-                                    imposed_disp_values: Callable[[float], jax.Array]
-                                    ) -> jax.Array:
-        """Total potential energy evaluated only on the free DOFs."""
-        # n_coords = self.init_pos.size
-        imp_vals_t = imposed_disp_values(t)                 # (n_coords,)
-        x_full = helpers_builders._assemble_full(x_free, free_mask, fixed_mask, imposed_mask, imp_vals_t, Strctr.n_coords)
+    # def total_potential_energy_free(self,
+    #                                 Variabs: "VariablesClass",
+    #                                 Strctr: "StructureClass",
+    #                                 t: float,
+    #                                 x_free: jax.Array,
+    #                                 *,
+    #                                 free_mask: jax.Array,
+    #                                 fixed_mask: jax.Array,
+    #                                 imposed_mask: jax.Array,
+    #                                 imposed_disp_values: Callable[[float], jax.Array]
+    #                                 ) -> jax.Array:
+    #     """Total potential energy evaluated only on the free DOFs."""
+    #     # n_coords = self.init_pos.size
+    #     imp_vals_t = imposed_disp_values(t)                 # (n_coords,)
+    #     x_full = helpers_builders._assemble_full(x_free, free_mask, fixed_mask, imposed_mask, imp_vals_t, Strctr.n_coords)
+    #     return self.total_potential_energy(Variabs, Strctr, x_full)
+
+    # def potential_force_free(self,
+    #                          Variabs: "VariablesClass",
+    #                          Strctr: "StructureClass",
+    #                          t: float,
+    #                          x_free: jax.Array,
+    #                          *,
+    #                          free_mask: jax.Array,
+    #                          fixed_mask: jax.Array,
+    #                          imposed_mask: jax.Array,
+    #                          imposed_disp_values: Callable[[float], jax.Array]) -> jax.Array:
+    #     """-∂E/∂x on the free DOFs."""
+    #     # jax.debug.print("imposed_disp_value inside potential_force_free = {}", imposed_disp_values)
+    #     return jax.grad(lambda x: -self.total_potential_energy_free(Variabs, 
+    #                                                                 Strctr, t, x,
+    #                                                                 free_mask=free_mask,
+    #                                                                 fixed_mask=fixed_mask,
+    #                                                                 imposed_mask=imposed_mask,
+    #                                                                 imposed_disp_values=imposed_disp_values))(x_free)
+
+    # EquilibriumClass.py
+    def total_potential_energy_free(self, Variabs, Strctr, t, x_free, *,
+                                    free_mask, fixed_mask, fixed_vals, imposed_mask,
+                                    imposed_disp_values):
+        imp_vals_t = imposed_disp_values(t)                          # (nb,)
+        x_full = helpers_builders._assemble_full(x_free, free_mask, fixed_mask, fixed_vals, imposed_mask, imp_vals_t)
         return self.total_potential_energy(Variabs, Strctr, x_full)
 
-    def potential_force_free(self,
-                             Variabs: "VariablesClass",
-                             Strctr: "StructureClass",
-                             t: float,
-                             x_free: jax.Array,
-                             *,
-                             free_mask: jax.Array,
-                             fixed_mask: jax.Array,
-                             imposed_mask: jax.Array,
-                             imposed_disp_values: Callable[[float], jax.Array]) -> jax.Array:
-        """-∂E/∂x on the free DOFs."""
-        # jax.debug.print("imposed_disp_value inside potential_force_free = {}", imposed_disp_values)
-        return jax.grad(lambda x: -self.total_potential_energy_free(Variabs, 
-                                                                    Strctr, t, x,
-                                                                    free_mask=free_mask,
-                                                                    fixed_mask=fixed_mask,
-                                                                    imposed_mask=imposed_mask,
-                                                                    imposed_disp_values=imposed_disp_values))(x_free)
+    def potential_force_free(self, Variabs, Strctr, t, x_free, *,
+                             free_mask, fixed_mask, fixed_vals, imposed_mask,
+                             imposed_disp_values):
+        return jax.grad(
+            lambda xf: -self.total_potential_energy_free(
+                Variabs, Strctr, t, xf,
+                free_mask=free_mask, fixed_mask=fixed_mask,
+                fixed_vals=fixed_vals, imposed_mask=imposed_mask,
+                imposed_disp_values=imposed_disp_values)
+        )(x_free)
 
     def force_function_free(self,
                             t: float,

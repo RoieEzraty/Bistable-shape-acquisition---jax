@@ -32,6 +32,7 @@ def solve_dynamics(
     Eq: "EqClass",
     force_function: jax.Array[jnp.float_] = None,
     fixed_DOFs: jax.Array[bool] = None,
+    fixed_vals: jax.Array = None,
     imposed_disp_DOFs: jax.Array[bool] = None,
     imposed_disp_values: jax.Array[jnp.float_] = None,  # function of time
     # simulation parameters
@@ -48,15 +49,31 @@ def solve_dynamics(
     else:
         fixed_DOFs = jnp.array(fixed_DOFs).flatten().astype(bool)
 
-    if imposed_disp_DOFs is None:
-        imposed_disp_DOFs = (jnp.zeros_like(Eq.init_pos).flatten().astype(bool))
-    else:
-        imposed_disp_DOFs = jnp.array(imposed_disp_DOFs).flatten().astype(bool)
+    # if fixed_vals is None:
+    #     fixed_vals = jnp.zeros_like((fixed_DOFs,), dtype=Eq.init_pos.dtype)
+    # else:
+    #     fixed_vals = jnp.asarray(fixed_vals, dtype=Eq.init_pos.dtype)
 
-    if imposed_disp_values is None:     
-        imposed_disp_values = lambda t: Eq.init_pos.flatten()      
+    if fixed_vals is None:
+        fixed_vals = jnp.asarray(Eq.init_pos, dtype=Eq.init_pos.dtype).reshape((Eq.init_pos.size,))
     else:
-        imposed_disp_values = jnp.array(Eq.init_pos).flatten()
+        fixed_vals = jnp.asarray(fixed_vals, dtype=Eq.init_pos.dtype).reshape((Eq.init_pos.size,))
+
+    if imposed_disp_DOFs is None:
+        imposed_disp_DOFs = jnp.zeros((Eq.init_pos.size,), dtype=bool)
+    else:
+        imposed_disp_DOFs = jnp.asarray(imposed_disp_DOFs, dtype=bool).reshape((Eq.init_pos.size,))
+
+    # --- imposed displacement values: callable or constant vector ---
+    if imposed_disp_values is None:
+        base = jnp.asarray(Eq.init_pos, dtype=Eq.init_pos.dtype).reshape((Eq.init_pos.size,))
+        imposed_disp_values = lambda t, base=base: base
+    elif callable(imposed_disp_values):
+        # leave as-is
+        pass
+    else:
+        ivec = jnp.asarray(imposed_disp_values, dtype=Eq.init_pos.dtype).reshape((Eq.init_pos.size,))
+        imposed_disp_values = lambda t, ivec=ivec: ivec
 
     # imposed_disp_speed_values = lambda t: jnp.zeros_like(imposed_disp_DOFs).flatten()
 
@@ -81,7 +98,6 @@ def solve_dynamics(
     # WIP, adapt to a function the size of the origami pts
 
     free_DOFs = jnp.logical_not(imposed_disp_DOFs | fixed_DOFs)
-
     n_free_DOFs = jnp.sum(free_DOFs)
 
     state_0 = state_0.flatten()
@@ -101,6 +117,7 @@ def solve_dynamics(
             Variabs, Strctr, t, x_free,
             free_mask=free_DOFs,
             fixed_mask=fixed_DOFs,
+            fixed_vals=fixed_vals,
             imposed_mask=imposed_disp_DOFs,
             imposed_disp_values=imposed_disp_values
         )
@@ -121,23 +138,6 @@ def solve_dynamics(
         rtol=rtol,
         mxstep=maxsteps,
     )
-
-    # res_free = diffrax.diffeqsolve(
-    #     terms=diffrax.ODETerm(rhs_diffrax),
-    #     solver=diffrax.Dopri5(),
-    #     t0=time_points.min(),
-    #     t1=time_points.max(),
-    #     # dt0=1e-1,  # None,
-    #     dt0=None,  # None,
-    #     y0=state_0_free,
-    #     # args=args,
-    #     stepsize_controller=diffrax.PIDController(
-    #         rtol=1e-3, atol=1e-3
-    #     ),  # , atol=atol, pcoeff=0., icoeff=1., dcoeff=0.),
-    #     saveat=diffrax.SaveAt(ts=time_points),
-    #     max_steps=None,
-    #     adjoint=diffrax.RecursiveCheckpointAdjoint(checkpoints=10),
-    # ).ys
 
     pos_mask = free_DOFs
     vel_mask = free_DOFs

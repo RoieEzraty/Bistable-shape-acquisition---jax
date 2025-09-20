@@ -31,13 +31,14 @@ class StateClass:
     Dynamic state of the chain (positions + hinge stiffness regime).
     """   
     def __init__(self, Variabs: "VariablesClass", Strctr: "StructureClass") -> None:
-        
-        self.pos_arr = np.zeros((Strctr.nodes, 2))  # (N, 2D) positions of nodes in x and y
-        self.theta_arr = np.zeros((Strctr.hinges, ))
-        self.buckle = np.zeros((Strctr.hinges, Strctr.shims))
-        
+
+        self.pos_arr = helpers_builders._initiate_pos(Strctr.hinges)
         self.pos_arr_in_t = np.zeros((Strctr.nodes, 2, Variabs.T))
-        self.theta_arr_in_t = np.zeros((Strctr.hinges, Variabs.T))  # (H, T) hinge angles at rest (usually zeros)  
+
+        self.theta_arr = np.zeros((Strctr.hinges,))    # (H,) hinge angles  
+        self.theta_arr_in_t = np.zeros((Strctr.hinges, Variabs.T))    # (H,) hinge angles in training time (usually zeros)  
+
+        self.buckle = np.zeros((Strctr.hinges, Strctr.shims))
         self.buckle_in_t = np.zeros((Strctr.hinges, Strctr.shims, Variabs.T))
 
     # ---------- ingest from EquilibriumClass ----------
@@ -63,14 +64,17 @@ class StateClass:
         # positions (if provided)
         if pos_arr is not None:
             self.pos_arr = helpers_builders.numpify(pos_arr)
-            print('pos_arr ', self.pos_arr)
-            print('pos_arr_shape ', self.pos_arr.shape)
-            self.pos_arr_in_t[:, :, t] = self.pos_arr
+        else:
+            pos_arr = helpers_builders._initiate_pos(Strctr.hinges)
+            self.pos_arr = helpers_builders.numpify(pos_arr)
+        self.pos_arr_in_t[:, :, t] = self.pos_arr
 
         # buckle state
         if buckle is not None:
             self.buckle = helpers_builders.numpify(buckle)
-            self.buckle_in_t[:, :, t] = self.buckle
+        else:
+            self.buckle = helpers_builders.numpify(helpers_builders._initiate_buckle(Strctr.hinges, Strctr.shims))
+        self.buckle_in_t[:, :, t] = self.buckle
 
         # thetas
         if compute_thetas_if_missing:

@@ -41,7 +41,7 @@ def plot_arm(pos_vec: jnp.ndarray, L: float) -> None:
 
     # aesthetics
     plt.axis('equal')
-    plt.xlim(xs.min() - 0.5*L, xs.max() + 0.5*L)
+    # plt.xlim(xs.min() - 0.5*L, xs.max() + 0.5*L)
     # plt.ylim(ys.min() - 0.5*L, ys.max() + 0.5*L)
     plt.xlabel("x")
     plt.ylabel("y")
