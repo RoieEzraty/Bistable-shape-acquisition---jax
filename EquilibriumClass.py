@@ -26,7 +26,57 @@ if TYPE_CHECKING:
 
 class EquilibriumClass(eqx.Module):
     """
-    Dynamic state of the chain (positions + hinge stiffness regime).
+    Jax variables of the dynamic state of the chain (positions + hinge stiffness regime)
+
+    Stores the reference geometry, rest lengths, and buckle states 
+    of the system, and provides methods to compute equilibrium displacements, 
+    energies, and forces given constraints and imposed displacements.
+    The equilibrium configuration is such that the total energy is at a local minimum,
+    reached by following a damped equation of motion for node displacements.
+    Energy has hinge torque and edge stretch contributions, such that the stretch modulus is stiff,
+    hence negligible strechability.
+
+    Conventions
+    -----------
+    - Hinge angles are measured **counter-clockwise (CCW)**.
+    - Buckle state:
+        * `1`  → hinge buckled **downwards**
+        * `-1` → hinge buckled **upwards**
+    - The first two nodes (0 and 1) are fixed in space by default.
+
+    Attributes
+    ----------
+    rest_lengths : jax.Array, shape (hinges+1,)
+        Rest lengths of each edge, initialized from the straight configuration.
+    initial_hinge_angles : jax.Array, shape (hinges,)
+        Resting hinge angles (zero in straight configuration).
+    init_pos : jax.Array, shape (nodes,2)
+        Initial nodal positions of the chain (nodes = hinges+2).
+    buckle : jax.Array, shape (hinges ,shims)
+        Buckle state for each hinge and shim (values in {+1, -1}).
+
+    Methods
+    -------
+    calculate_state(Variabs, Strctr, tip_loc=None)
+        Run a dynamic relaxation process to compute equilibrium shape
+        under constraints and optional imposed tip displacement.
+        Returns final positions, full trajectory, velocities, and potential forces.
+    dof_idx(node, comp)
+        Map a node index and component (0=x, 1=y) to a flat degree-of-freedom index.
+    imposed_vals(t)
+        Return imposed displacement vector at time `t` (default: none).
+    force_function(t)
+        Return external force vector at time `t` (default: zero).
+    energy(Variabs, Strctr, pos_arr)
+        Compute total, rotational, and stretching energies for a configuration.
+    total_potential_energy(Variabs, Strctr, x_full)
+        Compute scalar total potential energy from a flattened state vector.
+    total_potential_energy_free(...)
+        Same as above, but restricted to free DOFs given masks and imposed values.
+    potential_force_free(...)
+        Compute forces on free DOFs via gradient of total potential energy.
+    force_function_free(t, force_function, free_mask)
+        Restrict external forces to free DOFs only.
     """
     
     # ---- state / derived ----
@@ -34,10 +84,6 @@ class EquilibriumClass(eqx.Module):
     initial_hinge_angles: jax.Array  # (H,) hinge angles at rest (usually zeros)  
     init_pos: jax.Array = eqx.field(init=False)   # (hinges+2, 2) integer coordinates
     buckle: jax.Array           # (H,) ∈ {+1,-1} per hinge/shim (direction of stiff side)
-    # pos_arr_in_t: jax.Array = eqx.field(default=None, init=False)   # (hinges+2, 2, t) integer coordinates
-    # dynamics_last_step: jax.Array = eqx.field(default=None, init=False)
-    # vel_last_step: jax.Array = eqx.field(default=None, init=False)
-    # potential_force_last_step: jax.Array = eqx.field(default=None, init=False)
     
     def __init__(self, Strctr: "StructureClass", buckle: jax.Array = None, pos_arr: jax.Array = None):
         # default buckle: all +1
@@ -61,24 +107,6 @@ class EquilibriumClass(eqx.Module):
         n_coords = Strctr.n_coords                     # = 2 * (H+2)
         N = Strctr.hinges + 2                          # number of nodes
         last = N - 1
-
-        # ---------- masks ----------
-        # fixed_DOFs = jnp.zeros((n_coords,), dtype=bool)
-        # # fix node 0 (x,y)
-        # fixed_DOFs = fixed_DOFs.at[self.dof_idx(0, 0)].set(True)
-        # fixed_DOFs = fixed_DOFs.at[self.dof_idx(0, 1)].set(True)
-        # # fix node 1 (x,y)
-        # fixed_DOFs = fixed_DOFs.at[self.dof_idx(1, 0)].set(True)
-        # fixed_DOFs = fixed_DOFs.at[self.dof_idx(1, 1)].set(True)
-
-        # # fixed values = initial positions (flattened)
-        # fixed_vals_temp = self.init_pos.flatten() 
-        # base_vec = fixed_vals_temp
-        # fixed_arr = base_vec.at[fixed_DOFs].set(fixed_vals_temp[fixed_DOFs])
-        # fixed_vals = (lambda t, v=fixed_arr: v)
-
-        # print('fixed DOFs', fixed_DOFs)
-        # print('fixed vals', fixed_vals)
 
         # ---- fixed: nodes 0 and 1 ----
         fixed_DOFs = jnp.zeros((n_coords,), dtype=bool)
@@ -110,8 +138,8 @@ class EquilibriumClass(eqx.Module):
         state_0 = jnp.concatenate([x0, v0], axis=0)
 
         # -------- time grid ----------
-        dt = 1e-2
-        t0, t1, n_steps = 0.0, 800.0, int(1/dt)
+        dt = 5e-3
+        t0, t1, n_steps = 0.0, 1000.0, int(1/dt)
         time_points = jnp.linspace(t0, t1, n_steps)
 
         # -------- run dynamics ----------
@@ -129,11 +157,6 @@ class EquilibriumClass(eqx.Module):
         )
 
         return final_pos, pos_in_t, vel_in_t, potential_force_evolution
-
-        # self.init_pos_in_t = final_pos
-        # self.dynamics_last_step = pos_in_t
-        # self.vel_last_step = vel_in_t
-        # self.potential_force_last_step = potential_force_evolution
 
     # Helper to map (node, component) -> flat DOF index
     # component: 0 = x, 1 = y
@@ -168,7 +191,7 @@ class EquilibriumClass(eqx.Module):
         B = self.buckle                     # (H,S)
 
         # torques on hinges
-        stiff_mask = ((B == 1) & (T > -TH)) | ((B == -1) & (T < TH))
+        stiff_mask = ((B == 1) & (T < TH)) | ((B == -1) & (T > -TH))  # thetas are counter-clockwise 
         k_rot_state = jnp.where(stiff_mask, Variabs.k_stiff, Variabs.k_soft)  # (H,S)
         rotation_energy = 0.5 * jnp.sum(k_rot_state * (T - TH) ** 2)
 
@@ -184,42 +207,6 @@ class EquilibriumClass(eqx.Module):
                                x_full: jax.Array) -> jax.Array[jnp.float_]:
         pos_arr = helpers_builders._reshape_state_2_pos_arr(x_full, self.init_pos)
         return self.energy(variabs, strctr, pos_arr)[0]
-
-    # def total_potential_energy_free(self,
-    #                                 Variabs: "VariablesClass",
-    #                                 Strctr: "StructureClass",
-    #                                 t: float,
-    #                                 x_free: jax.Array,
-    #                                 *,
-    #                                 free_mask: jax.Array,
-    #                                 fixed_mask: jax.Array,
-    #                                 imposed_mask: jax.Array,
-    #                                 imposed_vals: Callable[[float], jax.Array]
-    #                                 ) -> jax.Array:
-    #     """Total potential energy evaluated only on the free DOFs."""
-    #     # n_coords = self.init_pos.size
-    #     imp_vals_t = imposed_vals(t)                 # (n_coords,)
-    #     x_full = helpers_builders._assemble_full(x_free, free_mask, fixed_mask, imposed_mask, imp_vals_t, Strctr.n_coords)
-    #     return self.total_potential_energy(Variabs, Strctr, x_full)
-
-    # def potential_force_free(self,
-    #                          Variabs: "VariablesClass",
-    #                          Strctr: "StructureClass",
-    #                          t: float,
-    #                          x_free: jax.Array,
-    #                          *,
-    #                          free_mask: jax.Array,
-    #                          fixed_mask: jax.Array,
-    #                          imposed_mask: jax.Array,
-    #                          imposed_vals: Callable[[float], jax.Array]) -> jax.Array:
-    #     """-∂E/∂x on the free DOFs."""
-    #     # jax.debug.print("imposed_disp_value inside potential_force_free = {}", imposed_vals)
-    #     return jax.grad(lambda x: -self.total_potential_energy_free(Variabs, 
-    #                                                                 Strctr, t, x,
-    #                                                                 free_mask=free_mask,
-    #                                                                 fixed_mask=fixed_mask,
-    #                                                                 imposed_mask=imposed_mask,
-    #                                                                 imposed_vals=imposed_vals))(x_free)
 
     # EquilibriumClass.py
     def total_potential_energy_free(self, Variabs, Strctr, t, x_free, *,

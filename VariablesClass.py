@@ -27,8 +27,6 @@ class VariablesClass(eqx.Module):
     Attributes computed by the class:
         
     """
-    T: int = eqx.field(init=True)  # total training time (not physical time for equilibration)
-
     k_soft: jax.Array = eqx.field(init=False)
     """`(hinges, shims)` stiffnesses in soft direction"""
 
@@ -37,23 +35,27 @@ class VariablesClass(eqx.Module):
     
     thetas_ss: jax.Array = eqx.field(init=False)
     """`(hinges, shims)` rest angles of hinges"""
+
+    thresh: jax.Array = eqx.field(init=False)
+    """`(hinges, shims)` threshold angle to buckle shim"""
     
     k_stretch: jax.Array = eqx.field(init=False)
     """`(1, )` stiffnesses of rods, very large so rods are stiff""" 
 
     def __init__(self,
                  Strctr: "StructureClass",
-                 T: int,
                  k_soft: jax.Array = None,
                  k_stiff: jax.Array = None,
                  thetas_ss: jax.Array = None,
-                 stretch_scale: float = 1e2) -> None:
+                 thresh: jax.Array = None,
+                 stretch_scale: float = 1e3) -> None:
     
         H, S = Strctr.hinges, Strctr.shims
-        self.T = T  # total training set size (and algorithm time, not to confuse with time to reach equilibrium state)
+        
         self.k_soft = jnp.ones((H, S), jnp.float32) if k_soft is None else jnp.asarray(k_soft,  jnp.float32)
         self.k_stiff = jnp.ones((H, S), jnp.float32) if k_stiff is None else jnp.asarray(k_stiff, jnp.float32)
         self.thetas_ss = jnp.ones((H, S), jnp.float32) if thetas_ss is None else jnp.asarray(thetas_ss, jnp.float32)
+        self.thresh = jnp.ones((H, S), jnp.float32) if thresh is None else jnp.asarray(thresh, jnp.float32)
 
         # A single stretch stiffness (applied to every edge)
         self.k_stretch = jnp.asarray(stretch_scale * jnp.max(k_stiff), jnp.float32)

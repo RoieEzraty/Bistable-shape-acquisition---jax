@@ -129,7 +129,7 @@ def _initiate_buckle(hinges: int, shims: int, numpify: bool = False) -> jax.Arra
 def _assemble_full(free_mask: jax.Array,       # bool (n_coords,)
                    fixed_mask: jax.Array,      # bool (n_coords,)
                    imposed_mask: jax.Array,    # bool (n_coords,)
-                    x_free: jax.Array,
+                   x_free: jax.Array,
                    fixed_vals_t: jax.Array,
                    imposed_vals_t: jax.Array,  # (n_coords,)
                    ) -> jax.Array:
