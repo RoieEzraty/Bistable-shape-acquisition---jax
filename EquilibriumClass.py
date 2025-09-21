@@ -52,7 +52,7 @@ class EquilibriumClass(eqx.Module):
         Resting hinge angles (zero in straight configuration).
     init_pos : jax.Array, shape (nodes,2)
         Initial nodal positions of the chain (nodes = hinges+2).
-    buckle : jax.Array, shape (hinges ,shims)
+    buckle_arr : jax.Array, shape (hinges ,shims)
         Buckle state for each hinge and shim (values in {+1, -1}).
 
     Methods
@@ -83,15 +83,15 @@ class EquilibriumClass(eqx.Module):
     rest_lengths: jax.Array        # (H+1,) edge rest lengths (from initial pos)
     initial_hinge_angles: jax.Array  # (H,) hinge angles at rest (usually zeros)  
     init_pos: jax.Array = eqx.field(init=False)   # (hinges+2, 2) integer coordinates
-    buckle: jax.Array           # (H,) ∈ {+1,-1} per hinge/shim (direction of stiff side)
+    buckle_arr: jax.Array           # (H,) ∈ {+1,-1} per hinge/shim (direction of stiff side)
     
-    def __init__(self, Strctr: "StructureClass", buckle: jax.Array = None, pos_arr: jax.Array = None):
+    def __init__(self, Strctr: "StructureClass", buckle_arr: jax.Array = None, pos_arr: jax.Array = None):
         # default buckle: all +1
-        if buckle is None:
-            self.buckle = jnp.ones((Strctr.hinges, Strctr.shims), dtype=jnp.int32)
+        if buckle_arr is None:
+            self.buckle_arr = jnp.ones((Strctr.hinges, Strctr.shims), dtype=jnp.int32)
         else:
-            self.buckle = buckle
-            assert self.buckle.shape == (Strctr.hinges, Strctr.shims)
+            self.buckle_arr = buckle_arr
+            assert self.buckle_arr.shape == (Strctr.hinges, Strctr.shims)
             
         if pos_arr is None:
             self.init_pos = helpers_builders._initiate_pos(Strctr.hinges)  # (N=hinges+2, 2)
@@ -188,7 +188,7 @@ class EquilibriumClass(eqx.Module):
         edges_length = vmap(lambda e: Strctr._get_edge_length(pos_arr, e))(jnp.arange(Strctr.edges))
         T = thetas[:, None]                 # (H,1)
         TH = Variabs.thetas_ss[:, None]      # (H,1)
-        B = self.buckle                     # (H,S)
+        B = self.buckle_arr                     # (H,S)
 
         # torques on hinges
         stiff_mask = ((B == 1) & (T < TH)) | ((B == -1) & (T > -TH))  # thetas are counter-clockwise 
@@ -234,3 +234,6 @@ class EquilibriumClass(eqx.Module):
                             free_mask: jax.Array) -> jax.Array:
         """External force restricted to free DOFs."""
         return force_function(t)[free_mask]
+
+    def update_buckle(self, buckle_arr: np.array):
+        self.buckle_arr = helpers_builders.jaxify(buckle_arr)

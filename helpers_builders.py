@@ -21,7 +21,7 @@ if TYPE_CHECKING:
     from VariablesClass import VariablesClass
 
 
-# --- convenience: move from jax to numpy arrays ---
+# --- convenience: move from jax to numpy arrays and vice-verse ---
 def numpify(arr: jax.Array) -> NDArray[np.float_]:
     """
     Convert JAX array to NumPy array.
@@ -30,6 +30,15 @@ def numpify(arr: jax.Array) -> NDArray[np.float_]:
     """
     # return np.asarray(arr)
     return np.asarray(jax.device_get(arr))
+
+
+def jaxify(arr: NDArray[np.float_]) -> jnp.ndarray:
+    """
+    Convert a NumPy array (or Python list) back to a JAX array.
+
+    This creates a regular JAX array on the default device.
+    """
+    return jnp.asarray(arr)
 
 
 # --- reshapes ---

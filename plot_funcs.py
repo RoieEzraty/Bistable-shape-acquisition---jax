@@ -40,6 +40,7 @@ def plot_arm(pos_vec: np.ndarray, buckle: np.array, thetas, L: float, arc_scale:
     r = arc_scale * float(L)
 
     cumsum_thetas1 = np.cumsum(thetas)
+    # cumsum_thetas2 = cumsum_thetas1-cumsum_thetas1[0]+180
     cumsum_thetas2 = cumsum_thetas1-cumsum_thetas1[0]+180
 
     for i in range(0, buckle.size):
