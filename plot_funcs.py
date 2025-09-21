@@ -36,6 +36,14 @@ def plot_arm(pos_vec: np.ndarray, buckle: np.array, thetas, L: float, arc_scale:
     plt.scatter(xs, ys, s=60, zorder=3, color=colors_lst[0])
     plt.scatter([0], [0], s=60, zorder=3, color='k')
 
+    # --- line of wall --- 
+
+    plt.plot(
+    [xs[-1], xs[-1]],              # vertical line at tip x
+    [ys[-1] + 0.4*L, ys[-1] - 0.4*L],      # short downward segment
+    linestyle=":", color="k", linewidth=3.0
+)
+
     # ---- draw hinge arcs with buckle-directed orientation ----
     r = arc_scale * float(L)
 

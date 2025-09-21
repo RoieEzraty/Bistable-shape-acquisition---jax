@@ -234,6 +234,3 @@ class EquilibriumClass(eqx.Module):
                             free_mask: jax.Array) -> jax.Array:
         """External force restricted to free DOFs."""
         return force_function(t)[free_mask]
-
-    def update_buckle(self, buckle_arr: np.array):
-        self.buckle_arr = helpers_builders.jaxify(buckle_arr)
