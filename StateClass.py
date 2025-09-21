@@ -83,6 +83,9 @@ class StateClass:
             self.buckle_arr = helpers_builders._initiate_buckle(Strctr.hinges, Strctr.shims)
         self.buckle_in_t = np.zeros((Strctr.hinges, Strctr.shims, Sprvsr.T))
 
+        self.Fx = 0.0
+        self.Fx_in_t = np.zeros(Sprvsr.T)
+
     # ---------- ingest from EquilibriumClass ----------
 
     def _save_data(self, 
@@ -90,6 +93,7 @@ class StateClass:
                    Strctr: "StructureClass",
                    pos_arr: jax.Array = None,
                    buckle_arr: jax.Array = None,
+                   Forces: jax.Array = None,
                    compute_thetas_if_missing: bool = True) -> None:
         """
         Copy arrays from an EquilibriumClass instance into this StateClass.
@@ -113,6 +117,13 @@ class StateClass:
         else:
             self.buckle_arr = helpers_builders.numpify(helpers_builders._initiate_buckle(Strctr.hinges, Strctr.shims))
         self.buckle_in_t[:, :, t] = self.buckle_arr
+
+        # Force normal on wall
+        if Forces is not None:
+            self.Fx = helpers_builders.numpify(Forces)[-1][-2]
+        else:
+            self.Fx = 0
+        self.Fx_in_t[t] = self.Fx
 
         # thetas
         if compute_thetas_if_missing:
