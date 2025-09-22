@@ -58,7 +58,7 @@ class StateClass:
         Copy arrays from an `EquilibriumClass` instance (or raw data) 
         into this state. Updates positions, buckle states, and hinge angles.
     position_tip(Sprvsr, t)
-        Store the current supervised tip location at time `t` from training dataset.
+        Store the current supervised tip position at time `t` from training dataset.
     buckle(Variabs, Strctr, t)
         Update hinge buckle states based on current hinge angles 
         and threshold values. Buckle transitions occur when:
@@ -66,7 +66,7 @@ class StateClass:
           - buckle = -1 (upwards) flips to 1 if angle > +threshold (CCW).
     """ 
     def __init__(self, Variabs: "VariablesClass", Strctr: "StructureClass", Sprvsr: "SupervisorClass",
-                 pos_arr: np.array = None, buckle_arr: np.Array = None) -> None:
+                 pos_arr: np.array = None, buckle_arr: np.array = None) -> None:
 
         if pos_arr is not None:
             self.pos_arr = pos_arr
@@ -85,6 +85,9 @@ class StateClass:
 
         self.Fx = 0.0
         self.Fx_in_t = np.zeros(Sprvsr.T)
+
+        self.Fy = 0.0
+        self.Fy_in_t = np.zeros(Sprvsr.T)
 
     # ---------- ingest from EquilibriumClass ----------
 
@@ -121,9 +124,12 @@ class StateClass:
         # Force normal on wall
         if Forces is not None:
             self.Fx = helpers_builders.numpify(Forces)[-1][-2]
+            self.Fy = helpers_builders.numpify(Forces)[-1][-1]
         else:
             self.Fx = 0
+            self.Fy = 0
         self.Fx_in_t[t] = self.Fx
+        self.Fy_in_t[t] = self.Fy
 
         # thetas
         if compute_thetas_if_missing:
@@ -131,10 +137,13 @@ class StateClass:
             self.theta_arr = helpers_builders.numpify(thetas).reshape(-1)
             self.theta_arr_in_t[:, t] = self.theta_arr
 
-    def position_tip(self, Sprvsr: "SupervisorClass", t: int) -> None:
-        self.tip_loc = Sprvsr.tip_loc_in_t[t]
+    def position_tip(self, Sprvsr: "SupervisorClass", t: int, modality: str = "measurement") -> None:
+        if modality == "measurement":
+            self.tip_pos = Sprvsr.tip_pos_in_t[t]
+        elif modality == "update":
+            self.tip_pos = Sprvsr.tip_pos_update_in_t[t]
 
-    def buckle(self, Variabs: "VariablesClass", Strctr: "StructureClass", t):
+    def buckle(self, Variabs: "VariablesClass", Strctr: "StructureClass", t, State_measured: "StateClass"):
         buckle_nxt = np.zeros((Strctr.hinges, Strctr.shims))
         for i in range(Strctr.hinges):
             for j in range(Strctr.shims):
@@ -146,3 +155,7 @@ class StateClass:
                     buckle_nxt[i, j] = self.buckle_arr[i, j]
         self.buckle_arr = copy.copy(buckle_nxt)
         self.buckle_in_t[:, :, t] = self.buckle_arr
+
+        # buckling is the same also in measurement state
+        State_measured.buckle_arr = copy.copy(buckle_nxt)
+        State_measured.buckle_in_t

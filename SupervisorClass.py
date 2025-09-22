@@ -30,26 +30,37 @@ class SupervisorClass:
     """
     Variables that are by the external supervisor in the experiment
     """   
-    def __init__(self, Strctr, T: int, desired_buckle_arr: jax.Array, sampling = 'Uniform') -> None:
+    def __init__(self, Strctr, alpha: float, T: int, desired_buckle_arr: jax.Array, sampling = 'Uniform') -> None:
         
         self.T = T  # total training set size (and algorithm time, not to confuse with time to reach equilibrium state)
+        self.alpha = alpha
         self.desired_buckle_arr = desired_buckle_arr
         self.desired_pos_in_t = np.zeros((Strctr.nodes, 2, T))
         self.desired_Fx_in_t = np.zeros(T)
-        self.loss_in_t = np.zeros(T)
+        self.desired_Fy_in_t = np.zeros(T)
+        self.loss_in_t = np.zeros((T, 2))
+        self.tip_pos_update_in_t = np.zeros((T, 2))
 
     def create_dataset(self, Strctr: "StructureClass", sampling: str) -> None:
         if sampling == 'Uniform':
-            x_loc_in_t = np.random.uniform(0, Strctr.hinges*Strctr.L, size=self.T)
-            y_loc_in_t = np.random.uniform(-Strctr.L, Strctr.L, size=self.T)
-            self.tip_loc_in_t = np.stack(((x_loc_in_t), (y_loc_in_t.T)), axis=1)
+            x_pos_in_t = np.random.uniform(0, Strctr.hinges*Strctr.L, size=self.T)
+            y_pos_in_t = np.random.uniform(-Strctr.L, Strctr.L, size=self.T)
+            self.tip_pos_in_t = np.stack(((x_pos_in_t), (y_pos_in_t.T)), axis=1)
         else:
             print('User specified incompatible sampling')
 
-    def set_desired(self, pos_arr: jax.Array, Fy, t: int) -> None:
+    def set_desired(self, pos_arr: jax.Array, Fx: float, Fy: float, t: int) -> None:
         self.desired_pos_in_t[:, :, t] = pos_arr
-        self.desired_Fx_in_t[t] = Fy
+        self.desired_Fx_in_t[t] = Fx
+        self.desired_Fy_in_t[t] = Fy
 
-    def calc_loss(self, Fx: float, t) -> None:
-        self.loss = self.desired_Fx_in_t[t] - Fx
-        self.loss_in_t[t] = self.loss
+    def calc_loss(self, Fx: float, Fy: float, t) -> None:
+        self.loss = np.array([self.desired_Fx_in_t[t] - Fx, self.desired_Fy_in_t[t] - Fy])
+        self.loss_in_t[t, :] = self.loss
+
+    def calc_update_tip(self, t: int, Fx: float, Fy: float, current_pos: np.array, prev_pos: np.array = None) -> None:
+        if prev_pos is None:
+            prev_pos = self.tip_pos_update_in_t[t-1, :]
+        # delta_tip = self.alpha*(np.array([Fx, 0]) - prev_pos)*(self.loss)
+        delta_tip = self.alpha*(np.array([Fx, Fy]) - current_pos)*(self.loss)*([1, 1])
+        self.tip_pos_update_in_t[t, :] = prev_pos + delta_tip

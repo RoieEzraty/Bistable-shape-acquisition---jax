@@ -57,7 +57,7 @@ class EquilibriumClass(eqx.Module):
 
     Methods
     -------
-    calculate_state(Variabs, Strctr, tip_loc=None)
+    calculate_state(Variabs, Strctr, tip_pos=None)
         Run a dynamic relaxation process to compute equilibrium shape
         under constraints and optional imposed tip displacement.
         Returns final positions, full trajectory, velocities, and potential forces.
@@ -102,7 +102,7 @@ class EquilibriumClass(eqx.Module):
         # straight chain -> 0 resting hinge angles
         self.initial_hinge_angles = jnp.zeros((Strctr.hinges,), dtype=jnp.float32)
 
-    def calculate_state(self, Variabs: "VariablesClass", Strctr: "StructureClass", tip_loc: jax.Array = None):
+    def calculate_state(self, Variabs: "VariablesClass", Strctr: "StructureClass", tip_pos: jax.Array = None):
         
         n_coords = Strctr.n_coords                     # = 2 * (H+2)
         N = Strctr.hinges + 2                          # number of nodes
@@ -122,10 +122,10 @@ class EquilibriumClass(eqx.Module):
         # Build a callable (always), even if mask is all False.
         base_vec = fixed_vals                          # start from initial positions
 
-        if tip_loc is None:
+        if tip_pos is None:
             imposed_vals = (lambda t, v=base_vec: v)
         else:
-            tip_xy = jnp.asarray(tip_loc, dtype=self.init_pos.dtype).reshape((2,))
+            tip_xy = jnp.asarray(tip_pos, dtype=self.init_pos.dtype).reshape((2,))
             idx_x = self.dof_idx(last, 0)
             idx_y = self.dof_idx(last, 1)
             imposed_DOFs = imposed_DOFs.at[idx_x].set(True).at[idx_y].set(True)
@@ -138,8 +138,8 @@ class EquilibriumClass(eqx.Module):
         state_0 = jnp.concatenate([x0, v0], axis=0)
 
         # -------- time grid ----------
-        dt = 5e-3
-        t0, t1, n_steps = 0.0, 1000.0, int(1/dt)
+        dt = 2e-2
+        t0, t1, n_steps = 0.0, 20.0, int(1/dt)
         time_points = jnp.linspace(t0, t1, n_steps)
 
         # -------- run dynamics ----------

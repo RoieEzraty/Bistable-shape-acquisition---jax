@@ -8,7 +8,7 @@ from matplotlib.animation import FuncAnimation, PillowWriter  # for GIF export
 import colors
 
 
-def plot_arm(pos_vec: np.ndarray, buckle: np.array, thetas, L: float, arc_scale: float = 0.2) -> None:
+def plot_arm(pos_vec: np.ndarray, buckle: np.array, thetas, L: float,  modality: str, arc_scale: float = 0.2) -> None:
     """
     Plot an N-link arm given all joint positions.
     
@@ -29,11 +29,15 @@ def plot_arm(pos_vec: np.ndarray, buckle: np.array, thetas, L: float, arc_scale:
     # ---- figure ----
     plt.figure(figsize=(4, 4))
 
+    if modality == "measurement":
+        clr = colors_lst[0]
+    elif modality == "update":
+        clr = colors_lst[2]
     # plot polyline (all links)
-    plt.plot(xs, ys, linewidth=4)
-
+    plt.plot(xs, ys, linewidth=4, color=clr)
     # scatter joints
-    plt.scatter(xs, ys, s=60, zorder=3, color=colors_lst[0])
+    plt.scatter(xs, ys, s=60, zorder=3, color=clr)
+    # origin in black
     plt.scatter([0], [0], s=60, zorder=3, color='k')
 
     # --- line of wall --- 
@@ -104,16 +108,19 @@ def animate_arm(traj_pos, L, stride=1, interval_ms=30, save_path=None, fps=30, s
     T, N, _ = pos.shape
 
     # Precompute axes limits from the entire trajectory (stable view)
-    x_min, x_max = pos[...,0].min(), pos[...,0].max()
-    y_min, y_max = pos[...,1].min(), pos[...,1].max()
-    pad = 0.25 * max(1e-6, x_max - x_min, y_max - y_min, L)
-    x_min, x_max = x_min - pad, x_max + pad
-    y_min, y_max = y_min - pad, y_max + pad
+    # x_min, x_max = pos[...,0].min(), pos[...,0].max()
+    # y_min, y_max = pos[...,1].min(), pos[...,1].max()
+    # pad = 0.25 * max(1e-6, x_max - x_min, y_max - y_min, L)
+    # x_min, x_max = x_min - pad, x_max + pad
+    # y_min, y_max = y_min - pad, y_max + pad
+    xs, ys = pos[:, 0], pos[:, 1]
 
     fig, ax = plt.subplots(figsize=(4, 4))
     ax.set_aspect('equal', adjustable='box')
-    ax.set_xlim(x_min, x_max)
-    ax.set_ylim(y_min, y_max)
+    # ax.set_xlim(x_min, x_max)
+    # ax.set_ylim(y_min, y_max)
+    ax.set_xlim([-1, 8])
+    ax.set_ylim([-4.5, 4.5])
     ax.set_xlabel("x")
     ax.set_ylabel("y")
 

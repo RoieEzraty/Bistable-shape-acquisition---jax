@@ -36,7 +36,7 @@ def solve_dynamics(
     imposed_DOFs: jax.Array[bool] = None,
     imposed_vals: jax.Array[jnp.float_] = None,  # function of time
     # simulation parameters
-    damping: float = 8.00,
+    damping: float = 10.00,
     rtol: float = 1e-2,
     maxsteps: int = 100,
 ):
