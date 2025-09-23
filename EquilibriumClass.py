@@ -139,7 +139,7 @@ class EquilibriumClass(eqx.Module):
 
         # -------- time grid ----------
         dt = 2e-2
-        t0, t1, n_steps = 0.0, 20.0, int(1/dt)
+        t0, t1, n_steps = 0.0, 240.0, int(1/dt)
         time_points = jnp.linspace(t0, t1, n_steps)
 
         # -------- run dynamics ----------
@@ -181,6 +181,7 @@ class EquilibriumClass(eqx.Module):
     @eqx.filter_jit
     def energy(self, Variabs: "VariablesClass", Strctr: "StructureClass", pos_arr: jnp.Array) -> jnp.Array[float]:
         """Compute the potential energy of the origami with the resting positions as reference"""
+        print('shape pos arr', jnp.shape(pos_arr))
 
         thetas = vmap(lambda h: Strctr._get_theta(pos_arr, h))(jnp.arange(Strctr.hinges))
         # print(thetas)
@@ -189,12 +190,25 @@ class EquilibriumClass(eqx.Module):
         T = thetas[:, None]                 # (H,1)
         TH = Variabs.thetas_ss[:, None]      # (H,1)
         B = self.buckle_arr                     # (H,S)
+        
+        # spring constant is position dependent
+        if Variabs.k_type == 'Numerical':
+            stiff_mask = ((B == 1) & (T < TH)) | ((B == -1) & (T > -TH))  # thetas are counter-clockwise    
+            k_rot_state = jnp.where(stiff_mask, Variabs.k_stiff, Variabs.k_soft)  # (H,S)
+        elif Variabs.k_type == 'Experimental':
+            # k(theta) from the experimental curve; shape (H,)
+            k_theta = Variabs.k(thetas)                     # (H,)
+            # print('shape k_theta', jnp.shape(k_theta))
+            # Broadcast to (H,S)
+            # k_rot_state = B * jnp.broadcast_to(B * k_theta[:, None], (Strctr.hinges, Strctr.shims))
+            k_rot_state = jnp.broadcast_to(k_theta, (Strctr.hinges, Strctr.shims))
+            # k_rot_state = jnp.broadcast_to(k_theta, (Strctr.hinges, Strctr.shims))
+            # k_rot_state = B * Variabs.k[B * T]
 
-        # torques on hinges
-        stiff_mask = ((B == 1) & (T < TH)) | ((B == -1) & (T > -TH))  # thetas are counter-clockwise 
-        k_rot_state = jnp.where(stiff_mask, Variabs.k_stiff, Variabs.k_soft)  # (H,S)
+        # E_k = 1/2 * k * delta_theta ** 2
         rotation_energy = 0.5 * jnp.sum(k_rot_state * (T - TH) ** 2)
 
+        # E_stretch = 1/2 * k_stretch * delta_l ** 2
         # stretch of material - should not stretch at all
         stretch_energy = 0.5 * jnp.sum(Variabs.k_stretch * (edges_length - Strctr.rest_lengths) ** 2)
 

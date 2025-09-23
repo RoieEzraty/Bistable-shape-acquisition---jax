@@ -74,7 +74,6 @@ def build_torque_stiffness_from_file(
         try:
             from scipy.signal import savgol_filter
             k = savgol_filter(k, window_length=savgol_window, polyorder=4, mode="interp")
-            print('smoothed your k')
         except Exception:
             print('SciPy isnt available, just skip smoothing')
 
