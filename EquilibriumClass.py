@@ -138,8 +138,8 @@ class EquilibriumClass(eqx.Module):
         state_0 = jnp.concatenate([x0, v0], axis=0)
 
         # -------- time grid ----------
-        dt = 2e-2
-        t0, t1, n_steps = 0.0, 240.0, int(1/dt)
+        dt = 1e-3
+        t0, t1, n_steps = 0.0, 1600.0, int(1/dt)
         time_points = jnp.linspace(t0, t1, n_steps)
 
         # -------- run dynamics ----------
@@ -195,18 +195,32 @@ class EquilibriumClass(eqx.Module):
         if Variabs.k_type == 'Numerical':
             stiff_mask = ((B == 1) & (T < TH)) | ((B == -1) & (T > -TH))  # thetas are counter-clockwise    
             k_rot_state = jnp.where(stiff_mask, Variabs.k_stiff, Variabs.k_soft)  # (H,S)
+            rotation_energy = 0.5 * jnp.sum(k_rot_state * (T - TH) ** 2)
         elif Variabs.k_type == 'Experimental':
             # k(theta) from the experimental curve; shape (H,)
-            k_theta = Variabs.k(thetas)                     # (H,)
-            # print('shape k_theta', jnp.shape(k_theta))
-            # Broadcast to (H,S)
-            # k_rot_state = B * jnp.broadcast_to(B * k_theta[:, None], (Strctr.hinges, Strctr.shims))
-            k_rot_state = jnp.broadcast_to(k_theta, (Strctr.hinges, Strctr.shims))
+            # k_theta = Variabs.k(thetas)                     # (H,)
             # k_rot_state = jnp.broadcast_to(k_theta, (Strctr.hinges, Strctr.shims))
-            # k_rot_state = B * Variabs.k[B * T]
+            # per-shim effective angle: apply buckle sign to the angle, NOT to k
+            theta_eff = B[:, None] * T              # (H,S)
+            theta_ss_eff = B[:, None] * TH
+            # theta_eff = T
+            # theta_ss_eff = TH
+
+            # evaluate experimental stiffness per shim
+            k_rot_state = Variabs.k(theta_eff)   # (H,S)
+            # jax.debug.print("k_rot_state shape = {}", k_rot_state.shape)
+            # jax.debug.print("theta_ss_eff = {}", theta_ss_eff.shape)
+
+            # rotation_energy = 0.5 * jnp.sum(k_rot_state * (T - theta_ss_eff) ** 2)
+
+            # measure the error in the SAME signed frame
+            delta = T - theta_ss_eff                # (H,S)
+
+            rotation_energy = 0.5 * jnp.sum(k_rot_state * delta**2)
 
         # E_k = 1/2 * k * delta_theta ** 2
-        rotation_energy = 0.5 * jnp.sum(k_rot_state * (T - TH) ** 2)
+        # rotation_energy = 0.5 * jnp.sum(k_rot_state * (T - B * TH) ** 2)
+        # rotation_energy = 0.5 * jnp.sum(k_rot_state * (T - TH) ** 2)
 
         # E_stretch = 1/2 * k_stretch * delta_l ** 2
         # stretch of material - should not stretch at all
