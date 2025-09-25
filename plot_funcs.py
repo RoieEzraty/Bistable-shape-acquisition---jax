@@ -89,7 +89,7 @@ def plot_arm(pos_vec: np.ndarray, buckle: np.array, thetas, L: float,  modality:
     plt.show()
 
 
-def animate_arm(traj_pos, L, stride=1, interval_ms=30, save_path=None, fps=30, show_inline = False):
+def animate_arm(traj_pos, L, frames=10, interval_ms=30, save_path=None, fps=30, show_inline=False):
     """
     Animate an N-link arm over time.
     traj_pos: array-like, shape (T, N, 2), positions over time
@@ -101,9 +101,11 @@ def animate_arm(traj_pos, L, stride=1, interval_ms=30, save_path=None, fps=30, s
     Returns: (fig, anim) so you can display or save later.
     """
     pos = np.asarray(traj_pos)              # (T, N, 2)
+    T = np.shape(pos)[0]
     assert pos.ndim == 3 and pos.shape[2] == 2
 
     # --- downsample time ---
+    stride = int(T/frames)
     pos = pos[::max(1, int(stride))]
     T, N, _ = pos.shape
 

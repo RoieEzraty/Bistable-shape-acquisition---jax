@@ -25,7 +25,6 @@ if TYPE_CHECKING:
 
 
 def solve_dynamics(
-    time_points,
     state_0: jax.Array,
     Variabs: "VariablesClass",
     Strctr: "StructureClass",
@@ -36,10 +35,16 @@ def solve_dynamics(
     imposed_DOFs: jax.Array[bool] = None,
     imposed_vals: jax.Array[jnp.float_] = None,  # function of time
     # simulation parameters
-    damping: float = 10.00,
+    damping: float = 0.1,
     rtol: float = 1e-2,
     maxsteps: int = 100,
 ):
+
+    # -------- time grid ----------
+    time_points = Eq.time_points
+    damping = Eq.damping_coeff
+    mass = Eq.mass
+
     # print(state_0.shape)
     if force_function is None:
         force_function = lambda t: jnp.zeros_like(Eq.init_pos).flatten()
@@ -125,7 +130,6 @@ def solve_dynamics(
             imposed_mask=imposed_DOFs,
             imposed_vals=imposed_vals
         )
-        mass = 20.0
         accel = (f_ext + f_pot - damping * xdot_free) / mass
         return jnp.concatenate([xdot_free, accel], axis=0)
 

@@ -46,6 +46,15 @@ class EquilibriumClass(eqx.Module):
 
     Attributes
     ----------
+    T: float              
+        End time for simulation of equilibrium state
+    n_steps
+        Number of steps per simulation of equilibrium state
+    damping_coeff: float             
+        Coefficient for right hand side of eqn of motion
+    mass: float                      
+        Newtonian mass for right hand side of eqn of motion
+
     rest_lengths : jax.Array, shape (hinges+1,)
         Rest lengths of each edge, initialized from the straight configuration.
     initial_hinge_angles : jax.Array, shape (hinges,)
@@ -79,13 +88,23 @@ class EquilibriumClass(eqx.Module):
         Restrict external forces to free DOFs only.
     """
     
+    # --- User input ---
+    damping_coeff: float  # damping coefficient for right hand side of eqn of motion
+    mass: float           # Newtonian mass for right hand side of eqn of motion
+
     # ---- state / derived ----
-    rest_lengths: jax.Array        # (H+1,) edge rest lengths (from initial pos)
-    initial_hinge_angles: jax.Array  # (H,) hinge angles at rest (usually zeros)  
-    init_pos: jax.Array = eqx.field(init=False)   # (hinges+2, 2) integer coordinates
-    buckle_arr: jax.Array           # (H,) ∈ {+1,-1} per hinge/shim (direction of stiff side)
+    rest_lengths: jax.Array                      # (H+1,) edge rest lengths (from initial pos)
+    initial_hinge_angles: jax.Array              # (H,) hinge angles at rest (usually zeros)  
+    init_pos: jax.Array = eqx.field(init=False)  # (hinges+2, 2) integer coordinates
+    buckle_arr: jax.Array                        # (H,) ∈ {+1,-1} per hinge/shim (direction of stiff side)
+    time_points: jax.Array                       # (T_eq, ) time steps for simulating equilibrium configuration
     
-    def __init__(self, Strctr: "StructureClass", buckle_arr: jax.Array = None, pos_arr: jax.Array = None):
+    def __init__(self, Strctr: "StructureClass", T: float, n_steps: int, damping_coeff: float, mass: float,
+                 buckle_arr: jax.Array = None, pos_arr: jax.Array = None):
+        self.damping_coeff = damping_coeff
+        self.mass = mass
+        self.time_points = jnp.linspace(0, T, n_steps)
+
         # default buckle: all +1
         if buckle_arr is None:
             self.buckle_arr = jnp.ones((Strctr.hinges, Strctr.shims), dtype=jnp.int32)
@@ -97,7 +116,7 @@ class EquilibriumClass(eqx.Module):
             self.init_pos = helpers_builders._initiate_pos(Strctr.hinges)  # (N=hinges+2, 2)
         else:
             self.init_pos = pos_arr
-        # with a straight chain, each edge's rest length = init_spacing
+        # each edge's rest length is L, it's fixed and very stiff 
         self.rest_lengths = jnp.full((Strctr.hinges + 1,), Strctr.L, dtype=jnp.float32)
         # straight chain -> 0 resting hinge angles
         self.initial_hinge_angles = jnp.zeros((Strctr.hinges,), dtype=jnp.float32)
@@ -137,14 +156,8 @@ class EquilibriumClass(eqx.Module):
         v0 = jnp.zeros_like(x0)                    # start at rest
         state_0 = jnp.concatenate([x0, v0], axis=0)
 
-        # -------- time grid ----------
-        dt = 1e-3
-        t0, t1, n_steps = 0.0, 1600.0, int(1/dt)
-        time_points = jnp.linspace(t0, t1, n_steps)
-
         # -------- run dynamics ----------
         final_pos, pos_in_t, vel_in_t, potential_force_evolution = dynamics.solve_dynamics(
-            time_points,
             state_0,
             Variabs,
             Strctr,
