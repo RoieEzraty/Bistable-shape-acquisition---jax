@@ -46,11 +46,11 @@ class SupervisorClass:
 
     def create_dataset(self, Strctr: "StructureClass", sampling: str) -> None:
         if sampling == 'Uniform':
-            x_pos_in_t = np.random.uniform((Strctr.hinges-1)*Strctr.L, Strctr.hinges*Strctr.L, size=self.T)
-            y_pos_in_t = np.random.uniform(-Strctr.L/2, Strctr.L/2, size=self.T)
+            x_pos_in_t = np.random.uniform((Strctr.edges-1)*Strctr.L, Strctr.edges*Strctr.L, size=self.T)
+            y_pos_in_t = np.random.uniform(-Strctr.L/3, Strctr.L/3, size=self.T)
             self.tip_pos_in_t = np.stack(((x_pos_in_t), (y_pos_in_t.T)), axis=1)
             if isinstance(self.tip_angle_update_in_t, np.ndarray):  # if controlling also the tip angle
-                self.tip_angle_in_t = np.random.uniform(-np.pi/4, np.pi/4, size=self.T)
+                self.tip_angle_in_t = np.random.uniform(-np.pi/5, np.pi/5, size=self.T)
         else:
             print('User specified incompatible sampling')
 
@@ -68,7 +68,7 @@ class SupervisorClass:
         if prev_tip_update_pos is None:
             prev_tip_update_pos = self.tip_pos_update_in_t[t-1, :]
         # delta_tip = self.alpha*(np.array([Fx, 0]) - prev_tip_update_pos)*(self.loss)
-        delta_tip = self.alpha*(np.array([Fx, Fy]) - current_tip_pos)*(self.loss)*([1, 1])
+        delta_tip = self.alpha*(np.array([Fx, Fy]) - current_tip_pos)*(self.loss) * ([-2, 0.5])
         self.tip_pos_update_in_t[t, :] = prev_tip_update_pos + delta_tip
 
         if isinstance(self.tip_angle_update_in_t, np.ndarray):  # if controlling also the tip angle
@@ -77,5 +77,5 @@ class SupervisorClass:
             torque = np.cos(current_tip_angle)*Fy-np.sin(current_tip_angle)*Fx
             print('prev tip angle=', prev_tip_update_angle)
             print('torque on tip=', torque)
-            delta_angle = self.alpha*(torque - current_tip_angle)*np.linalg.norm(self.loss)
+            delta_angle = self.alpha*(torque - current_tip_angle)*np.linalg.norm(self.loss) * (-0.5)
             self.tip_angle_update_in_t[t] = prev_tip_update_angle + delta_angle
