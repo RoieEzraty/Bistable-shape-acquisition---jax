@@ -121,35 +121,61 @@ class EquilibriumClass(eqx.Module):
         # straight chain -> 0 resting hinge angles
         self.initial_hinge_angles = jnp.zeros((Strctr.hinges,), dtype=jnp.float32)
 
-    def calculate_state(self, Variabs: "VariablesClass", Strctr: "StructureClass", tip_pos: jax.Array = None):
+    def calculate_state(self, Variabs: "VariablesClass", Strctr: "StructureClass", tip_pos: jax.Array = None,
+                        tip_angle: jax.float = None):
         
         n_coords = Strctr.n_coords                     # = 2 * (H+2)
         N = Strctr.hinges + 2                          # number of nodes
         last = N - 1
 
-        # ---- fixed: nodes 0 and 1 ----
+        # --- fixed and imposed DOFs initialize --- 
         fixed_DOFs = jnp.zeros((n_coords,), dtype=bool)
+        imposed_DOFs = jnp.zeros((n_coords,), dtype=bool)
+
+        # --- fixed: nodes 0 and 1 ---
         for node in (0, 1):
             fixed_DOFs = fixed_DOFs.at[self.dof_idx(node, 0)].set(True)
             fixed_DOFs = fixed_DOFs.at[self.dof_idx(node, 1)].set(True)
-
-        # constant vector (NOT a function)
+        # fixed values (vector, not function)
         fixed_vals = self.init_pos.reshape((-1,))  # (n_coords,)
 
-        imposed_DOFs = jnp.zeros((n_coords,), dtype=bool)
-
         # Build a callable (always), even if mask is all False.
-        base_vec = fixed_vals                          # start from initial positions
+        base_vec = fixed_vals  # start from initial positions
 
+        # imposed tip values
         if tip_pos is None:
             imposed_vals = (lambda t, v=base_vec: v)
         else:
-            tip_xy = jnp.asarray(tip_pos, dtype=self.init_pos.dtype).reshape((2,))
+            # set tip indices as true 
             idx_x = self.dof_idx(last, 0)
             idx_y = self.dof_idx(last, 1)
             imposed_DOFs = imposed_DOFs.at[idx_x].set(True).at[idx_y].set(True)
+            # set tip values for imposed_vals
+            tip_xy = jnp.asarray(tip_pos, dtype=self.init_pos.dtype).reshape((2,))
             imposed_arr = base_vec.at[idx_x].set(tip_xy[0]).at[idx_y].set(tip_xy[1])
-            imposed_vals = (lambda t, v=imposed_arr: v)
+            # imposed_vals = (lambda t, v=imposed_arr: v)
+
+        # imposed tip angle amounts to fixing one node before last
+        if tip_angle is None:
+            pass
+        else:
+            if tip_pos is None:
+                print('no tip angle could be imposed without tip loc, skipping tip angle')
+            else:
+                # set before tip indices as true
+                idx_x = self.dof_idx(last-1, 0)
+                idx_y = self.dof_idx(last-1, 1)
+                imposed_DOFs = imposed_DOFs.at[idx_x].set(True).at[idx_y].set(True)
+                # set before tip values for imposed vals
+                before_tip_xy = helpers_builders.before_tip_from_tip(tip_pos=tip_xy,        # from above
+                                                                     tip_angle=jnp.asarray(tip_angle, dtype=self.init_pos.dtype),
+                                                                     L=Strctr.L,
+                                                                     dtype=self.init_pos.dtype)
+                imposed_arr = imposed_arr.at[idx_x].set(before_tip_xy[0]).at[idx_y].set(before_tip_xy[1])
+                imposed_vals = (lambda t, v=imposed_arr: v)
+
+        jax.debug.print('imposed DOFs {}', imposed_DOFs)
+        jax.debug.print('imposed arr {}', imposed_arr)
 
         # -------- initial state (positions & velocities) ----------
         x0 = self.init_pos.flatten()                  # start from current geometry

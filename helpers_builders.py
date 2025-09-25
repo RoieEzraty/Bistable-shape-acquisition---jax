@@ -178,6 +178,23 @@ def _assemble_full(free_mask: jax.Array,       # bool (n_coords,)
     return x_full
 
 
+def before_tip_from_tip(tip_pos: jnp.ndarray,
+                        tip_angle: jnp.ndarray,
+                        L: float,
+                        *,
+                        dtype=jnp.float32) -> jnp.ndarray:
+    """Return coordinates of the node that is one before the tip.
+
+    tip_pos: (2,) tip [x, y]
+    tip_angle: scalar (radians), CCW from +x
+    L: edge length of last link
+    """
+    tip_pos = jnp.asarray(tip_pos, dtype=dtype).reshape((2,))
+    dx = L * jnp.cos(tip_angle)
+    dy = L * jnp.sin(tip_angle)
+    return tip_pos - jnp.array([dx, dy], dtype=dtype)
+
+
 # ### NOT IN USE
 #     @staticmethod
 #     def _compute_thetas_over_traj(Strctr: "StructureClass", traj_pos: jax.Array) -> jax.Array:

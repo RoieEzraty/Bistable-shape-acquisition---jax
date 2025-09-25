@@ -30,7 +30,8 @@ class SupervisorClass:
     """
     Variables that are by the external supervisor in the experiment
     """   
-    def __init__(self, Strctr, alpha: float, T: int, desired_buckle_arr: jax.Array, sampling = 'Uniform') -> None:
+    def __init__(self, Strctr, alpha: float, T: int, desired_buckle_arr: jax.Array, sampling='Uniform',
+                 control_tip_angle='True') -> None:
         
         self.T = T  # total training set size (and algorithm time, not to confuse with time to reach equilibrium state)
         self.alpha = alpha
@@ -40,12 +41,16 @@ class SupervisorClass:
         self.desired_Fy_in_t = np.zeros(T)
         self.loss_in_t = np.zeros((T, 2))
         self.tip_pos_update_in_t = np.zeros((T, 2))
+        if control_tip_angle:
+            self.tip_angle_in_t = np.zeros(T)
 
     def create_dataset(self, Strctr: "StructureClass", sampling: str) -> None:
         if sampling == 'Uniform':
-            x_pos_in_t = np.random.uniform(0, Strctr.hinges*Strctr.L, size=self.T)
-            y_pos_in_t = np.random.uniform(-Strctr.L, Strctr.L, size=self.T)
+            x_pos_in_t = np.random.uniform((Strctr.hinges-1)*Strctr.L, Strctr.hinges*Strctr.L, size=self.T)
+            y_pos_in_t = np.random.uniform(-Strctr.L/2, Strctr.L/2, size=self.T)
             self.tip_pos_in_t = np.stack(((x_pos_in_t), (y_pos_in_t.T)), axis=1)
+            if isinstance(self.tip_angle_in_t, np.ndarray):
+                self.tip_angle_in_t = np.random.uniform(-np.pi/4, np.pi/4, size=self.T)
         else:
             print('User specified incompatible sampling')
 
