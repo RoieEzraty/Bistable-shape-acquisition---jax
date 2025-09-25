@@ -165,4 +165,5 @@ def animate_arm(traj_pos, L, frames=10, interval_ms=30, save_path=None, fps=30, 
         from IPython.display import HTML
         return HTML(anim.to_jshtml())
 
+    plt.close(fig)
     return fig, anim

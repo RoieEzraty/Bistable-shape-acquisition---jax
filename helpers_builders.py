@@ -178,11 +178,11 @@ def _assemble_full(free_mask: jax.Array,       # bool (n_coords,)
     return x_full
 
 
-def before_tip_from_tip(tip_pos: jnp.ndarray,
-                        tip_angle: jnp.ndarray,
-                        L: float,
-                        *,
-                        dtype=jnp.float32) -> jnp.ndarray:
+def _get_before_tip(tip_pos: jnp.ndarray,
+                    tip_angle: jnp.ndarray,
+                    L: float,
+                    *,
+                    dtype=jnp.float32) -> jnp.ndarray:
     """Return coordinates of the node that is one before the tip.
 
     tip_pos: (2,) tip [x, y]
@@ -193,6 +193,23 @@ def before_tip_from_tip(tip_pos: jnp.ndarray,
     dx = L * jnp.cos(tip_angle)
     dy = L * jnp.sin(tip_angle)
     return tip_pos - jnp.array([dx, dy], dtype=dtype)
+
+
+def _get_tip_angle(pos_arr: np.array) -> np.array:
+    """
+    pos_arr: array of shape (H, 2)
+    Returns: angle (radians) in [-pi, pi], measured from -x axis
+    """
+    pos_arr = np.asarray(pos_arr)
+    p0, p1 = pos_arr[-2], pos_arr[-1]   # last two points
+    dx, dy = p1 - p0                    # displacement vector
+
+    # shift so that 0 is along -x
+    theta_from_negx = np.arctan2(dy, dx) - np.pi
+    # normalize back to [-pi, pi]
+    theta_from_negx = (theta_from_negx + np.pi) % (2*np.pi) - np.pi
+
+    return theta_from_negx
 
 
 # ### NOT IN USE

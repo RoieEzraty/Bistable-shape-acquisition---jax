@@ -74,6 +74,9 @@ class StateClass:
             self.pos_arr = helpers_builders._initiate_pos(Strctr.hinges)
         self.pos_arr_in_t = np.zeros((Strctr.nodes, 2, Sprvsr.T))
 
+        if isinstance(Sprvsr.tip_angle_update_in_t, np.ndarray):
+            self.tip_angle_in_t = np.zeros((Sprvsr.T,))
+
         self.theta_arr = np.zeros((Strctr.hinges,))    # (H,) hinge angles  
         self.theta_arr_in_t = np.zeros((Strctr.hinges, Sprvsr.T))    # (H,) hinge angles in training time (usually zeros)  
 
@@ -136,12 +139,20 @@ class StateClass:
             thetas = vmap(lambda h: Strctr._get_theta(pos_arr, h))(jnp.arange(Strctr.hinges))
             self.theta_arr = helpers_builders.numpify(thetas).reshape(-1)
             self.theta_arr_in_t[:, t] = self.theta_arr
+        # tip angle measured from -x
+        self.tip_angle = helpers_builders._get_tip_angle(self.pos_arr)
 
     def position_tip(self, Sprvsr: "SupervisorClass", t: int, modality: str = "measurement") -> None:
         if modality == "measurement":
             self.tip_pos = Sprvsr.tip_pos_in_t[t]
         elif modality == "update":
             self.tip_pos = Sprvsr.tip_pos_update_in_t[t]
+
+        if isinstance(Sprvsr.tip_angle_update_in_t, np.ndarray):
+            if modality == "measurement":
+                self.tip_angle = Sprvsr.tip_angle_in_t[t]
+            elif modality == "update":
+                self.tip_angle = Sprvsr.tip_angle_update_in_t[t]
 
     def buckle(self, Variabs: "VariablesClass", Strctr: "StructureClass", t, State_measured: "StateClass"):
         buckle_nxt = np.zeros((Strctr.hinges, Strctr.shims))

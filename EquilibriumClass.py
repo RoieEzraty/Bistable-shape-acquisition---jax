@@ -167,15 +167,12 @@ class EquilibriumClass(eqx.Module):
                 idx_y = self.dof_idx(last-1, 1)
                 imposed_DOFs = imposed_DOFs.at[idx_x].set(True).at[idx_y].set(True)
                 # set before tip values for imposed vals
-                before_tip_xy = helpers_builders.before_tip_from_tip(tip_pos=tip_xy,        # from above
-                                                                     tip_angle=jnp.asarray(tip_angle, dtype=self.init_pos.dtype),
-                                                                     L=Strctr.L,
-                                                                     dtype=self.init_pos.dtype)
+                before_tip_xy = helpers_builders._get_before_tip(tip_pos=tip_xy,        # from above
+                                                                 tip_angle=jnp.asarray(tip_angle, dtype=self.init_pos.dtype),
+                                                                 L=Strctr.L,
+                                                                 dtype=self.init_pos.dtype)
                 imposed_arr = imposed_arr.at[idx_x].set(before_tip_xy[0]).at[idx_y].set(before_tip_xy[1])
                 imposed_vals = (lambda t, v=imposed_arr: v)
-
-        jax.debug.print('imposed DOFs {}', imposed_DOFs)
-        jax.debug.print('imposed arr {}', imposed_arr)
 
         # -------- initial state (positions & velocities) ----------
         x0 = self.init_pos.flatten()                  # start from current geometry
