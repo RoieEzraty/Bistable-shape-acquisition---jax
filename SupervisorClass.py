@@ -68,7 +68,7 @@ class SupervisorClass:
         if prev_tip_update_pos is None:
             prev_tip_update_pos = self.tip_pos_update_in_t[t-1, :]
         # delta_tip = self.alpha*(np.array([Fx, 0]) - prev_tip_update_pos)*(self.loss)
-        delta_tip = self.alpha*(np.array([Fx, Fy]) - current_tip_pos)*(self.loss) * ([-2, 0.5])
+        delta_tip = self.alpha*(np.array([Fx, Fy]) - current_tip_pos)*(self.loss) * ([2, 0.5])
         self.tip_pos_update_in_t[t, :] = prev_tip_update_pos + delta_tip
 
         if isinstance(self.tip_angle_update_in_t, np.ndarray):  # if controlling also the tip angle

@@ -51,6 +51,8 @@ class StateClass:
         - `-1` → buckle upwards
     buckle_in_t : ndarray, shape (H,S,T)
         History of buckle states over the training time.
+    Fx, Fy: floats, force on tip in x, y directions
+    tip_torque: float, torque on tip
 
     Methods
     -------
@@ -91,6 +93,9 @@ class StateClass:
 
         self.Fy = 0.0
         self.Fy_in_t = np.zeros(Sprvsr.T)
+
+        self.tip_torque = 0.0
+        self.tip_torque_in_t = np.zeros(Sprvsr.T)
 
     # ---------- ingest from EquilibriumClass ----------
 
@@ -141,6 +146,9 @@ class StateClass:
             self.theta_arr_in_t[:, t] = self.theta_arr
         # tip angle measured from -x
         self.tip_angle = helpers_builders._get_tip_angle(self.pos_arr)
+
+        self.tip_torque = helpers_builders.torque(self.tip_angle, self.Fx, self.Fy)
+        self.tip_torque_in_t[t] = self.tip_torque
 
     def position_tip(self, Sprvsr: "SupervisorClass", t: int, modality: str = "measurement") -> None:
         if modality == "measurement":

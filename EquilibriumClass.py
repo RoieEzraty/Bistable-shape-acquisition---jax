@@ -141,6 +141,7 @@ class EquilibriumClass(eqx.Module):
 
         # Build a callable (always), even if mask is all False.
         base_vec = fixed_vals  # start from initial positions
+        imposed_arr = base_vec
 
         # imposed tip values
         if tip_pos is None:
@@ -172,7 +173,7 @@ class EquilibriumClass(eqx.Module):
                                                                  L=Strctr.L,
                                                                  dtype=self.init_pos.dtype)
                 imposed_arr = imposed_arr.at[idx_x].set(before_tip_xy[0]).at[idx_y].set(before_tip_xy[1])
-                imposed_vals = (lambda t, v=imposed_arr: v)
+        imposed_vals = (lambda t, v=imposed_arr: v)
 
         # -------- initial state (positions & velocities) ----------
         x0 = self.init_pos.flatten()                  # start from current geometry
@@ -267,13 +268,13 @@ class EquilibriumClass(eqx.Module):
         return jnp.array([total_energy, rotation_energy, stretch_energy])
 
     @eqx.filter_jit
-    def total_potential_energy(self, variabs: "VariablesClass", strctr: "StructureClass",
+    def total_potential_energy(self, Variabs: "VariablesClass", Strctr: "StructureClass",
                                x_full: jax.Array) -> jax.Array[jnp.float_]:
         pos_arr = helpers_builders._reshape_state_2_pos_arr(x_full, self.init_pos)
-        return self.energy(variabs, strctr, pos_arr)[0]
+        return self.energy(Variabs, Strctr, pos_arr)[0]
 
     # EquilibriumClass.py
-    def total_potential_energy_free(self, Variabs, Strctr, t, x_free, *,
+    def total_potential_energy_free(self, Variabs: "VariablesClass", Strctr: "StructureClass", t: int, x_free: jax.Array, *,
                                     free_mask, fixed_mask, imposed_mask, fixed_vals,
                                     imposed_vals):
         fixed_vals_t = fixed_vals(t)

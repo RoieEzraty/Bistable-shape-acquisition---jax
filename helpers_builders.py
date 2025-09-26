@@ -212,6 +212,10 @@ def _get_tip_angle(pos_arr: np.array) -> np.array:
     return theta_from_negx
 
 
+def torque(tip_angle: float, Fx: float, Fy: float) -> float:
+    return np.cos(tip_angle)*Fy-np.sin(tip_angle)*Fx
+
+
 # ### NOT IN USE
 #     @staticmethod
 #     def _compute_thetas_over_traj(Strctr: "StructureClass", traj_pos: jax.Array) -> jax.Array:
