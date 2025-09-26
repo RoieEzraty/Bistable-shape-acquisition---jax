@@ -51,6 +51,12 @@ class SupervisorClass:
             self.tip_pos_in_t = np.stack(((x_pos_in_t), (y_pos_in_t.T)), axis=1)
             if isinstance(self.tip_angle_update_in_t, np.ndarray):  # if controlling also the tip angle
                 self.tip_angle_in_t = np.random.uniform(-np.pi/5, np.pi/5, size=self.T)
+        elif sampling == 'Flat':
+            end = Strctr.hinges + 2
+            tip_pos = np.array([end, 0])
+            self.tip_pos_in_t = np.tile(tip_pos, (self.T, 1))
+            if isinstance(self.tip_angle_update_in_t, np.ndarray):  # if controlling also the tip angle
+                self.tip_angle_in_t = np.zeros(self.T)
         else:
             print('User specified incompatible sampling')
 

@@ -218,7 +218,6 @@ class EquilibriumClass(eqx.Module):
     @eqx.filter_jit
     def energy(self, Variabs: "VariablesClass", Strctr: "StructureClass", pos_arr: jnp.Array) -> jnp.Array[float]:
         """Compute the potential energy of the origami with the resting positions as reference"""
-        print('shape pos arr', jnp.shape(pos_arr))
 
         thetas = vmap(lambda h: Strctr._get_theta(pos_arr, h))(jnp.arange(Strctr.hinges))
         # print(thetas)
