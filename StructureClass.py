@@ -8,6 +8,8 @@ from numpy import array, zeros
 from numpy.typing import NDArray
 from typing import TYPE_CHECKING, Callable, Union, Optional
 
+import learning_funcs
+
 
 # ===================================================
 # Class - Structure Variables - arrays hinge connections, edges, etc.
@@ -60,6 +62,9 @@ class StructureClass(eqx.Module):
             assert rl.shape == (self.edges,), f"rest_lengths shape {rl.shape} != ({self.edges},)"
             return rl
         return jnp.full((self.edges,), self.L, dtype=jnp.float32)
+
+    def _build_learning_parameters(self, Nin: int, Nout: int) -> None:
+        _, _, _, self.DM, self.NE, self.NN, self.output_nodes_arr = learning_funcs.build_incidence(Nin, Nout)
     
     # vectorized helpers (handy + jit-friendly)
     def all_edge_lengths(self, pos: jax.Array) -> jax.Array:

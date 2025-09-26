@@ -13,7 +13,7 @@ from numpy import array, zeros
 from numpy.typing import NDArray
 from typing import TYPE_CHECKING, Callable, Union, Optional
 
-import dynamics, helpers_builders
+import helpers_builders, learning_funcs
 
 if TYPE_CHECKING:
     from StructureClass import StructureClass
@@ -69,19 +69,37 @@ class SupervisorClass:
         self.loss = np.array([self.desired_Fx_in_t[t] - Fx, self.desired_Fy_in_t[t] - Fy])
         self.loss_in_t[t, :] = self.loss
 
-    def calc_update_tip(self, t: int, Fx: float, Fy: float, current_tip_pos: np.array, prev_tip_update_pos: np.array = None,
+    def calc_update_tip(self, t: int, State: "StateClass", Strctr: "StructureClass", prev_tip_update_pos: np.array = None,
                         current_tip_angle: np.float = None, prev_tip_update_angle: np.float = None) -> None:
+
+        # torque = np.cos(current_tip_angle)*Fy-np.sin(current_tip_angle)*Fx
+        norm_pos = Strctr.hinges*Strctr.L
+        norm_angle = np.pi
+        print('Roie dont forger to normalize force')
+        # norm_force = ?
+        # norm_torque = ?
+        inputs_normalized = np.array([State.tip_pos[0]/norm_pos, State.tip_pos[1]/norm_pos, State.tip_angle/norm_angle])
+        outputs_normalized = np.array([State.Fx/norm_force, State.Fy/norm_force, State.tip_torque/norm_torque])
+
+        # --- BEASTAL ---
+        grad_loss_vec = learning_funcs.grad_loss_FC(Strctr.NE, inputs_normalized, outputs_normalized, Strctr.DM,
+                                                    Strctr.output_nodes_arr, self.loss)
+
+        update_vec = - self.alpha * np.matmul(Strctr.DM_dagger, grad_loss_vec)
+        delta_tip = update_vec[0:2]
+        delta_angle = update_vec[2]
+
+        # insert into tip_pos_update
         if prev_tip_update_pos is None:
             prev_tip_update_pos = self.tip_pos_update_in_t[t-1, :]
-        # delta_tip = self.alpha*(np.array([Fx, 0]) - prev_tip_update_pos)*(self.loss)
-        delta_tip = self.alpha*(np.array([Fx, Fy]) - current_tip_pos)*(self.loss) * ([2, 0.5])
+        # delta_tip = self.alpha*(np.array([Fx, Fy]) - current_tip_pos)*(self.loss) * ([2, 0.5])  # old, not BEASTAL
         self.tip_pos_update_in_t[t, :] = prev_tip_update_pos + delta_tip
 
         if isinstance(self.tip_angle_update_in_t, np.ndarray):  # if controlling also the tip angle
             if prev_tip_update_angle is None:
                 prev_tip_update_angle = self.tip_angle_update_in_t[t-1]
-            torque = np.cos(current_tip_angle)*Fy-np.sin(current_tip_angle)*Fx
             print('prev tip angle=', prev_tip_update_angle)
-            print('torque on tip=', torque)
-            delta_angle = self.alpha*(torque - current_tip_angle)*np.linalg.norm(self.loss) * (-0.5)
+            print('torque on tip=', State.tip_torque)
+            # delta_angle = self.alpha*(torque - current_tip_angle)*np.linalg.norm(self.loss) * (-0.5)  # old, not BEASTAL
+            
             self.tip_angle_update_in_t[t] = prev_tip_update_angle + delta_angle
