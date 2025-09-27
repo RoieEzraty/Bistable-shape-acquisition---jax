@@ -27,11 +27,11 @@ class StructureClass(eqx.Module):
     L: float = eqx.field(static=True)        # rest length of rods
 
     # --- computed in __init__ (static topology/geometry) ---
-    edges_arr: NDArray[np.float_] = eqx.field(init=False, static=True)     # (hinges+1, 2) int32
+    edges_arr: NDArray[int] = eqx.field(init=False, static=True)     # (hinges+1, 2) int32
     edges: int = eqx.field(init=False, static=True)
     nodes: int = eqx.field(init=False, static=True)
     n_coords: int = eqx.field(init=False, static=True)
-    hinges_arr: NDArray[np.float_] = eqx.field(init=False, static=True)    # (hinges, 2) int32
+    hinges_arr: NDArray[int] = eqx.field(init=False, static=True)    # (hinges, 2) int32
     rest_lengths: NDArray[np.float_] = eqx.field(init=False, static=True)  # (hinges+1,) float32
 
     # --- optional learning graph (only if you call _build_learning_parameters) ---
@@ -67,7 +67,7 @@ class StructureClass(eqx.Module):
 
     def _build_rest_lengths(self, rest_lengths: Optional[np.array[np.float_]]) -> np.array[np.float_]:
         if rest_lengths is not None:
-            rl = jnp.asarray(rest_lengths, jnp.float32)
+            rl = np.asarray(rest_lengths, np.float32)
             assert rl.shape == (self.edges,), f"rest_lengths shape {rl.shape} != ({self.edges},)"
             return rl
         return jnp.full((self.edges,), self.L, dtype=np.float32)

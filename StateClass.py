@@ -67,20 +67,40 @@ class StateClass:
           - buckle = 1 (downwards) flips to -1 if angle < -threshold (CCW).
           - buckle = -1 (upwards) flips to 1 if angle > +threshold (CCW).
     """ 
+
+    # --- instantaneous state ---
+    pos_arr: NDArray[np.float32] = eqx.field(static=True)          # (nodes, 2)
+    theta_arr: NDArray[np.float32] = eqx.field(static=True)        # (hinges,)
+    buckle_arr: NDArray[np.int32] = eqx.field(static=True)         # (hinges, shims)
+    tip_pos: NDArray[np.float32] = eqx.field(static=True)          # (2,)
+    tip_angle: float = eqx.field(static=True)
+    Fx: float = eqx.field(static=True)
+    Fy: float = eqx.field(static=True)
+    tip_torque: float = eqx.field(static=True)
+
+    # --- histories / logs ---
+    pos_arr_in_t: NDArray[np.float32] = eqx.field(static=True)     # (nodes, 2, T)
+    theta_arr_in_t: NDArray[np.float32] = eqx.field(static=True)   # (hinges, T)
+    buckle_in_t: NDArray[np.int32] = eqx.field(static=True)        # (hinges, shims, T)
+    Fx_in_t: NDArray[np.float32] = eqx.field(static=True)          # (T,)
+    Fy_in_t: NDArray[np.float32] = eqx.field(static=True)          # (T,)
+    tip_torque_in_t: NDArray[np.float32] = eqx.field(static=True)  # (T,)
+
     def __init__(self, Variabs: "VariablesClass", Strctr: "StructureClass", Sprvsr: "SupervisorClass",
-                 pos_arr: np.array = None, buckle_arr: np.array = None) -> None:
+                 pos_arr: Optional[np.ndarray] = None, buckle_arr: Optional[np.ndarray] = None) -> None:
 
-        if pos_arr is not None:
-            self.pos_arr = pos_arr
+        # current state
+        if pos_arr is None:
+            self.pos_arr = helpers_builders._initiate_pos(Strctr.hinges).astype(np.float32)
         else:
-            self.pos_arr = helpers_builders._initiate_pos(Strctr.hinges)
-        self.pos_arr_in_t = np.zeros((Strctr.nodes, 2, Sprvsr.T))
+            self.pos_arr = np.asarray(pos_arr, dtype=np.float32)
+        self.pos_arr_in_t = np.zeros((Strctr.nodes, 2, Sprvsr.T), dtype=np.float32)
 
-        if isinstance(Sprvsr.tip_angle_update_in_t, np.ndarray):
-            self.tip_angle_in_t = np.zeros((Sprvsr.T,))
+        self.tip_pos = np.zeros((2,), dtype=np.float32)  # actually saved in SupervisorClass
+        self.tip_angle = 0.0  # actually saved in SupervisorClass
 
-        self.theta_arr = np.zeros((Strctr.hinges,))    # (H,) hinge angles  
-        self.theta_arr_in_t = np.zeros((Strctr.hinges, Sprvsr.T))    # (H,) hinge angles in training time (usually zeros)  
+        self.theta_arr = np.zeros((Strctr.hinges,), dtype=np.float32)    # (H,) hinge angles  
+        self.theta_arr_in_t = np.zeros((Strctr.hinges, Sprvsr.T), dtype=np.float32)    # (H,) hinge angles in training time
 
         if buckle_arr is not None:
             self.buckle_arr = buckle_arr
@@ -89,13 +109,13 @@ class StateClass:
         self.buckle_in_t = np.zeros((Strctr.hinges, Strctr.shims, Sprvsr.T))
 
         self.Fx = 0.0
-        self.Fx_in_t = np.zeros(Sprvsr.T)
+        self.Fx_in_t = np.zeros((Sprvsr.T), dtype=np.float32)
 
         self.Fy = 0.0
-        self.Fy_in_t = np.zeros(Sprvsr.T)
+        self.Fy_in_t = np.zeros((Sprvsr.T), dtype=np.float32)
 
         self.tip_torque = 0.0
-        self.tip_torque_in_t = np.zeros(Sprvsr.T)
+        self.tip_torque_in_t = np.zeros((Sprvsr.T), dtype=np.float32)
 
     # ---------- ingest from EquilibriumClass ----------
 
@@ -103,14 +123,11 @@ class StateClass:
                    t: int,
                    Strctr: "StructureClass",
                    pos_arr: jax.Array = None,
-                   buckle_arr: jax.Array = None,
+                   buckle_arr: NDArray = None,
                    Forces: jax.Array = None,
                    compute_thetas_if_missing: bool = True) -> None:
         """
-        Copy arrays from an EquilibriumClass instance into this StateClass.
-        Expected attributes on Eq:
-          - final_pos : (N,2)
-          - ???
+        Copy arrays from an EquilibriumClass equilibrium solve (JAX) into this (NumPy) state.
 
         If thetas are missing and compute_thetas_if_missing=True, they are computed from traj_pos.
         """
@@ -129,7 +146,7 @@ class StateClass:
             self.buckle_arr = helpers_builders.numpify(helpers_builders._initiate_buckle(Strctr.hinges, Strctr.shims))
         self.buckle_in_t[:, :, t] = self.buckle_arr
 
-        # Force normal on wall
+        # Force normal on wall taken from the last row if provided
         if Forces is not None:
             self.Fx = helpers_builders.numpify(Forces)[-1][-2]
             self.Fy = helpers_builders.numpify(Forces)[-1][-1]
@@ -139,31 +156,36 @@ class StateClass:
         self.Fx_in_t[t] = self.Fx
         self.Fy_in_t[t] = self.Fy
 
-        # thetas
+        # thetas - hinge angles (JAX compute -> NumPy store)
         if compute_thetas_if_missing:
-            thetas = vmap(lambda h: Strctr._get_theta(pos_arr, h))(jnp.arange(Strctr.hinges))
+            # thetas = vmap(lambda h: Strctr._get_theta(pos_arr, h))(jnp.arange(Strctr.hinges))
+            thetas = Strctr.all_hinge_angles(self.pos_arr)  # (H,)
+            # self.theta_arr = np.asarray(jax.device_get(thetas), dtype=np.float32).reshape(-1)
             self.theta_arr = helpers_builders.numpify(thetas).reshape(-1)
-            self.theta_arr_in_t[:, t] = self.theta_arr
         # tip angle measured from -x
-        self.tip_angle = helpers_builders._get_tip_angle(self.pos_arr)
+        self.tip_angle = float(helpers_builders._get_tip_angle(self.pos_arr))
 
-        self.tip_torque = helpers_builders.torque(self.tip_angle, self.Fx, self.Fy)
+        self.tip_torque = float(helpers_builders.torque(self.tip_angle, self.Fx, self.Fy))
         self.tip_torque_in_t[t] = self.tip_torque
 
+    # ---------- commands from Supervisor ----------
     def position_tip(self, Sprvsr: "SupervisorClass", t: int, modality: str = "measurement") -> None:
         if modality == "measurement":
-            self.tip_pos = Sprvsr.tip_pos_in_t[t]
+            self.tip_pos = np.asarray(Sprvsr.tip_pos_in_t[t], dtype=np.float32)
         elif modality == "update":
-            self.tip_pos = Sprvsr.tip_pos_update_in_t[t]
+            self.tip_pos = np.asarray(Sprvsr.tip_pos_update_in_t[t], dtype=np.float32)
+        else:
+            raise ValueError(f"Unknown modality '{modality}'")
 
-        if isinstance(Sprvsr.tip_angle_update_in_t, np.ndarray):
+        if Sprvsr.tip_angle_update_in_t is not None:
             if modality == "measurement":
-                self.tip_angle = Sprvsr.tip_angle_in_t[t]
+                self.tip_angle = float(Sprvsr.tip_angle_in_t[t])
             elif modality == "update":
-                self.tip_angle = Sprvsr.tip_angle_update_in_t[t]
+                self.tip_angle = float(Sprvsr.tip_angle_update_in_t[t])
 
-    def buckle(self, Variabs: "VariablesClass", Strctr: "StructureClass", t, State_measured: "StateClass"):
-        buckle_nxt = np.zeros((Strctr.hinges, Strctr.shims))
+    def buckle(self, Variabs: "VariablesClass", Strctr: "StructureClass", t: int, State_measured: "StateClass"):
+        """Update buckle states based on current hinge angles and thresholds (NumPy)."""
+        buckle_nxt = np.zeros((Strctr.hinges, Strctr.shims), dtype=np.int32)
         for i in range(Strctr.hinges):
             for j in range(Strctr.shims):
                 if self.buckle_arr[i, j] == 1 and self.theta_arr[i] < -Variabs.thresh[i, j]:  # buckle up since thetas are CCwise
@@ -177,4 +199,9 @@ class StateClass:
 
         # buckling is the same also in measurement state
         State_measured.buckle_arr = copy.copy(buckle_nxt)
-        State_measured.buckle_in_t
+        State_measured.buckle_in_t[:, :, t] = State_measured.buckle_arr
+
+    # # ---------- small helper ----------
+    # def _pos_jax(self) -> jax.Array:
+    #     """Return current positions as a JAX array for geometry computations."""
+    #     return jnp.asarray(self.pos_arr, dtype=jnp.float32)
