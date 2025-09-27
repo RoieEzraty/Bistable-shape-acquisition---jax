@@ -68,6 +68,8 @@ class SupervisorClass:
         self.desired_pos_in_t = np.zeros((Strctr.nodes, 2, T), dtype=np.float32)
         self.desired_Fx_in_t = np.zeros((T), dtype=np.float32)
         self.desired_Fy_in_t = np.zeros((T), dtype=np.float32)
+        if control_tip_angle:
+            self.desired_tau_in_t = np.zeros((T), dtype=np.float32)
 
         # Dataset (commands)
         self.tip_pos_in_t = np.zeros((self.T, 2), dtype=np.float32)
