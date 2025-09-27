@@ -25,12 +25,12 @@ class StructureClass(eqx.Module):
     L: float = eqx.field(static=True)  # rest length of rods
 
     # --- computed in __init__ ---
-    edges_arr:  jax.Array = eqx.field(init=False)   # (hinges+1, 2) point indices
-    edges: int = eqx.field(init=False)
-    nodes: int = eqx.field(init=False)
-    n_coords: int = eqx.field(init=False)
-    hinges_arr: jax.Array = eqx.field(init=False)   # (hinges, 2)  edge indices
-    rest_lengths: jax.Array = eqx.field(init=False)  # (H+1,)   floats
+    edges_arr:  jax.Array = eqx.field(init=False, static=True)   # (hinges+1, 2) point indices
+    edges: int = eqx.field(init=False, static=True)
+    nodes: int = eqx.field(init=False, static=True)
+    n_coords: int = eqx.field(init=False, static=True)
+    hinges_arr: jax.Array = eqx.field(init=False, static=True)   # (hinges, 2)  edge indices
+    rest_lengths: jax.Array = eqx.field(init=False, static=True)  # (H+1,)   floats
 
     def __init__(self, hinges: int, shims: int, L: float, rest_lengths:  Optional[jax.Array] = None):
         self.hinges = int(hinges)
