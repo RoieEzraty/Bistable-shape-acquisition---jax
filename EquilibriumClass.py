@@ -115,7 +115,8 @@ class EquilibriumClass(eqx.Module):
         if pos_arr is None:
             self.init_pos = helpers_builders._initiate_pos(Strctr.hinges)  # (N=hinges+2, 2)
         else:
-            self.init_pos = pos_arr
+            self.init_pos = jnp.asarray(pos_arr)
+            
         # each edge's rest length is L, it's fixed and very stiff 
         self.rest_lengths = jnp.full((Strctr.hinges + 1,), Strctr.L, dtype=jnp.float32)
         # straight chain -> 0 resting hinge angles
