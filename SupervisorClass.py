@@ -86,16 +86,28 @@ class SupervisorClass:
         self.loss = np.zeros((3 if self.control_tip_angle else 2,), dtype=np.float32)
 
     def create_dataset(self, Strctr: "StructureClass", sampling: str) -> None:
-        if sampling == 'Uniform':
+        if sampling == 'uniform':
             x_pos_in_t = np.random.uniform((Strctr.edges-1)*Strctr.L, Strctr.edges*Strctr.L, size=self.T)
             y_pos_in_t = np.random.uniform(-Strctr.L/3, Strctr.L/3, size=self.T)
             self.tip_pos_in_t = np.stack(((x_pos_in_t), (y_pos_in_t.T)), axis=1)
             if self.control_tip_angle and self.tip_angle_in_t is not None:
                 self.tip_angle_in_t[:] = np.random.uniform(-np.pi / 5, np.pi / 5, size=self.T).astype(np.float32)
-        elif sampling == 'Flat':
+        elif sampling == 'flat':
             end = float(Strctr.hinges + 2)
             tip_pos = np.array([end, 0], dtype=np.float32)
             self.tip_pos_in_t[:] = np.tile(tip_pos, (self.T, 1))
+            if self.control_tip_angle and self.tip_angle_in_t is not None:
+                self.tip_angle_in_t[:] = 0.0
+        elif sampling == 'almost flat':
+            end = float(Strctr.hinges + 2)
+            tip_pos = np.array([end,  0.0], dtype=np.float32)  # flat arrangement
+
+            # tiny noise around each position (tune scale as you like)
+            noise_scale = 0.2 * Strctr.L
+            noise = noise_scale * np.random.randn(self.T, 2).astype(np.float32)
+
+            self.tip_pos_in_t[:] = tip_pos + noise
+
             if self.control_tip_angle and self.tip_angle_in_t is not None:
                 self.tip_angle_in_t[:] = 0.0
         else:
@@ -109,7 +121,7 @@ class SupervisorClass:
         if self.control_tip_angle and self.desired_tau_in_t is not None and tau is not None:
             self.desired_tau_in_t[t] = float(tau)
 
-    def calc_loss(self, Fx: float, Fy: float, t: int, tau: Optional[float] = None) -> None:
+    def calc_loss(self, t: int, Fx: float, Fy: float, tau: Optional[float] = None) -> None:
         """Compute loss vector (Fx,Fy[,tau]) at step t and log it."""
         if self.control_tip_angle and tau is not None and self.desired_tau_in_t is not None:
             self.loss = np.array(
@@ -144,7 +156,7 @@ class SupervisorClass:
             delta_angle = update_vec[2] if self.control_tip_angle else 0.0
         elif self.update_scheme == 'one_to_one':
             delta_tip = - self.alpha * self.loss[:2]
-            delta_angle = - self.alpha * self.loss[2] if (self.control_tip_angle and self.loss.size == 3) else 0.0
+            delta_angle = + self.alpha * self.loss[2] if (self.control_tip_angle and self.loss.size == 3) else 0.0
         else:
             raise ValueError(f"Unknown update_scheme='{self.update_scheme}'")
 
