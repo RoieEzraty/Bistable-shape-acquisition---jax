@@ -50,7 +50,8 @@ class SupervisorClass:
     # --- running logs / losses ---
     loss_in_t: NDArray[np.float32] = eqx.field(init=False, static=True)            # (T, 2) or (T, 3)
     tip_pos_update_in_t: NDArray[np.float32] = eqx.field(init=False, static=True)  # (T, 2)
-    tip_angle_update_in_t: Optional[NDArray[np.float32]] = eqx.field(default=None, init=False, static=True)  # (T,)
+    tip_angle_update_in_t: Optional[NDArray[np.float32]] = eqx.field(default=None, init=False, 
+                                                                     static=True)  # (T,)
 
     # --- scratch (most recent loss vector) ---
     loss: NDArray[np.float32] = eqx.field(init=False, static=True)                 # (2,) or (3,) 
@@ -58,7 +59,7 @@ class SupervisorClass:
     def __init__(self, Strctr, alpha: float, T: int, desired_buckle_arr: np.ndarray, sampling='Uniform',
                  control_tip_angle: bool = True, update_scheme: str = 'one_to_one') -> None:
         
-        self.T = int(T)  # total training set size (and algorithm time, not to confuse with time to reach equilibrium state)
+        self.T = int(T)  # total training-set size (& algorithm time, not to confuse with time to equilib state)
         self.alpha = float(alpha)
         self.update_scheme = str(update_scheme)
         self.control_tip_angle = bool(control_tip_angle)
@@ -148,13 +149,16 @@ class SupervisorClass:
 
         # --- BEASTAL or one_to_one ---
         if self.update_scheme == 'BEASTAL':
-            grad_loss_vec = learning_funcs.grad_loss_FC(Strctr.NE, inputs_normalized, outputs_normalized, Strctr.DM,
-                                                        Strctr.output_nodes_arr, self.loss)
+            grad_loss_vec = learning_funcs.grad_loss_FC(Strctr.NE, inputs_normalized, outputs_normalized,
+                                                        Strctr.DM, Strctr.output_nodes_arr, self.loss)
 
             update_vec = - self.alpha * np.matmul(Strctr.DM_dagger, grad_loss_vec)
             delta_tip = update_vec[0:2]
             delta_angle = update_vec[2] if self.control_tip_angle else 0.0
         elif self.update_scheme == 'one_to_one':
+            large_angle = np.arctan2(self.tip_pos_int_t[t, 1], self.tip_pos_in_t[t, 0])
+            R = np.sqrt(self.tip_pos_int_t[t, 1]**2 + self.tip_pos_int_t[t, 1]**2)
+            print('Roie, continue from here')
             delta_tip = - self.alpha * self.loss[:2]
             delta_angle = + self.alpha * self.loss[2] if (self.control_tip_angle and self.loss.size == 3) else 0.0
         else:
@@ -163,7 +167,7 @@ class SupervisorClass:
         # insert into tip_pos_update
         if prev_tip_update_pos is None:
             prev_tip_update_pos = self.tip_pos_update_in_t[t-1, :]
-        # delta_tip = self.alpha*(np.array([Fx, Fy]) - current_tip_pos)*(self.loss) * ([2, 0.5])  # old, not BEASTAL
+        # delta_tip = self.alpha*(np.array([Fx, Fy]) - current_tip_pos)*(self.loss) * ([2, 0.5])  # not BEASTAL
         self.tip_pos_update_in_t[t, :] = prev_tip_update_pos + delta_tip
 
         # Angle update (only if enabled)
