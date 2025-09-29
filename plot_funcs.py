@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 from matplotlib import patches
 from matplotlib.animation import FuncAnimation, PillowWriter  # for GIF export
 
-import colors
+import colors, helpers_builders
 
 
 def plot_arm(pos_vec: np.ndarray, buckle: np.array, thetas, L: float,  modality: str, arc_scale: float = 0.2) -> None:
@@ -23,8 +23,9 @@ def plot_arm(pos_vec: np.ndarray, buckle: np.array, thetas, L: float,  modality:
     # convert to NumPy for plotting
     pos = np.asarray(pos_vec)
 
-    # Extract x,y
+    # Extract x, y, theta
     xs, ys = pos[:, 0], pos[:, 1]
+    tip_angle = np.rad2deg(float(helpers_builders._get_tip_angle(pos_vec)))
 
     # ---- figure ----
     plt.figure(figsize=(4, 4))
@@ -42,11 +43,10 @@ def plot_arm(pos_vec: np.ndarray, buckle: np.array, thetas, L: float,  modality:
 
     # --- line of wall --- 
 
-    plt.plot(
-    [xs[-1], xs[-1]],              # vertical line at tip x
-    [ys[-1] + 0.4*L, ys[-1] - 0.4*L],      # short downward segment
-    linestyle=":", color="k", linewidth=3.0
-)
+    plt.plot([xs[-1], xs[-1]],              # vertical line at tip x
+             [ys[-1] + 0.4*L, ys[-1] - 0.4*L],      # short downward segment
+             linestyle=":", color="k", linewidth=3.0
+             )
 
     # ---- draw hinge arcs with buckle-directed orientation ----
     r = arc_scale * float(L)
@@ -85,7 +85,7 @@ def plot_arm(pos_vec: np.ndarray, buckle: np.array, thetas, L: float,  modality:
     plt.ylim(ys.min() - 0.5*L, ys.max() + 0.5*L)
     plt.xlabel("x")
     plt.ylabel("y")
-    plt.title(f"Tip (x, y)=({xs[-1]:.2f}, {ys[-1]:.2f})")
+    plt.title(f"Tip (x, y, theta)=({xs[-1]:.2f}, {ys[-1]:.2f}, {tip_angle:.2f})")
     plt.show()
 
 

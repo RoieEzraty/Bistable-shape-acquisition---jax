@@ -125,7 +125,8 @@ class StateClass:
                    pos_arr: jax.Array = None,
                    buckle_arr: NDArray = None,
                    Forces: jax.Array = None,
-                   compute_thetas_if_missing: bool = True) -> None:
+                   compute_thetas_if_missing: bool = True,
+                   control_tip_angle: bool = True) -> None:
         """
         Copy arrays from an EquilibriumClass equilibrium solve (JAX) into this (NumPy) state.
 
@@ -148,8 +149,12 @@ class StateClass:
 
         # Force normal on wall taken from the last row if provided
         if Forces is not None:
-            self.Fx = helpers_builders.numpify(Forces)[-1][-2]
-            self.Fy = helpers_builders.numpify(Forces)[-1][-1]
+            if control_tip_angle:  # tip is controlled, forces are on one before last node
+                self.Fx = helpers_builders.numpify(Forces)[-1][-4]
+                self.Fy = helpers_builders.numpify(Forces)[-1][-3]
+            else:  # tip is not controlled, forces are on last node
+                self.Fx = helpers_builders.numpify(Forces)[-1][-2]
+                self.Fy = helpers_builders.numpify(Forces)[-1][-1]
         else:
             self.Fx = 0
             self.Fy = 0

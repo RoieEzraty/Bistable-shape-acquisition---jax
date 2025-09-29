@@ -94,18 +94,19 @@ class SupervisorClass:
             if self.control_tip_angle and self.tip_angle_in_t is not None:
                 self.tip_angle_in_t[:] = np.random.uniform(-np.pi / 5, np.pi / 5, size=self.T).astype(np.float32)
         elif sampling == 'flat':
-            end = float(Strctr.hinges + 2)
+            end = float(Strctr.edges)
             tip_pos = np.array([end, 0], dtype=np.float32)
             self.tip_pos_in_t[:] = np.tile(tip_pos, (self.T, 1))
             if self.control_tip_angle and self.tip_angle_in_t is not None:
                 self.tip_angle_in_t[:] = 0.0
         elif sampling == 'almost flat':
-            end = float(Strctr.hinges + 2)
+            end = float(Strctr.edges)
             tip_pos = np.array([end,  0.0], dtype=np.float32)  # flat arrangement
 
             # tiny noise around each position (tune scale as you like)
             noise_scale = 0.2 * Strctr.L
             noise = noise_scale * np.random.randn(self.T, 2).astype(np.float32)
+            noise[:, 0] = -np.abs(noise[:, 0])
 
             self.tip_pos_in_t[:] = tip_pos + noise
 
@@ -156,11 +157,12 @@ class SupervisorClass:
             delta_tip = update_vec[0:2]
             delta_angle = update_vec[2] if self.control_tip_angle else 0.0
         elif self.update_scheme == 'one_to_one':
-            large_angle = np.arctan2(self.tip_pos_int_t[t, 1], self.tip_pos_in_t[t, 0])
-            R = np.sqrt(self.tip_pos_int_t[t, 1]**2 + self.tip_pos_int_t[t, 1]**2)
-            print('Roie, continue from here')
-            delta_tip = - self.alpha * self.loss[:2]
-            delta_angle = + self.alpha * self.loss[2] if (self.control_tip_angle and self.loss.size == 3) else 0.0
+            # large_angle = np.arctan2(self.tip_pos_int_t[t, 1], self.tip_pos_in_t[t, 0])
+            # R = np.sqrt(self.tip_pos_int_t[t, 1]**2 + self.tip_pos_int_t[t, 1]**2)
+
+            delta_tip = + self.alpha * self.loss[:2] / Variabs.norm_pos
+            delta_angle = + self.alpha * self.loss[2] / Variabs.norm_torque if (self.control_tip_angle and 
+                                                                                self.loss.size == 3) else 0.0
         else:
             raise ValueError(f"Unknown update_scheme='{self.update_scheme}'")
 
