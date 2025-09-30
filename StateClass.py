@@ -195,8 +195,10 @@ class StateClass:
             for j in range(Strctr.shims):
                 if self.buckle_arr[i, j] == 1 and self.theta_arr[i] < -Variabs.thresh[i, j]:  # buckle up since thetas are CCwise
                     buckle_nxt[i, j] = -1
+                    print('buckled up, theta=', self.theta_arr[i])
                 elif self.buckle_arr[i, j] == -1 and self.theta_arr[i] > Variabs.thresh[i, j]:  # buckle down, thetas are CCwise
                     buckle_nxt[i, j] = 1
+                    print('buckled down, theta=', self.theta_arr[i])
                 else:
                     buckle_nxt[i, j] = self.buckle_arr[i, j]
         self.buckle_arr = copy.copy(buckle_nxt)
