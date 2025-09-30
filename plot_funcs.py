@@ -167,3 +167,13 @@ def animate_arm(traj_pos, L, frames=10, interval_ms=30, save_path=None, fps=30, 
 
     plt.close(fig)
     return fig, anim
+
+
+# def plot_energies(Variabs: "VariablesClass", Strctr: "StructureClass", pos_in_t: np.array[np.float_], Energy_func, ):
+#     T = np.shape(pos_in_t)[0]
+#     energies = np.zeros(int(T))
+#     for i in range(int(T)):
+#         energies[i], _, _ = Energy_func(Variabs, Strctr, pos_in_t[i])
+        
+#     plt.plot(energies)
+#     plt.yscale('log')

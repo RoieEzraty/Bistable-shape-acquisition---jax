@@ -196,6 +196,17 @@ class EquilibriumClass(eqx.Module):
 
         return final_pos, pos_in_t, vel_in_t, potential_force_evolution
 
+    def calculate_energy_in_t(self, Variabs, Strctr, displacements):
+        T = jnp.shape(displacements)[0]
+        tot_energy_in_t = jnp.zeros(T)
+        rot_energy_in_t = jnp.zeros(T)
+        stretch_energy_in_t = jnp.zeros(T)
+        jax.debug.print('T {}', T)
+        for t in range(T):
+            energs = self.energy(Variabs, Strctr, displacements[t])
+            tot_energy_in_t[t], rot_energy_in_t[t], stretch_energy_in_t[t] = energs[0], energs[1], energs[2]
+        return jnp.array([tot_energy_in_t, rot_energy_in_t, stretch_energy_in_t])
+
     # Helper to map (node, component) -> flat DOF index
     # component: 0 = x, 1 = y
     @staticmethod
