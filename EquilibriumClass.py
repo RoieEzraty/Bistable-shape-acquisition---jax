@@ -227,19 +227,20 @@ class EquilibriumClass(eqx.Module):
         T = thetas[:, None]                 # (H,1)
         TH = Variabs.thetas_ss[:, None]      # (H,1)
         B = self.buckle_arr                     # (H,S)
+        TH_eff = B[:, None] * TH
         
         # spring constant is position dependent
         if Variabs.k_type == 'Numerical':
             stiff_mask = ((B == 1) & (T < TH)) | ((B == -1) & (T > -TH))  # thetas are counter-clockwise    
             k_rot_state = jnp.where(stiff_mask, Variabs.k_stiff, Variabs.k_soft)  # (H,S)
-            rotation_energy = 0.5 * jnp.sum(k_rot_state * (T - TH) ** 2)
+            rotation_energy = 0.5 * jnp.sum(k_rot_state * (T - TH_eff) ** 2)
         elif Variabs.k_type == 'Experimental':
             # k(theta) from the experimental curve; shape (H,)
             # k_theta = Variabs.k(thetas)                     # (H,)
             # k_rot_state = jnp.broadcast_to(k_theta, (Strctr.hinges, Strctr.shims))
             # per-shim effective angle: apply buckle sign to the angle, NOT to k
             theta_eff = B[:, None] * T              # (H,S)
-            theta_ss_eff = B[:, None] * TH
+            
             # theta_eff = T
             # theta_ss_eff = TH
 
@@ -249,11 +250,7 @@ class EquilibriumClass(eqx.Module):
             # jax.debug.print("theta_ss_eff = {}", theta_ss_eff.shape)
 
             # rotation_energy = 0.5 * jnp.sum(k_rot_state * (T - theta_ss_eff) ** 2)
-
-            # measure the error in the SAME signed frame
-            delta = T - theta_ss_eff                # (H,S)
-
-            rotation_energy = 0.5 * jnp.sum(k_rot_state * delta**2)
+            rotation_energy = 0.5 * jnp.sum(k_rot_state * (T - TH_eff)**2)
 
         # E_k = 1/2 * k * delta_theta ** 2
         # rotation_energy = 0.5 * jnp.sum(k_rot_state * (T - B * TH) ** 2)
