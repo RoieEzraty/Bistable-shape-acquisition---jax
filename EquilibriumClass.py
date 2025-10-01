@@ -247,20 +247,13 @@ class EquilibriumClass(eqx.Module):
             rotation_energy = 0.5 * jnp.sum(k_rot_state * (T - TH_eff) ** 2)
         elif Variabs.k_type == 'Experimental':
             # k(theta) from the experimental curve; shape (H,)
-            # k_theta = Variabs.k(thetas)                     # (H,)
-            # k_rot_state = jnp.broadcast_to(k_theta, (Strctr.hinges, Strctr.shims))
             # per-shim effective angle: apply buckle sign to the angle, NOT to k
             theta_eff = B[:, None] * T              # (H,S)
-            
-            # theta_eff = T
-            # theta_ss_eff = TH
-
             # evaluate experimental stiffness per shim
             k_rot_state = Variabs.k(theta_eff)   # (H,S)
+            k_rot_state = jax.lax.stop_gradient(Variabs.k(theta_eff))  # don't take derivative w.r.t k
             # jax.debug.print("k_rot_state shape = {}", k_rot_state.shape)
             # jax.debug.print("theta_ss_eff = {}", theta_ss_eff.shape)
-
-            # rotation_energy = 0.5 * jnp.sum(k_rot_state * (T - theta_ss_eff) ** 2)
             rotation_energy = 0.5 * jnp.sum(k_rot_state * (T - TH_eff)**2)
 
         # E_k = 1/2 * k * delta_theta ** 2
