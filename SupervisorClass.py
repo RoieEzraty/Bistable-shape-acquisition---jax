@@ -104,14 +104,14 @@ class SupervisorClass:
             tip_pos = np.array([end,  0.0], dtype=np.float32)  # flat arrangement
 
             # tiny noise around each position (tune scale as you like)
-            noise_scale = 0.2 * Strctr.L
-            noise = noise_scale * np.random.randn(self.T, 2).astype(np.float32)
-            noise[:, 0] = -np.abs(noise[:, 0])
+            noise_scale = 0.1 * Strctr.L
+            noise_pos = noise_scale * np.random.randn(self.T, 2).astype(np.float32)
+            noise_pos[:, 0] = -np.abs(noise_pos[:, 0])
+            self.tip_pos_in_t[:] = tip_pos + noise_pos
 
-            self.tip_pos_in_t[:] = tip_pos + noise
-
+            noise_angle = noise_scale * np.random.randn(self.T,).astype(np.float32)
             if self.control_tip_angle and self.tip_angle_in_t is not None:
-                self.tip_angle_in_t[:] = 0.0
+                self.tip_angle_in_t[:] = noise_angle
         else:
             raise ValueError(f"Incompatible sampling='{sampling}'")
 
@@ -161,7 +161,7 @@ class SupervisorClass:
             # R = np.sqrt(self.tip_pos_int_t[t, 1]**2 + self.tip_pos_int_t[t, 1]**2)
 
             delta_tip = + self.alpha * self.loss[:2] / Variabs.norm_pos
-            delta_angle = + self.alpha * self.loss[2] / Variabs.norm_torque if (self.control_tip_angle and 
+            delta_angle = - self.alpha * self.loss[2] / Variabs.norm_torque if (self.control_tip_angle and 
                                                                                 self.loss.size == 3) else 0.0
         else:
             raise ValueError(f"Unknown update_scheme='{self.update_scheme}'")
