@@ -83,7 +83,7 @@ def _reshape_state_2_pos_arr(state: jnp.Array[jnp.float_], pos_arr) -> jnp.Array
 
 
 # --- initiate ---
-def _initiate_pos(hinges: int, numpify: bool = False) -> jax.Array:
+def _initiate_pos(nodes: int, L: float, numpify: bool = False) -> jax.Array:
     """
     `(hinges+2, 2)` each pair is (xi, yi) of point i going like [[0, 0], [1, 0], [2, 0], etc]
     
@@ -100,8 +100,8 @@ def _initiate_pos(hinges: int, numpify: bool = False) -> jax.Array:
         Example for hinges=2:
         [[0,0], [1,0], [2,0], [3,0]]
     """
-    x = jnp.arange(hinges + 2, dtype=jnp.float32)
-    pos_arr = jnp.stack([x, jnp.zeros_like(x)], axis=1)
+    flat = L*jnp.arange(nodes, dtype=jnp.float32)
+    pos_arr = jnp.stack([flat, jnp.zeros_like(flat)], axis=1)
     if numpify:
         return numpify(pos_arr)
     else:

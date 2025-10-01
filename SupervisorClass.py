@@ -86,7 +86,8 @@ class SupervisorClass:
         # Last loss vector (shape matches control mode)
         self.loss = np.zeros((3 if self.control_tip_angle else 2,), dtype=np.float32)
 
-    def create_dataset(self, Strctr: "StructureClass", sampling: str) -> None:
+    def create_dataset(self, Strctr: "StructureClass", sampling: str, exp_start: float = None,
+                       distance: float = None) -> None:
         if sampling == 'uniform':
             x_pos_in_t = np.random.uniform((Strctr.edges-1)*Strctr.L, Strctr.edges*Strctr.L, size=self.T)
             y_pos_in_t = np.random.uniform(-Strctr.L/3, Strctr.L/3, size=self.T)
@@ -112,6 +113,15 @@ class SupervisorClass:
             noise_angle = noise_scale * np.random.randn(self.T,).astype(np.float32)
             if self.control_tip_angle and self.tip_angle_in_t is not None:
                 self.tip_angle_in_t[:] = noise_angle
+        elif sampling == 'stress strain':
+            start = 2*Strctr.L + exp_start
+            end = start - distance
+            tip_arr = np.linspace(start, end, self.T, endpoint=False)  # shape (N,)
+            zeros_arr = np.zeros_like(tip_arr)  # shape (N,)
+            self.tip_pos_in_t[:] = np.column_stack((tip_arr, zeros_arr))                   # shape (N, 2)
+
+            if self.control_tip_angle and self.tip_angle_in_t is not None:
+                self.tip_angle_in_t[:] = 0.001
         else:
             raise ValueError(f"Incompatible sampling='{sampling}'")
 

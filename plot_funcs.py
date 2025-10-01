@@ -121,8 +121,8 @@ def animate_arm(traj_pos, L, frames=10, interval_ms=30, save_path=None, fps=30, 
     ax.set_aspect('equal', adjustable='box')
     # ax.set_xlim(x_min, x_max)
     # ax.set_ylim(y_min, y_max)
-    ax.set_xlim([-1, 8])
-    ax.set_ylim([-4.5, 4.5])
+    ax.set_xlim([-L, 8*L])
+    ax.set_ylim([-4.5*L, 4.5*L])
     ax.set_xlabel("x")
     ax.set_ylabel("y")
 

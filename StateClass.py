@@ -91,7 +91,7 @@ class StateClass:
 
         # current state
         if pos_arr is None:
-            self.pos_arr = helpers_builders._initiate_pos(Strctr.hinges).astype(np.float32)
+            self.pos_arr = helpers_builders._initiate_pos(Strctr.edges+1, Strctr.L).astype(np.float32)
         else:
             self.pos_arr = np.asarray(pos_arr, dtype=np.float32)
         self.pos_arr_in_t = np.zeros((Strctr.nodes, 2, Sprvsr.T), dtype=np.float32)
@@ -136,7 +136,7 @@ class StateClass:
         if pos_arr is not None:
             self.pos_arr = helpers_builders.numpify(pos_arr)
         else:
-            pos_arr = helpers_builders._initiate_pos(Strctr.hinges)
+            pos_arr = helpers_builders._initiate_pos(Strctr.edges+1, Strctr.L)
             self.pos_arr = helpers_builders.numpify(pos_arr)
         self.pos_arr_in_t[:, :, t] = self.pos_arr
 

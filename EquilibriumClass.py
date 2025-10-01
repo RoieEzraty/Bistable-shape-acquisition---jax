@@ -113,7 +113,7 @@ class EquilibriumClass(eqx.Module):
             assert self.buckle_arr.shape == (Strctr.hinges, Strctr.shims)
             
         if pos_arr is None:
-            self.init_pos = helpers_builders._initiate_pos(Strctr.hinges)  # (N=hinges+2, 2)
+            self.init_pos = helpers_builders._initiate_pos(Strctr.edges+1, Strctr.L)  # (N=hinges+2, 2)
         else:
             self.init_pos = jnp.asarray(pos_arr)
             
