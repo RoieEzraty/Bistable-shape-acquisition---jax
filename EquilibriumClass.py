@@ -257,6 +257,7 @@ class EquilibriumClass(eqx.Module):
             # jax.debug.print("theta_ss_eff = {}", theta_ss_eff.shape)
             # rotation_energy = 0.5 * jnp.sum(k_rot_state * (T - TH_eff)**2)
             rotation_energy = 0.5 * jnp.sum(k_rot_state * (theta_eff - TH)**2)
+            # jax.debug.print('rotation_energy {}', rotation_energy)
 
         # E_k = 1/2 * k * delta_theta ** 2
         # rotation_energy = 0.5 * jnp.sum(k_rot_state * (T - B * TH) ** 2)
@@ -265,6 +266,9 @@ class EquilibriumClass(eqx.Module):
         # E_stretch = 1/2 * k_stretch * delta_l ** 2
         # stretch of material - should not stretch at all
         stretch_energy = 0.5 * jnp.sum(Variabs.k_stretch * (edges_length - Strctr.rest_lengths) ** 2)
+        # jax.debug.print('stretch_energy {}', stretch_energy)
+        # jax.debug.print('edges_length {}', edges_length)
+        # jax.debug.print('Strctr.rest_lengths {}', Strctr.rest_lengths)
 
         # total
         total_energy = rotation_energy + stretch_energy

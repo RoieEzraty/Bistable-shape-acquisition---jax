@@ -121,7 +121,7 @@ class SupervisorClass:
             self.tip_pos_in_t[:] = np.column_stack((tip_arr, zeros_arr))                   # shape (N, 2)
 
             if self.control_tip_angle and self.tip_angle_in_t is not None:
-                self.tip_angle_in_t[:] = 0.001
+                self.tip_angle_in_t[:] = 0.01
         else:
             raise ValueError(f"Incompatible sampling='{sampling}'")
 

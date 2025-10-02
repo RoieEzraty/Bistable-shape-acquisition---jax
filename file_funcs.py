@@ -1,13 +1,10 @@
 from __future__ import annotations
 
-import time
-import diffrax
-import jax
 import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
 import jax.numpy as jnp
-import equinox as eqx
-from jax import grad, jit, vmap
-from jax.experimental.ode import odeint
+from pathlib import Path
 
 from typing import Tuple, List
 from numpy import array, zeros
@@ -15,7 +12,7 @@ from numpy.typing import NDArray
 from typing import TYPE_CHECKING, Callable, Union, Optional
 
 if TYPE_CHECKING:
-    from StructureClass import StructureClass
+    from SupervisorClass import SupervisorClass
     from VariablesClass import VariablesClass
     from EquilibriumClass import EquilibriumClass
 
@@ -23,6 +20,42 @@ if TYPE_CHECKING:
 # ===================================================
 # file_funcs - functions to assist with file conversions etc.
 # ===================================================
+
+
+def export_stress_strain_sim(Sprvsr: "SupervisorClass", Fx_afo_pos: NDArray[np.float_], L: float, buckle_arr: NDArray[np.int],
+                             filename: str = None) -> None:
+
+    # --- build pandas dataframe ---
+    df = pd.DataFrame({
+        "x_tip": Sprvsr.tip_pos_in_t[:, 0],
+        "y_tip": Sprvsr.tip_pos_in_t[:, 1],
+        "tip_angle_rad": Sprvsr.tip_angle_in_t,
+        "Fx": Fx_afo_pos,
+    })
+
+    filename = f"L={L}_buckle{buckle_arr.reshape(-1)}.csv"  # filename example "L=1_buckle1111.csv"
+    out_path = Path(filename)
+    df.to_csv(out_path, index=False)
+
+
+def import_stress_strain_sim_and_plot(path: str, plot: bool = False) -> df:
+    sim_df = pd.read_csv(path)   # assumes the header row is in the file
+    if plot:
+        plt.plot(sim_df['x_tip'], sim_df['Fx'])
+        plt.xlabel('tip pos')
+        plt.ylabel('Fx')
+        plt.show()
+    return sim_df
+
+
+def import_stress_strain_exp_and_plot(path: str, plot: bool = True) -> None:
+    exp_df = pd.read_csv(path)   # assumes the header row is in the file
+    if plot:
+        plt.plot(exp_df['Position (mm)'], exp_df['Load2 (N)'])
+        plt.xlabel('tip pos')
+        plt.ylabel('Fx')
+        plt.show()
+    return exp_df
 
 
 def build_torque_stiffness_from_file(

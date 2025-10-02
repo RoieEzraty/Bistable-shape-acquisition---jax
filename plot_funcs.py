@@ -169,6 +169,24 @@ def animate_arm(traj_pos, L, frames=10, interval_ms=30, save_path=None, fps=30, 
     return fig, anim
 
 
+def plot_compare_sim_exp_stress_strain(exp_df, sim_df, translate_ratio: float, hinges: int) -> None:
+    
+    font_size = 16
+    # experimental
+    plt.plot(exp_df["Position (mm)"], exp_df["Load2 (N)"], linewidth=3.0)
+
+    # simulation - change to look like experiment
+    sim_tip = (sim_df['x_tip'] - sim_df['x_tip'][0]) / translate_ratio * 2
+    sim_Fx = sim_df['Fx'] * translate_ratio/hinges
+    plt.plot(sim_tip, sim_Fx, '.', markersize=8.0)
+
+    # beautify
+    plt.xlabel('pos [mm]', fontsize=font_size)
+    plt.ylabel('Force [N]', fontsize=font_size)
+    plt.legend(['Experiment', "Simulation"], fontsize=font_size)
+    plt.show()
+
+
 # def plot_energies(Variabs: "VariablesClass", Strctr: "StructureClass", pos_in_t: np.array[np.float_], Energy_func, ):
 #     T = np.shape(pos_in_t)[0]
 #     energies = np.zeros(int(T))
