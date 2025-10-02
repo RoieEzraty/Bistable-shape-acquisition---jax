@@ -32,8 +32,10 @@ def export_stress_strain_sim(Sprvsr: "SupervisorClass", Fx_afo_pos: NDArray[np.f
         "tip_angle_rad": Sprvsr.tip_angle_in_t,
         "Fx": Fx_afo_pos,
     })
-
-    filename = f"L={L}_buckle{buckle_arr.reshape(-1)}.csv"  # filename example "L=1_buckle1111.csv"
+    if filename is not None:
+        pass 
+    else:
+        filename = f"L={L}_buckle{buckle_arr.reshape(-1)}.csv"  # filename example "L=1_buckle1111.csv"
     out_path = Path(filename)
     df.to_csv(out_path, index=False)
 

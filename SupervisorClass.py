@@ -117,11 +117,11 @@ class SupervisorClass:
             start = 2*Strctr.L + exp_start
             end = start - distance
             tip_arr = np.linspace(start, end, self.T, endpoint=False)  # shape (N,)
-            zeros_arr = np.zeros_like(tip_arr)  # shape (N,)
+            zeros_arr = np.zeros_like(tip_arr)-0.015  # shape (N,)
             self.tip_pos_in_t[:] = np.column_stack((tip_arr, zeros_arr))                   # shape (N, 2)
 
             if self.control_tip_angle and self.tip_angle_in_t is not None:
-                self.tip_angle_in_t[:] = 0.01
+                self.tip_angle_in_t[:] = -0.015
         else:
             raise ValueError(f"Incompatible sampling='{sampling}'")
 
