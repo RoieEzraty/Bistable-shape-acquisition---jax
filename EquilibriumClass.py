@@ -341,6 +341,34 @@ class EquilibriumClass(eqx.Module):
         # 7) Return ONLY the free-DOF slice, matching (x_free.shape,)
         return F_internal_full
 
+    @eqx.filter_jit
+    def total_potential_force_from_full_x(self, Variabs, Strctr, x_full):
+        # x_full: (n_coords,) flattened positions ONLY (no velocities)
+        pos_arr = helpers_builders._reshape_state_2_pos_arr(x_full, self.init_pos)
+
+        # --- hinge torques per hinge (H,) ---
+        thetas = jax.vmap(lambda h: Strctr._get_theta(pos_arr, h))(jnp.arange(Strctr.hinges))  # (H,)
+        B = self.buckle_arr                                                # (H,S)
+        theta_eff = B * thetas[:, None]                                    # (H,S)
+        tau_shims = Variabs.torque(theta_eff)                               # (H,S)
+        tau_hinges = jnp.sum(B * tau_shims, axis=1)                        # (H,)
+
+        # --- dense Jacobian (simple, OK for plotting; for scale use local-8DOF approach) ---
+        def theta_jac_of_h(h):
+            def theta_of_x(x_flat):
+                pa = helpers_builders._reshape_state_2_pos_arr(x_flat, self.init_pos)
+                return Strctr._get_theta(pa, h)
+            return jax.jacrev(theta_of_x)(x_full)                           # (n_coords,)
+
+        theta_jacs = jax.vmap(theta_jac_of_h)(jnp.arange(Strctr.hinges))    # (H, n_coords)
+        F_theta_full = (theta_jacs.T @ tau_hinges).reshape(-1)              # (n_coords,)
+
+        # --- stretch forces ---
+        F_stretch_full = self.stretch_forces(Strctr, Variabs, pos_arr)      # (n_coords,)
+
+        # reaction/internal force on DOFs (same sign you use in rhs)
+        return F_theta_full + F_stretch_full                                # (n_coords,)
+
     def potential_force_free(self, Variabs, Strctr, t, x_free, *,
                              free_mask, fixed_mask, fixed_vals, imposed_mask, imposed_vals):
         if self.calc_through_energy:

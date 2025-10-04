@@ -116,12 +116,15 @@ def solve_dynamics(
     state_0_x_dot_free = state_0_x_dot[free_DOFs]
     state_0_free = jnp.concatenate([state_0_x_free, state_0_x_dot_free])
 
-    # if Eq.calc_through_energy:
-    potential_force = grad(lambda x: -Eq.total_potential_energy(Variabs, Strctr, x))
-    # else:
-    #     potential_force = Eq.total_potential_force(Variabs, Strctr, t, x_free, free_mask=free_mask,
-    #                                           fixed_mask=fixed_mask, imposed_mask=imposed_mask,
-    #                                           fixed_vals=fixed_vals, imposed_vals=imposed_vals)
+    # A pure function of x_full -> (n_coords,) with reaction sign.
+    if Eq.calc_through_energy:
+        force_full_fn = eqx.filter_jit(
+            lambda x_full: jax.grad(lambda xf: -Eq.total_potential_energy(Variabs, Strctr, xf))(x_full)
+        )
+    else:
+        force_full_fn = eqx.filter_jit(
+            lambda x_full: Eq.total_potential_force_from_full_x(Variabs, Strctr, x_full)
+        )
 
     @jit
     def rhs(state_free: jax.Array, t: float):
@@ -190,7 +193,7 @@ def solve_dynamics(
 
     # we put the - to have the force as a reaction force
     potential_force_evolution = vmap(
-        lambda x: -potential_force(
+        lambda x: force_full_fn(
             x[:Strctr.n_coords].reshape(Eq.init_pos.shape).flatten()
         )
     )(res)
