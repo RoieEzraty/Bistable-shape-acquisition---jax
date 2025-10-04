@@ -27,8 +27,9 @@ class VariablesClass(eqx.Module):
     k_soft: Optional[NDArray[np.float_]] = eqx.field(default=None, static=True)   # (H, S)
     k_stiff: Optional[NDArray[np.float_]] = eqx.field(default=None, static=True)  # (H, S)
 
-    # k is a callable when using experimental data
+    # k and torque are callables when using experimental data
     k: Optional[Callable[[NDArray[np.float_]], NDArray[np.float_]]] = eqx.field(default=None, static=True)
+    torque: Optional[Callable[[NDArray[np.float_]], NDArray[np.float_]]] = eqx.field(default=None, static=True)
 
     # maximal spring constant for normalizations etc.
     k_max: Optional[float] = eqx.field(default=None, static=True)
@@ -69,10 +70,11 @@ class VariablesClass(eqx.Module):
             self.k_soft = None
             self.k_stiff = None
             thetas, torques, ks, torque_of_theta, k_of_theta = file_funcs.build_torque_stiffness_from_file(
-                file_name, savgol_window=3
+                file_name, savgol_window=9
             )
             self.k_max = float(np.max(ks))
-            self.k = k_of_theta                           # callable -> static
+            self.k = k_of_theta 
+            self.torque = torque_of_theta
             self.k_stretch = np.asarray(stretch_scale * np.max(ks), np.float32)
 
         else:

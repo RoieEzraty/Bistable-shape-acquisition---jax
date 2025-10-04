@@ -91,6 +91,7 @@ class EquilibriumClass(eqx.Module):
     # --- User input ---
     damping_coeff: float  # damping coefficient for right hand side of eqn of motion
     mass: float           # Newtonian mass for right hand side of eqn of motion
+    calc_through_energy: bool  # whether to calculate state through grad of energy or derictly w/forces
 
     # ---- state / derived ----
     rest_lengths: jax.Array                      # (H+1,) edge rest lengths (from initial pos)
@@ -100,7 +101,7 @@ class EquilibriumClass(eqx.Module):
     time_points: jax.Array                       # (T_eq, ) time steps for simulating equilibrium configuration
     
     def __init__(self, Strctr: "StructureClass", T: float, n_steps: int, damping_coeff: float, mass: float,
-                 buckle_arr: jax.Array = None, pos_arr: jax.Array = None):
+                 calc_through_energy: bool = True, buckle_arr: jax.Array = None, pos_arr: jax.Array = None):
         self.damping_coeff = damping_coeff
         self.mass = mass
         self.time_points = jnp.linspace(0, T, n_steps)
@@ -121,6 +122,9 @@ class EquilibriumClass(eqx.Module):
         self.rest_lengths = jnp.full((Strctr.hinges + 1,), Strctr.L, dtype=jnp.float32)
         # straight chain -> 0 resting hinge angles
         self.initial_hinge_angles = jnp.zeros((Strctr.hinges,), dtype=jnp.float32)
+
+        # whether to calculate through grad of energy or through forces
+        self.calc_through_energy = calc_through_energy
 
     def calculate_state(self, Variabs: "VariablesClass", Strctr: "StructureClass", tip_pos: jax.Array = None,
                         tip_angle: jax.float = None):
@@ -170,7 +174,8 @@ class EquilibriumClass(eqx.Module):
                 imposed_DOFs = imposed_DOFs.at[idx_x].set(True).at[idx_y].set(True)
                 # set before tip values for imposed vals
                 before_tip_xy = helpers_builders._get_before_tip(tip_pos=tip_xy,        # from above
-                                                                 tip_angle=jnp.asarray(tip_angle, dtype=self.init_pos.dtype),
+                                                                 tip_angle=jnp.asarray(tip_angle,
+                                                                                       dtype=self.init_pos.dtype),
                                                                  L=Strctr.L,
                                                                  dtype=self.init_pos.dtype)
                 imposed_arr = imposed_arr.at[idx_x].set(before_tip_xy[0]).at[idx_y].set(before_tip_xy[1])
@@ -281,23 +286,102 @@ class EquilibriumClass(eqx.Module):
         return self.energy(Variabs, Strctr, pos_arr)[0]
 
     # EquilibriumClass.py
-    def total_potential_energy_free(self, Variabs: "VariablesClass", Strctr: "StructureClass", t: int, x_free: jax.Array, *,
-                                    free_mask, fixed_mask, imposed_mask, fixed_vals,
+    def total_potential_energy_free(self, Variabs: "VariablesClass", Strctr: "StructureClass", t: int,
+                                    x_free: jax.Array, *, free_mask, fixed_mask, imposed_mask, fixed_vals,
                                     imposed_vals):
         fixed_vals_t = fixed_vals(t)
         imposed_vals_t = imposed_vals(t)
-        x_full = helpers_builders._assemble_full(free_mask, fixed_mask, imposed_mask, x_free, fixed_vals_t, imposed_vals_t)
+        x_full = helpers_builders._assemble_full(free_mask, fixed_mask, imposed_mask, x_free, fixed_vals_t,
+                                                 imposed_vals_t)
         return self.total_potential_energy(Variabs, Strctr, x_full)
 
+    def total_potential_force(self, Variabs, Strctr, t, x_free, *,
+                              free_mask, fixed_mask, fixed_vals, imposed_mask, imposed_vals):
+        # 1) Rebuild full x vector
+        fixed_vals_t   = fixed_vals(t) if callable(fixed_vals) else fixed_vals
+        imposed_vals_t = imposed_vals(t)  # callable by construction above
+        x_full = helpers_builders._assemble_full(
+            free_mask, fixed_mask, imposed_mask,
+            x_free,
+            fixed_vals_t,
+            imposed_vals_t
+        )
+
+        # 2) reshape to (N,2)
+        pos_arr = helpers_builders._reshape_state_2_pos_arr(x_full, self.init_pos)
+
+        # 3) Hinge torques: tau_hinges (H,)
+        # thetas: (H,)
+        thetas = jax.vmap(lambda h: Strctr._get_theta(pos_arr, h))(jnp.arange(Strctr.hinges))  # (H,)
+        B      = self.buckle_arr                             # (H,S)
+        theta_eff = B * thetas[:, None]                    # (H,S)
+        # spline torque per shim
+        tau_shims = Variabs.torque(theta_eff)              # (H,S)
+        # signed + summed per hinge
+        tau_hinges = jnp.sum(B * tau_shims, axis=1)        # (H,)
+
+        # 4) J_theta for each hinge: (H, n_coords)
+        def theta_jac_of_h(h):
+            def theta_of_x(x_flat):
+                pa = x_flat.reshape(pos_arr.shape)
+                return Strctr._get_theta(pa, h)
+            return jax.jacrev(theta_of_x)(x_full[:Strctr.n_coords])  # (n_coords,)
+
+        theta_jacs = jax.vmap(theta_jac_of_h)(jnp.arange(Strctr.hinges))  # (H, n_coords)
+
+        # Map torques to DOF forces
+        F_theta_full = (theta_jacs.T @ tau_hinges).reshape(-1)            # (n_coords,)
+
+        # 5) Edge stretch forces
+        F_stretch_full = self.stretch_forces(Strctr, Variabs, pos_arr)         # (n_coords,)
+
+        # 6) Combine internal forces (reaction)
+        F_internal_full = F_theta_full + F_stretch_full                   # (n_coords,)
+
+        # 7) Return ONLY the free-DOF slice, matching (x_free.shape,)
+        return F_internal_full
+
     def potential_force_free(self, Variabs, Strctr, t, x_free, *,
-                             free_mask, fixed_mask, fixed_vals, imposed_mask,
-                             imposed_vals):
-        return jax.grad(
-            lambda xf: -self.total_potential_energy_free(
-                Variabs, Strctr, t, xf,
-                free_mask=free_mask, fixed_mask=fixed_mask, imposed_mask=imposed_mask, fixed_vals=fixed_vals,
-                imposed_vals=imposed_vals)
-        )(x_free)
+                             free_mask, fixed_mask, fixed_vals, imposed_mask, imposed_vals):
+        if self.calc_through_energy:
+            return jax.grad(
+                lambda xf: -self.total_potential_energy_free(
+                    Variabs, Strctr, t, xf,
+                    free_mask=free_mask, fixed_mask=fixed_mask, imposed_mask=imposed_mask, fixed_vals=fixed_vals,
+                    imposed_vals=imposed_vals)
+            )(x_free)
+        else:  # no grad of energy, directly through forces instead
+            return self.total_potential_force(Variabs, Strctr, t, x_free, free_mask=free_mask,
+                                              fixed_mask=fixed_mask, imposed_mask=imposed_mask,
+                                              fixed_vals=fixed_vals, imposed_vals=imposed_vals)[free_mask]
+            
+    def stretch_forces(self, Strctr, Variabs, pos_arr):
+        # pos_arr: (N, 2)
+        # Strctr.edge_list: (E, 2) with node indices (ia, ib)
+        # Strctr.rest_lengths: (E,)
+        # Variabs.k_stretch: scalar or (E,)
+        edges = Strctr.edges_arr             # (E,2)
+        pa = pos_arr[edges[:, 0], :]          # (E,2)
+        pb = pos_arr[edges[:, 1], :]          # (E,2)
+        d  = pb - pa                          # (E,2)
+        l  = jnp.linalg.norm(d, axis=1)       # (E,)
+        # Avoid divide-by-zero in early steps
+        l_safe = jnp.where(l > 1e-12, l, 1e-12)
+        dl = l - Strctr.rest_lengths          # (E,)
+
+        k = Variabs.k_stretch
+        if k.ndim == 0:
+            k = jnp.full_like(dl, k)
+        # force magnitude along edge direction
+        fmag = k * dl / l_safe                 # (E,)
+        fvec = (fmag[:, None]) * d             # (E,2)
+
+        # accumulate to node forces
+        N = pos_arr.shape[0]
+        F = jnp.zeros_like(pos_arr)           # (N,2)
+        F = F.at[edges[:, 0], :].add(-fvec)   # a gets negative
+        F = F.at[edges[:, 1], :].add(+fvec)   # b gets positive
+        return F.reshape(-1)                  # (n_coords,)
 
     def force_function_free(self,
                             t: float,

@@ -116,7 +116,12 @@ def solve_dynamics(
     state_0_x_dot_free = state_0_x_dot[free_DOFs]
     state_0_free = jnp.concatenate([state_0_x_free, state_0_x_dot_free])
 
+    # if Eq.calc_through_energy:
     potential_force = grad(lambda x: -Eq.total_potential_energy(Variabs, Strctr, x))
+    # else:
+    #     potential_force = Eq.total_potential_force(Variabs, Strctr, t, x_free, free_mask=free_mask,
+    #                                           fixed_mask=fixed_mask, imposed_mask=imposed_mask,
+    #                                           fixed_vals=fixed_vals, imposed_vals=imposed_vals)
 
     @jit
     def rhs(state_free: jax.Array, t: float):
