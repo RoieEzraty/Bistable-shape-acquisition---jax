@@ -69,7 +69,7 @@ class VariablesClass(eqx.Module):
             self.k_soft = None
             self.k_stiff = None
             thetas, torques, ks, torque_of_theta, k_of_theta = file_funcs.build_torque_stiffness_from_file(
-                file_name, savgol_window=9
+                file_name, savgol_window=3
             )
             self.k_max = float(np.max(ks))
             self.k = k_of_theta                           # callable -> static
