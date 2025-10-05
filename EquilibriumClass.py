@@ -149,7 +149,6 @@ class EquilibriumClass(eqx.Module):
         # fixed_vals = self.init_pos.reshape((-1,))  # (n_coords,)
         fixed_vals = jnp.zeros((n_coords,), dtype=float)
         fixed_vals = fixed_vals.at[fixed_DOFs].set(self.init_pos.reshape((-1))[fixed_DOFs])
-        jax.debug.print('fixed_vals {}', fixed_vals)
 
         # Build a callable (always), even if mask is all False.
         base_vec = fixed_vals  # start from initial positions

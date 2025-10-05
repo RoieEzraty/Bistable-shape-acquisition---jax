@@ -5,6 +5,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import jax.numpy as jnp
 from pathlib import Path
+from scipy.signal import savgol_filter
 
 from typing import Tuple, List
 from numpy import array, zeros
@@ -107,7 +108,6 @@ def build_torque_stiffness_from_file(
     # optional light smoothing of k (pure NumPy, outside JAX)
     if savgol_window is not None and savgol_window > 2 and savgol_window % 2 == 1:
         try:
-            from scipy.signal import savgol_filter
             k = savgol_filter(k, window_length=savgol_window, polyorder=4, mode="interp")
         except Exception:
             print('SciPy isnt available, just skip smoothing')

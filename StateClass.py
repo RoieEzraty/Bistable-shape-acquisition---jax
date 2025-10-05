@@ -150,8 +150,8 @@ class StateClass:
         # Force normal on wall taken from the last row if provided
         if Forces is not None:
             if control_tip_angle:  # tip is controlled, forces are on one before last node
-                self.Fx = helpers_builders.numpify(Forces)[-1][-4]
-                self.Fy = helpers_builders.numpify(Forces)[-1][-3]
+                self.Fx = helpers_builders.numpify(Forces)[-1][-4] + helpers_builders.numpify(Forces)[-1][-2]
+                self.Fy = helpers_builders.numpify(Forces)[-1][-3] + helpers_builders.numpify(Forces)[-1][-1]
             else:  # tip is not controlled, forces are on last node
                 self.Fx = helpers_builders.numpify(Forces)[-1][-2]
                 self.Fy = helpers_builders.numpify(Forces)[-1][-1]
@@ -193,7 +193,7 @@ class StateClass:
         buckle_nxt = np.zeros((Strctr.hinges, Strctr.shims), dtype=np.int32)
         for i in range(Strctr.hinges):
             for j in range(Strctr.shims):
-                if self.buckle_arr[i, j] == 1 and self.theta_arr[i] < -Variabs.thresh[i, j]:  # buckle up since thetas are CCwise
+                if self.buckle_arr[i, j] == 1 and self.theta_arr[i] < -Variabs.thresh[i, j]:  # buckle up, thetas are CCwise
                     buckle_nxt[i, j] = -1
                     print('buckled up, theta=', self.theta_arr[i])
                 elif self.buckle_arr[i, j] == -1 and self.theta_arr[i] > Variabs.thresh[i, j]:  # buckle down, thetas are CCwise
