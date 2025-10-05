@@ -35,6 +35,7 @@ class SupervisorClass:
     alpha: float = eqx.field(static=True)                   # step size
     update_scheme: str = eqx.field(static=True)             # "one_to_one" | "BEASTAL"
     control_tip_angle: bool = eqx.field(static=True)
+    control_first_edge: bool = eqx.field(static=True)
 
     # --- desired targets (fixed-size buffers; NumPy, mutable at runtime) ---
     desired_buckle_arr: NDArray[np.int32] = eqx.field(static=True)
@@ -57,12 +58,14 @@ class SupervisorClass:
     loss: NDArray[np.float32] = eqx.field(init=False, static=True)                 # (2,) or (3,) 
 
     def __init__(self, Strctr, alpha: float, T: int, desired_buckle_arr: np.ndarray, sampling='Uniform',
-                 control_tip_angle: bool = True, update_scheme: str = 'one_to_one') -> None:
+                 control_tip_angle: bool = True, control_first_edge: bool = True,
+                 update_scheme: str = 'one_to_one') -> None:
         
         self.T = int(T)  # total training-set size (& algorithm time, not to confuse with time to equilib state)
         self.alpha = float(alpha)
         self.update_scheme = str(update_scheme)
         self.control_tip_angle = bool(control_tip_angle)
+        self.control_first_edge = bool(control_first_edge)  # if true, fix nodes (0, 1), else fix only node (0)
 
         # Desired/targets
         self.desired_buckle_arr = np.asarray(desired_buckle_arr, dtype=np.int32)

@@ -140,11 +140,11 @@ def solve_dynamics(
             imposed_mask=imposed_DOFs,
             imposed_vals=imposed_vals
         )
-        jax.debug.print('f_pot={}', f_pot)
-        jax.debug.print('f_ext={}', f_ext)
-        jax.debug.print('damping * xdot_free={}', damping * xdot_free)
+        # jax.debug.print('f_pot={}', f_pot)
+        # jax.debug.print('f_ext={}', f_ext)
+        # jax.debug.print('damping * xdot_free={}', damping * xdot_free)
         accel = (f_ext + f_pot - damping * xdot_free) / mass
-        jax.debug.print('accel={}', accel)
+        # jax.debug.print('accel={}', accel)
         return jnp.concatenate([xdot_free, accel], axis=0)
 
     @jit
