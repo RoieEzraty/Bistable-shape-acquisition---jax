@@ -94,25 +94,38 @@ class StructureClass(eqx.Module):
         # return jax.vmap(lambda h: self._get_theta(pos, h))(jnp.arange(self.hinges))
      
     # --- jax geometry ---         
+    def _normalize(self, v, eps=1e-9):
+        n = jnp.linalg.norm(v)
+        n_safe = jnp.maximum(n, eps)
+        return v / n_safe
+
+    def _angle_from_uv(self, u, v):
+        un = self._normalize(u)
+        vn = self._normalize(v)
+        dot   = jnp.clip(jnp.dot(un, vn), -1.0, 1.0)  # not strictly needed for atan2, but helps near ±1
+        cross = un[0]*vn[1] - un[1]*vn[0]
+        return jnp.arctan2(cross, dot)
+
     def _get_theta(self, pos_arr: jax.Array, hinge: int) -> jax.Array:
         """Angle at a hinge (radians), CCW positive."""
         edges = jnp.asarray(self.edges_arr)
         hinges = jnp.asarray(self.hinges_arr)
-        e0, e1 = hinges[hinge]
-        i0, i1 = edges[e0]
-        j0, j1 = edges[e1]
+        e0, e1  = hinges[hinge]
+        i0, i1  = edges[e0]
+        j0, j1  = edges[e1]
         u = pos_arr[i1] - pos_arr[i0]
         v = pos_arr[j1] - pos_arr[j0]
-        dot = jnp.dot(u, v)
-        cross = u[0] * v[1] - u[1] * v[0]
-        return jnp.arctan2(cross, dot)            # shape: ()
-        # fourpoints = pos_arr[self.edges_arr[self.hinges_arr[hinge]]]  # (2,2,2) coords for each edge's endpoints
-        # vecs = fourpoints[:, 1, :] - fourpoints[:, 0, :]   # (2,2)
-        # u, v = vecs[:-1], vecs[1:]
-        # dot = jnp.sum(u * v, axis=-1)
-        # cross_z = u[..., 0] * v[..., 1] - u[..., 1] * v[..., 0]  # scalar z of 2D cross
-        # theta = jnp.arctan2(cross_z, dot)         # signed angle from u -> v        
-        # return theta
+        return self._angle_from_uv(u, v)
+        # edges = jnp.asarray(self.edges_arr)
+        # hinges = jnp.asarray(self.hinges_arr)
+        # e0, e1 = hinges[hinge]
+        # i0, i1 = edges[e0]
+        # j0, j1 = edges[e1]
+        # u = pos_arr[i1] - pos_arr[i0]
+        # v = pos_arr[j1] - pos_arr[j0]
+        # dot = jnp.dot(u, v)
+        # cross = u[0] * v[1] - u[1] * v[0]
+        # return jnp.arctan2(cross, dot)            # shape: ()
 
     def _get_edge_length(self, pos_arr: jax.Array, edge: int) -> jax.Array:
         """Length of one edge given current positions pos: (Npoints,2) float."""

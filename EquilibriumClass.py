@@ -316,7 +316,7 @@ class EquilibriumClass(eqx.Module):
         B      = self.buckle_arr                             # (H,S)
         theta_eff = B * thetas[:, None]                    # (H,S)
         # spline torque per shim
-        tau_shims = Variabs.torque(theta_eff)              # (H,S)
+        tau_shims = -Variabs.torque(theta_eff)              # (H,S)
         # signed + summed per hinge
         tau_hinges = jnp.sum(B * tau_shims, axis=1)        # (H,)
 
@@ -338,6 +338,9 @@ class EquilibriumClass(eqx.Module):
         # 6) Combine internal forces (reaction)
         F_internal_full = F_theta_full + F_stretch_full                   # (n_coords,)
 
+        # jax.debug.print('F_theta_full {}', F_theta_full)
+        # jax.debug.print('F_stretch_full {}', F_stretch_full)
+
         # 7) Return ONLY the free-DOF slice, matching (x_free.shape,)
         return F_internal_full
 
@@ -350,7 +353,7 @@ class EquilibriumClass(eqx.Module):
         thetas = jax.vmap(lambda h: Strctr._get_theta(pos_arr, h))(jnp.arange(Strctr.hinges))  # (H,)
         B = self.buckle_arr                                                # (H,S)
         theta_eff = B * thetas[:, None]                                    # (H,S)
-        tau_shims = Variabs.torque(theta_eff)                               # (H,S)
+        tau_shims = -Variabs.torque(theta_eff)                               # (H,S)
         tau_hinges = jnp.sum(B * tau_shims, axis=1)                        # (H,)
 
         # --- dense Jacobian (simple, OK for plotting; for scale use local-8DOF approach) ---
@@ -365,6 +368,9 @@ class EquilibriumClass(eqx.Module):
 
         # --- stretch forces ---
         F_stretch_full = self.stretch_forces(Strctr, Variabs, pos_arr)      # (n_coords,)
+
+        # jax.debug.print('F_theta_full {}', F_theta_full)
+        # jax.debug.print('F_stretch_full {}', F_stretch_full)
 
         # reaction/internal force on DOFs (same sign you use in rhs)
         return F_theta_full + F_stretch_full                                # (n_coords,)
@@ -407,8 +413,8 @@ class EquilibriumClass(eqx.Module):
         # accumulate to node forces
         N = pos_arr.shape[0]
         F = jnp.zeros_like(pos_arr)           # (N,2)
-        F = F.at[edges[:, 0], :].add(-fvec)   # a gets negative
-        F = F.at[edges[:, 1], :].add(+fvec)   # b gets positive
+        F = F.at[edges[:, 0], :].add(+fvec)
+        F = F.at[edges[:, 1], :].add(-fvec)
         return F.reshape(-1)                  # (n_coords,)
 
     def force_function_free(self,
@@ -418,3 +424,40 @@ class EquilibriumClass(eqx.Module):
                             free_mask: jax.Array) -> jax.Array:
         """External force restricted to free DOFs."""
         return force_function(t)[free_mask]
+
+    def check_force_sign(self, Variabs, Strctr, x_full, free_mask=None, eps=1e-9):
+        """
+        Compares F_direct (your torque+stretch implementation) to F_grad (restoring force from energy).
+        Returns useful scalar diagnostics. If free_mask is provided, the comparison is done on free DOFs only.
+        """
+        # Restoring force from energy: F_grad = -∇U
+        U = lambda x: self.total_potential_energy(Variabs, Strctr, x)
+        F_grad_full = jax.grad(lambda xf: -U(xf))(x_full)
+
+        # Your direct internal force (same sign convention used in rhs)
+        F_direct_full = self.total_potential_force_from_full_x(Variabs, Strctr, x_full)
+
+        if free_mask is not None:
+            Fg = F_grad_full[free_mask]
+            Fd = F_direct_full[free_mask]
+        else:
+            Fg = F_grad_full
+            Fd = F_direct_full
+
+        n_g = jnp.linalg.norm(Fg)
+        n_d = jnp.linalg.norm(Fd)
+        dot = jnp.dot(Fd, Fg)
+        cos = dot / (jnp.maximum(n_g * n_d, eps))
+        rel_l2_err = jnp.linalg.norm(Fd - Fg) / jnp.maximum(n_g, eps)
+        angle_deg = jnp.degrees(jnp.arccos(jnp.clip(cos, -1.0, 1.0)))
+        max_abs_diff = jnp.max(jnp.abs(Fd - Fg))
+
+        return {
+            "norm_F_grad": n_g,
+            "norm_F_direct": n_d,
+            "dot(F_direct, F_grad)": dot,
+            "cosine_similarity": cos,       # ~1.0 when aligned
+            "angle_deg": angle_deg,         # ~0° when aligned
+            "rel_L2_err_vs_grad": rel_l2_err,
+            "max_abs_diff": max_abs_diff,
+        }

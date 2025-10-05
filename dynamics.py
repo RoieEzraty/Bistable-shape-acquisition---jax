@@ -18,6 +18,8 @@ if TYPE_CHECKING:
     from VariablesClass import VariablesClass
     from EqClass import EqClass
 
+import helpers_builders
+
 
 # ===================================================
 # Dynamics - Solve shape under displacement forcing
@@ -138,7 +140,11 @@ def solve_dynamics(
             imposed_mask=imposed_DOFs,
             imposed_vals=imposed_vals
         )
+        jax.debug.print('f_pot={}', f_pot)
+        jax.debug.print('f_ext={}', f_ext)
+        jax.debug.print('damping * xdot_free={}', damping * xdot_free)
         accel = (f_ext + f_pot - damping * xdot_free) / mass
+        jax.debug.print('accel={}', accel)
         return jnp.concatenate([xdot_free, accel], axis=0)
 
     @jit
@@ -190,6 +196,14 @@ def solve_dynamics(
         )
     )
     # .block_until_ready()
+
+    # x_full = helpers_builders._assemble_full(free_DOFs, fixed_DOFs, imposed_DOFs, res_free,
+    #                                          fixed_vals(time_points[0]), imposed_vals(time_points[0]))
+    # for i, x_full in enumerate(res[:, :Strctr.n_coords]):
+    #     err_dict = Eq.check_force_sign(Variabs, Strctr, x_full)
+    #     jax.debug.print('cos sim {}', err_dict["cosine_similarity"])
+    #     err_dict_free = Eq.check_force_sign(Variabs, Strctr, x_full, free_mask=pos_mask)
+    #     jax.debug.print('cos sim free {}', err_dict_free["cosine_similarity"])
 
     # we put the - to have the force as a reaction force
     potential_force_evolution = vmap(
