@@ -183,11 +183,11 @@ def plot_compare_sim_exp_stress_strain(exp_df, sim_df, translate_ratio: float, h
     # simulation - change to look like experiment
     sim_tip = (sim_df['x_tip'] - sim_df['x_tip'][0]) / translate_ratio * 2.6
     # sim_Fx = sim_df['Fx'] * translate_ratio/hinges
-    sim_Fx = sim_df['Fx']
+    sim_Fx = -sim_df['Fx'] * 0.045
     plt.plot(sim_tip, sim_Fx, '.', markersize=8.0)
 
     # beautify
-    plt.ylim([-0.05, 0.05])
+    plt.ylim([-1.2, 0.15])
     plt.xlabel('pos [mm]', fontsize=font_size)
     plt.ylabel('Force [N]', fontsize=font_size)
     plt.legend(['Experiment', "Simulation"], fontsize=font_size)

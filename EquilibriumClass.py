@@ -320,7 +320,8 @@ class EquilibriumClass(eqx.Module):
         # torque per shim
         tau_shims = - Variabs.torque(theta_eff)  # (H,S)
         # signed + summed per hinge
-        tau_hinges = jnp.sum(B * tau_shims, axis=1)  # (H,)
+        exp_L = 1
+        tau_hinges = jnp.sum(B * tau_shims, axis=1)/Strctr.L*exp_L  # (H,)
 
         # 3) Jacobian of theta for each hinge: (H, n_coords)
         def theta_jac_of_h(h):
@@ -331,11 +332,12 @@ class EquilibriumClass(eqx.Module):
         theta_jacs = jax.vmap(theta_jac_of_h)(jnp.arange(Strctr.hinges))  # (H, n_coords)
 
         # 4) Map torques to DOF forces
-        F_theta_full = (theta_jacs.T @ tau_hinges).reshape(-1)            # (n_coords,)
+        # F_theta_full = (theta_jacs.T @ tau_hinges).reshape(-1) / Strctr.L  # (n_coords,)
+        F_theta_full = (theta_jacs.T @ tau_hinges).reshape(-1)  # (n_coords,)
         # 5) Edge stretch forces
-        F_stretch_full = self.stretch_forces(Strctr, Variabs, pos_arr)         # (n_coords,)
+        F_stretch_full = self.stretch_forces(Strctr, Variabs, pos_arr)  # (n_coords,)
         # Combine internal forces (reaction)
-        F_internal_full = F_theta_full + F_stretch_full                   # (n_coords,)
+        F_internal_full = F_theta_full + F_stretch_full  # (n_coords,)
 
         # jax.debug.print('F_theta_full {}', F_theta_full)
         # jax.debug.print('F_stretch_full {}', F_stretch_full)
@@ -376,7 +378,8 @@ class EquilibriumClass(eqx.Module):
         B = self.buckle_arr  # (H,S)
         theta_eff = B * thetas[:, None]  # (H,S)
         tau_shims = -Variabs.torque(theta_eff)  # (H,S)
-        tau_hinges = jnp.sum(B * tau_shims, axis=1)  # (H,)
+        exp_L = 1
+        tau_hinges = jnp.sum(B * tau_shims, axis=1)/Strctr.L*exp_L  # (H,)
 
         # --- dense Jacobian (simple, OK for plotting; for scale use local-8DOF approach) ---
         def theta_jac_of_h(h):

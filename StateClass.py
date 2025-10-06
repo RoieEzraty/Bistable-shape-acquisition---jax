@@ -173,6 +173,8 @@ class StateClass:
         self.tip_torque = float(helpers_builders.torque(self.tip_angle, self.Fx, self.Fy))
         self.tip_torque_in_t[t] = self.tip_torque
 
+        self.edge_lengths = Strctr.all_edge_lengths(self.pos_arr)
+
     # ---------- commands from Supervisor ----------
     def position_tip(self, Sprvsr: "SupervisorClass", t: int, modality: str = "measurement") -> None:
         if modality == "measurement":
