@@ -59,8 +59,6 @@ class StateClass:
     _save_data(t, Strctr, pos_arr=None, buckle_arr=None, compute_thetas_if_missing=True)
         Copy arrays from an `EquilibriumClass` instance (or raw data) 
         into this state. Updates positions, buckle states, and hinge angles.
-    position_tip(Sprvsr, t)
-        Store the current supervised tip position at time `t` from training dataset.
     buckle(Variabs, Strctr, t)
         Update hinge buckle states based on current hinge angles 
         and threshold values. Buckle transitions occur when:
@@ -72,8 +70,6 @@ class StateClass:
     pos_arr: NDArray[np.float32] = eqx.field(static=True)          # (nodes, 2)
     theta_arr: NDArray[np.float32] = eqx.field(static=True)        # (hinges,)
     buckle_arr: NDArray[np.int32] = eqx.field(static=True)         # (hinges, shims)
-    tip_pos: NDArray[np.float32] = eqx.field(static=True)          # (2,)
-    tip_angle: float = eqx.field(static=True)
     Fx: float = eqx.field(static=True)
     Fy: float = eqx.field(static=True)
     tip_torque: float = eqx.field(static=True)
@@ -95,9 +91,6 @@ class StateClass:
         else:
             self.pos_arr = np.asarray(pos_arr, dtype=np.float32)
         self.pos_arr_in_t = np.zeros((Strctr.nodes, 2, Sprvsr.T), dtype=np.float32)
-
-        self.tip_pos = np.zeros((2,), dtype=np.float32)  # actually saved in SupervisorClass
-        self.tip_angle = 0.0  # actually saved in SupervisorClass
 
         self.theta_arr = np.zeros((Strctr.hinges,), dtype=np.float32)    # (H,) hinge angles  
         self.theta_arr_in_t = np.zeros((Strctr.hinges, Sprvsr.T), dtype=np.float32)    # (H,) hinge angles in training time
@@ -174,21 +167,6 @@ class StateClass:
         self.tip_torque_in_t[t] = self.tip_torque
 
         self.edge_lengths = Strctr.all_edge_lengths(self.pos_arr)
-
-    # ---------- commands from Supervisor ----------
-    def position_tip(self, Sprvsr: "SupervisorClass", t: int, modality: str = "measurement") -> None:
-        if modality == "measurement":
-            self.tip_pos = np.asarray(Sprvsr.tip_pos_in_t[t], dtype=np.float32)
-        elif modality == "update":
-            self.tip_pos = np.asarray(Sprvsr.tip_pos_update_in_t[t], dtype=np.float32)
-        else:
-            raise ValueError(f"Unknown modality '{modality}'")
-
-        if Sprvsr.tip_angle_update_in_t is not None:
-            if modality == "measurement":
-                self.tip_angle = float(Sprvsr.tip_angle_in_t[t])
-            elif modality == "update":
-                self.tip_angle = float(Sprvsr.tip_angle_update_in_t[t])
 
     def buckle(self, Variabs: "VariablesClass", Strctr: "StructureClass", t: int, State_measured: "StateClass"):
         """Update buckle states based on current hinge angles and thresholds (NumPy)."""
