@@ -205,6 +205,12 @@ class EquilibriumClass(eqx.Module):
             imposed_vals=imposed_vals,
         )
 
+        # split to components if you want:
+        F_stretch = self.stretch_forces(Strctr, Variabs, final_pos)           # (n_coords,)
+        print('stretch force', F_stretch)
+        F_theta   = potential_force_evolution[-1] - F_stretch               # (n_coords,)
+        print('bend force', F_theta)
+
         return final_pos, pos_in_t, vel_in_t, potential_force_evolution
 
     # Helper to map (node, component) -> flat DOF index

@@ -188,3 +188,15 @@ class StateClass:
         State_measured.buckle_arr = copy.copy(buckle_nxt)
         State_measured.buckle_in_t[:, :, t] = State_measured.buckle_arr
 
+    def stretch_energy(self, Variabs: "VariablesClass", Strctr: "StructureClass") -> NDArray:
+        """
+        stretch energy per edge
+        """
+        return Variabs.k_stretch*(Strctr.all_edge_lengths(self.pos_arr) - Strctr.rest_lengths)**2
+
+    def bending_energy(self, Variabs: "VariablesClass", Strctr: "StructureClass") -> NDArray:
+        """
+        bending energy per hinge
+        """
+        return Variabs.torque(self.theta_arr)*(self.theta_arr - self.buckle_arr * Variabs.thetas_ss)
+
