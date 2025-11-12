@@ -160,10 +160,10 @@ class StateClass:
             thetas = Strctr.all_hinge_angles(self.pos_arr)  # (H,)
             # self.theta_arr = np.asarray(jax.device_get(thetas), dtype=np.float32).reshape(-1)
             self.theta_arr = helpers_builders.numpify(thetas).reshape(-1)
+        
         # tip angle measured from -x
-        self.tip_angle = float(helpers_builders._get_tip_angle(self.pos_arr))
-
-        self.tip_torque = float(helpers_builders.torque(self.tip_angle, self.Fx, self.Fy))
+        tip_angle = float(helpers_builders._get_tip_angle(self.pos_arr))
+        self.tip_torque = float(helpers_builders.torque(tip_angle, self.Fx, self.Fy))
         self.tip_torque_in_t[t] = self.tip_torque
 
         self.edge_lengths = Strctr.all_edge_lengths(self.pos_arr)
@@ -188,7 +188,3 @@ class StateClass:
         State_measured.buckle_arr = copy.copy(buckle_nxt)
         State_measured.buckle_in_t[:, :, t] = State_measured.buckle_arr
 
-    # # ---------- small helper ----------
-    # def _pos_jax(self) -> jax.Array:
-    #     """Return current positions as a JAX array for geometry computations."""
-    #     return jnp.asarray(self.pos_arr, dtype=jnp.float32)
