@@ -37,7 +37,6 @@ def solve_dynamics(
     imposed_DOFs: jax.Array[bool] = None,
     imposed_vals: jax.Array[jnp.float_] = None,  # function of time
     # simulation parameters
-    damping: float = 0.1,
     rtol: float = 1e-2,
     maxsteps: int = 100,
 ):
@@ -46,6 +45,7 @@ def solve_dynamics(
     time_points = Eq.time_points
     damping = Eq.damping_coeff
     mass = Eq.mass
+    tolerance = Eq.tolerance
 
     # print(state_0.shape)
     if force_function is None:
@@ -157,7 +157,7 @@ def solve_dynamics(
         rhs,
         state_0_free,
         time_points,
-        rtol=rtol,
+        rtol=tolerance,
         mxstep=maxsteps,
     )
 

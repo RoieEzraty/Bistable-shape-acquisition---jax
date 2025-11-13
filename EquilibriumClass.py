@@ -48,8 +48,6 @@ class EquilibriumClass(eqx.Module):
     ----------
     T: float              
         End time for simulation of equilibrium state
-    n_steps
-        Number of steps per simulation of equilibrium state
     damping_coeff: float             
         Coefficient for right hand side of eqn of motion
     mass: float                      
@@ -91,6 +89,7 @@ class EquilibriumClass(eqx.Module):
     # --- User input ---
     damping_coeff: float  # damping coefficient for right hand side of eqn of motion
     mass: float           # Newtonian mass for right hand side of eqn of motion
+    tolerance: float      # tolerance for dynamics simulation step size
     calc_through_energy: bool  # whether to calculate state through grad of energy or derictly w/forces
 
     # ---- state / derived ----
@@ -100,11 +99,12 @@ class EquilibriumClass(eqx.Module):
     buckle_arr: jax.Array                        # (H,) ∈ {+1,-1} per hinge/shim (direction of stiff side)
     time_points: jax.Array                       # (T_eq, ) time steps for simulating equilibrium configuration
     
-    def __init__(self, Strctr: "StructureClass", T: float, n_steps: int, damping_coeff: float, mass: float,
+    def __init__(self, Strctr: "StructureClass", T: float, damping_coeff: float, mass: float, tolerance: float,
                  calc_through_energy: bool = True, buckle_arr: jax.Array = None, pos_arr: jax.Array = None):
         self.damping_coeff = damping_coeff
-        self.mass = mass
-        self.time_points = jnp.linspace(0, T, n_steps)
+        self.mass = mass        
+        self.time_points = jnp.linspace(0, T, int(1e3))
+        self.tolerance = tolerance
 
         # default buckle: all +1
         if buckle_arr is None:
@@ -207,9 +207,20 @@ class EquilibriumClass(eqx.Module):
 
         # split to components if you want:
         F_stretch = self.stretch_forces(Strctr, Variabs, final_pos)           # (n_coords,)
-        print('stretch force', F_stretch)
+        # print('stretch force', F_stretch)
         F_theta   = potential_force_evolution[-1] - F_stretch               # (n_coords,)
-        print('bend force', F_theta)
+        # print('bend force', F_theta)
+
+        # After you compute F_stretch and F_theta
+        F_stretch_2d = F_stretch.reshape(-1, 2)
+        F_theta_2d   = F_theta.reshape(-1, 2)
+
+        # Stack side by side for comparison
+        F_compare = jnp.hstack([F_stretch_2d, F_theta_2d])
+
+        print("\n=== Final-step per-node forces comparison ===")
+        print("(Fx_stretch, Fy_stretch,  Fx_theta, Fy_theta)")
+        print(F_compare)
 
         return final_pos, pos_in_t, vel_in_t, potential_force_evolution
 
@@ -509,20 +520,20 @@ class EquilibriumClass(eqx.Module):
 
 # # NOT IN USE
 
-    # def calculate_energy_in_t(self, Variabs: "VariablesClass", Strctr: "StructureClass",
-    #                           displacements: NDArray[np.float_]) -> jax.array:
-    #     """
-    #     Calculate energies pos-mortem
-    #     """
-    #     T = jnp.shape(displacements)[0]  # problem, displacements should be jax in that sense and not NDArray
-    #     tot_energy_in_t = jnp.zeros(T)
-    #     rot_energy_in_t = jnp.zeros(T)
-    #     stretch_energy_in_t = jnp.zeros(T)
-    #     jax.debug.print('T {}', T)
-    #     for t in range(T):
-    #         energs = self.energy(Variabs, Strctr, displacements[t])
-    #         tot_energy_in_t[t], rot_energy_in_t[t], stretch_energy_in_t[t] = energs[0], energs[1], energs[2]
-    #     return jnp.array([tot_energy_in_t, rot_energy_in_t, stretch_energy_in_t])
+# def calculate_energy_in_t(self, Variabs: "VariablesClass", Strctr: "StructureClass",
+#                           displacements: NDArray[np.float_]) -> jax.array:
+#     """
+#     Calculate energies pos-mortem
+#     """
+#     T = jnp.shape(displacements)[0]  # problem, displacements should be jax in that sense and not NDArray
+#     tot_energy_in_t = jnp.zeros(T)
+#     rot_energy_in_t = jnp.zeros(T)
+#     stretch_energy_in_t = jnp.zeros(T)
+#     jax.debug.print('T {}', T)
+#     for t in range(T):
+#         energs = self.energy(Variabs, Strctr, displacements[t])
+#         tot_energy_in_t[t], rot_energy_in_t[t], stretch_energy_in_t[t] = energs[0], energs[1], energs[2]
+#     return jnp.array([tot_energy_in_t, rot_energy_in_t, stretch_energy_in_t])
 
 #     def check_force_sign(self, Variabs, Strctr, x_full, free_mask=None, eps=1e-9):
 #         """
