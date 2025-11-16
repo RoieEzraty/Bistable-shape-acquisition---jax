@@ -100,7 +100,7 @@ class EquilibriumClass(eqx.Module):
     time_points: jax.Array                       # (T_eq, ) time steps for simulating equilibrium configuration
     
     def __init__(self, Strctr: "StructureClass", T: float, damping_coeff: float, mass: float, tolerance: float,
-                 calc_through_energy: bool = True, buckle_arr: jax.Array = None, pos_arr: jax.Array = None):
+                 calc_through_energy: bool = False, buckle_arr: jax.Array = None, pos_arr: jax.Array = None):
         self.damping_coeff = damping_coeff
         self.mass = mass        
         self.time_points = jnp.linspace(0, T, int(1e3))

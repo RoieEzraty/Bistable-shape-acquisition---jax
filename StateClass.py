@@ -199,4 +199,3 @@ class StateClass:
         bending energy per hinge
         """
         return Variabs.torque(self.theta_arr)*(self.theta_arr - self.buckle_arr * Variabs.thetas_ss)
-
