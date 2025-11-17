@@ -55,8 +55,6 @@ class EquilibriumClass(eqx.Module):
 
     rest_lengths : jax.Array, shape (hinges+1,)
         Rest lengths of each edge, initialized from the straight configuration.
-    initial_hinge_angles : jax.Array, shape (hinges,)
-        Resting hinge angles (zero in straight configuration).
     init_pos : jax.Array, shape (nodes,2)
         Initial nodal positions of the chain (nodes = hinges+2).
     buckle_arr : jax.Array, shape (hinges ,shims)
@@ -94,7 +92,6 @@ class EquilibriumClass(eqx.Module):
 
     # ---- state / derived ----
     rest_lengths: jax.Array                      # (H+1,) edge rest lengths (from initial pos)
-    initial_hinge_angles: jax.Array              # (H,) hinge angles at rest (usually zeros)  
     init_pos: jax.Array = eqx.field(init=False)  # (hinges+2, 2) integer coordinates
     buckle_arr: jax.Array                        # (H,) ∈ {+1,-1} per hinge/shim (direction of stiff side)
     time_points: jax.Array                       # (T_eq, ) time steps for simulating equilibrium configuration
@@ -120,15 +117,67 @@ class EquilibriumClass(eqx.Module):
             
         # each edge's rest length is L, it's fixed and very stiff 
         self.rest_lengths = jnp.full((Strctr.hinges + 1,), Strctr.L, dtype=jnp.float32)
-        # straight chain -> 0 resting hinge angles
-        self.initial_hinge_angles = jnp.zeros((Strctr.hinges,), dtype=jnp.float32)
 
         # whether to calculate through grad of energy or through forces
         self.calc_through_energy = calc_through_energy
 
     def calculate_state(self, Variabs: "VariablesClass", Strctr: "StructureClass", control_first_edge: bool = True,
-                        tip_pos: jax.Array = None, tip_angle: jax.float = None):
-        
+                        tip_pos: jax.Array | None = None, tip_angle: float | jax.Array | None = None,
+                        pos_noise: float | jax.Array | None = None,
+                        vel_noise: float | jax.Array | None = None) -> Tuple[jax.Array, jax.Array, jax.Array, jax.Array]:
+        """
+        Compute the equilibrium state of the chain given boundary conditions and optional noise.
+
+        This function sets fixed and imposed DOFs (degrees of freedom) for the chain,
+        builds the initial state (positions + velocities), and integrates the damped
+        equations of motion until an equilibrium configuration is reached.
+
+        Parameters
+        ----------
+        Variabs : VariablesClass
+        Strctr : StructureClass
+        control_first_edge : bool, optional
+            If True (default), both node 0 and node 1 are fixed in space (first edge clamped).
+            If False, only node 0 is fixed.
+        tip_pos : jax.Array, optional
+            Prescribed tip position as a 1D array of shape (2,) = (x_tip, y_tip).
+            If None, the tip is free in position (unless constrained elsewhere).
+        tip_angle : float or jax.Array, optional
+            Prescribed tip angle (radians, CCW from +x). If provided together with
+            `tip_pos`, this is enforced by fixing the node before the tip such that
+            its position corresponds to a segment of length `Strctr.L` at angle `tip_angle`.
+            If None, no tip-angle constraint is imposed.
+        pos_noise : float or jax.Array, optional
+            Amplitude (or full array) of **position noise** added to the initial positions.
+            A uniform random noise ∈ U[-1, 1] is sampled per DOF and multiplied by
+            `pos_noise`. Noise is applied only to **interior nodes**, i.e. all nodes
+            except the first two (0, 1) and the last two (N-2, N-1). Boundary nodes
+            remain exactly at their initial positions.
+        vel_noise : float or jax.Array, optional
+            Additive noise for the initial velocities. If provided, it is added to
+            the zero-velocity initial condition (can be a scalar or an array
+            broadcastable to the velocity vector).
+
+        Returns
+        -------
+        final_pos : jax.Array, shape (N, 2)
+            Final nodal positions at the end of the dynamic relaxation.
+        pos_in_t : jax.Array, shape (T_eq_samples, N, 2)
+            Time history of nodal positions over the integration time grid.
+        vel_in_t : jax.Array, shape (T_eq_samples, N, 2)
+            Time history of nodal velocities over the integration time grid.
+        potential_force_evolution : jax.Array, shape (T_eq_samples, n_coords)
+            Time history of the internal reaction forces (stretch + bending)
+            on each positional DOF, evaluated along the trajectory.
+
+        Notes
+        -----
+        - The fixed and imposed DOFs are enforced directly inside `dynamics.solve_dynamics`.
+        - When `tip_angle` is imposed, the node before the tip is constrained so that
+          the last segment has length `Strctr.L` and orientation `tip_angle`.
+        - Positional noise is applied **after** flattening `init_pos` and **before**
+          concatenating with the velocity vector.
+        """
         n_coords = Strctr.n_coords                     # = 2 * (H+2)
         N = Strctr.hinges + 2                          # number of nodes
         last = N - 1
@@ -138,23 +187,24 @@ class EquilibriumClass(eqx.Module):
         imposed_DOFs = jnp.zeros((n_coords,), dtype=bool)
 
         # --- fixed: node 0, potentially also node 1 ---
-        if control_first_edge:  
+        if control_first_edge:
             nodes = [0, 1]  # two nodes are at 0
-        else: 
-            nodes = [0]  # first node at 0, 0
+        else:
+            nodes = [0]     # first node at 0, 0
+
         for node in nodes:
             fixed_DOFs = fixed_DOFs.at[self.dof_idx(node, 0)].set(True)
             fixed_DOFs = fixed_DOFs.at[self.dof_idx(node, 1)].set(True)
+
         # fixed values (vector, not function)
-        # fixed_vals = self.init_pos.reshape((-1,))  # (n_coords,)
         fixed_vals = jnp.zeros((n_coords,), dtype=float)
-        fixed_vals = fixed_vals.at[fixed_DOFs].set(self.init_pos.reshape((-1))[fixed_DOFs])
+        fixed_vals = fixed_vals.at[fixed_DOFs].set(self.init_pos.reshape((-1,))[fixed_DOFs])
 
         # Build a callable (always), even if mask is all False.
         base_vec = fixed_vals  # start from initial positions
         imposed_arr = base_vec
 
-        # imposed tip values
+        # -------- imposed tip position ----------
         if tip_pos is None:
             imposed_vals = (lambda t, v=base_vec: v)
         else:
@@ -162,35 +212,65 @@ class EquilibriumClass(eqx.Module):
             idx_x = self.dof_idx(last, 0)
             idx_y = self.dof_idx(last, 1)
             imposed_DOFs = imposed_DOFs.at[idx_x].set(True).at[idx_y].set(True)
+
             # set tip values for imposed_vals
             tip_xy = jnp.asarray(tip_pos, dtype=self.init_pos.dtype).reshape((2,))
-            imposed_arr = base_vec.at[idx_x].set(tip_xy[0]).at[idx_y].set(tip_xy[1])
-            # imposed_vals = (lambda t, v=imposed_arr: v)
+            imposed_arr = imposed_arr.at[idx_x].set(tip_xy[0]).at[idx_y].set(tip_xy[1])
 
-        # imposed tip angle amounts to fixing one node before last
-        if tip_angle is None:
-            pass
-        else:
+        # -------- imposed tip angle (node before tip) ----------
+        if tip_angle is not None:
             if tip_pos is None:
-                print('no tip angle could be imposed without tip loc, skipping tip angle')
+                print("no tip angle could be imposed without tip loc, skipping tip angle")
             else:
-                # set before tip indices as true
-                idx_x = self.dof_idx(last-1, 0)
-                idx_y = self.dof_idx(last-1, 1)
+                idx_x = self.dof_idx(last - 1, 0)
+                idx_y = self.dof_idx(last - 1, 1)
                 imposed_DOFs = imposed_DOFs.at[idx_x].set(True).at[idx_y].set(True)
-                # set before tip values for imposed vals
-                before_tip_xy = helpers_builders._get_before_tip(tip_pos=tip_xy,        # from above
-                                                                 tip_angle=jnp.asarray(tip_angle,
-                                                                                       dtype=self.init_pos.dtype),
-                                                                 L=Strctr.L,
-                                                                 dtype=self.init_pos.dtype)
+
+                before_tip_xy = helpers_builders._get_before_tip(
+                    tip_pos=tip_xy,
+                    tip_angle=jnp.asarray(tip_angle, dtype=self.init_pos.dtype),
+                    L=Strctr.L,
+                    dtype=self.init_pos.dtype,
+                )
                 imposed_arr = imposed_arr.at[idx_x].set(before_tip_xy[0]).at[idx_y].set(before_tip_xy[1])
+
         imposed_vals = (lambda t, v=imposed_arr: v)
 
         # -------- initial state (positions & velocities) ----------
-        x0 = self.init_pos.flatten()                  # start from current geometry
-        v0 = jnp.zeros_like(x0)                    # start at rest
+        # start from current geometry
+        x0 = self.init_pos.flatten()  # (n_coords,)
+        # velocities: start at rest
+        v0 = jnp.zeros_like(x0)
+
+        # (a) Add positional noise only to interior nodes (exclude nodes 0,1,last-1,last)
+        if pos_noise is not None or vel_noise is not None:
+            # mask True for DOFs that *can* get noise, False for boundary nodes
+            noise_mask = jnp.ones_like(x0, dtype=bool)
+            boundary_nodes = (0, 1, last - 1, last)
+
+            for node in boundary_nodes:
+                if 0 <= node < N:
+                    noise_mask = noise_mask.at[self.dof_idx(node, 0)].set(False)
+                    noise_mask = noise_mask.at[self.dof_idx(node, 1)].set(False)
+
+            if pos_noise is not None:
+                # uniform noise in [-1, 1] per DOF
+                key = jax.random.PRNGKey(0)  # for reproducibility; swap to a passed-in key if needed
+                rand = jax.random.uniform(key, shape=x0.shape, minval=-1.0, maxval=1.0)
+
+                # apply scaled noise only where noise_mask is True
+                x0 = x0 + (pos_noise * rand) * noise_mask.astype(x0.dtype)
+
+            if vel_noise is not None:
+                # uniform noise in [-1, 1] per DOF
+                key = jax.random.PRNGKey(0)  # for reproducibility; swap to a passed-in key if needed
+                rand = jax.random.uniform(key, shape=x0.shape, minval=-1.0, maxval=1.0)
+
+                # apply scaled noise only where noise_mask is True
+                x0 = x0 + (vel_noise * rand) * noise_mask.astype(x0.dtype) 
+
         state_0 = jnp.concatenate([x0, v0], axis=0)
+        jax.debug.print("state_0 {}", state_0)
 
         # -------- run dynamics ----------
         final_pos, pos_in_t, vel_in_t, potential_force_evolution = dynamics.solve_dynamics(
@@ -206,16 +286,12 @@ class EquilibriumClass(eqx.Module):
         )
 
         # split to components if you want:
-        F_stretch = self.stretch_forces(Strctr, Variabs, final_pos)           # (n_coords,)
-        # print('stretch force', F_stretch)
-        F_theta   = potential_force_evolution[-1] - F_stretch               # (n_coords,)
-        # print('bend force', F_theta)
+        F_stretch = self.stretch_forces(Strctr, Variabs, final_pos)     # (n_coords,)
+        F_theta = potential_force_evolution[-1] - F_stretch           # (n_coords,)
 
-        # After you compute F_stretch and F_theta
+        # reshape for per-node view
         F_stretch_2d = F_stretch.reshape(-1, 2)
-        F_theta_2d   = F_theta.reshape(-1, 2)
-
-        # Stack side by side for comparison
+        F_theta_2d = F_theta.reshape(-1, 2)
         F_compare = jnp.hstack([F_stretch_2d, F_theta_2d])
 
         print("\n=== Final-step per-node forces comparison ===")
