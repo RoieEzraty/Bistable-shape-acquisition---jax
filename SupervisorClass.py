@@ -90,7 +90,7 @@ class SupervisorClass:
         self.loss = np.zeros((3 if self.control_tip_angle else 2,), dtype=np.float32)
 
     def create_dataset(self, Strctr: "StructureClass", sampling: str, exp_start: float = None,
-                       distance: float = None, dist_noise: float = -0.001, angle_noise: float = 0.1) -> None:
+                       distance: float = None, dist_noise: float = 0.002, angle_noise: float = 0.1) -> None:
         if sampling == 'uniform':
             x_pos_in_t = np.random.uniform((Strctr.edges-1)*Strctr.L, Strctr.edges*Strctr.L, size=self.T)
             y_pos_in_t = np.random.uniform(-Strctr.L/3, Strctr.L/3, size=self.T)
