@@ -40,7 +40,8 @@ class StructureClass(eqx.Module):
     NN: Optional[NDArray[int]] = eqx.field(default=None, init=False, static=True)
     output_nodes_arr: Optional[NDArray[int]] = eqx.field(default=None, init=False, static=True)
 
-    def __init__(self, hinges: int, shims: int, L: float, rest_lengths:  Optional[NDArray[np.float_]] = None):
+    def __init__(self, hinges: int, shims: int, L: float, rest_lengths:  Optional[NDArray[np.float_]] = None,
+                 update_scheme: str = 'one_to_one', Nin: Optional[int] = None, Nout: Optional[int] = None):
         self.hinges = int(hinges)
         self.shims = int(shims)
         self.L = float(L)
@@ -51,6 +52,8 @@ class StructureClass(eqx.Module):
         self.n_coords = self.nodes * 2 
         self.hinges_arr = self._build_hinges()           # (H=hinges, 2)
         self.rest_lengths = self._build_rest_lengths(rest_lengths=rest_lengths)  # rest lengths (float32)
+        if update_scheme == 'BEASTAL':
+            self.DM, self.NE, self.NN, self.output_nodes_arr = self._build_learning_parameters(Nin, Nout)
 
         # learning fields left as None until _build_learning_parameters is called
        
@@ -73,7 +76,8 @@ class StructureClass(eqx.Module):
         return jnp.full((self.edges,), self.L, dtype=np.float32)
 
     def _build_learning_parameters(self, Nin: int, Nout: int) -> None:
-        _, _, _, self.DM, self.NE, self.NN, self.output_nodes_arr = learning_funcs.build_incidence(Nin, Nout)
+        _, _, _, DM, NE, NN, output_nodes_arr = learning_funcs.build_incidence(Nin, Nout)
+        return DM, NE, NN, output_nodes_arr
     
     # --- numpy geometry --- 
     def all_edge_lengths(self, pos_arr: NDArray[np.float_]) -> NDArray[np.float_]:

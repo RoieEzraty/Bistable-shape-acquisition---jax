@@ -33,7 +33,10 @@ class SupervisorClass:
     # --- configuration / hyperparams ---
     T: int = eqx.field(static=True)                         # training set length
     alpha: float = eqx.field(static=True)                   # step size
-    update_scheme: str = eqx.field(static=True)             # "one_to_one" | "BEASTAL"
+    update_scheme: str = eqx.field(static=True)             # "one_to_one" = pointwise, normalized difference between
+                                                            #                simulated and target values
+                                                            # "BEASTAL"    = capitalizes on pseudoinverse of incidence matrix 
+                                                            #                between Nin inputs and Nout outputs
     control_tip_angle: bool = eqx.field(static=True)
     control_first_edge: bool = eqx.field(static=True)
 
@@ -91,6 +94,10 @@ class SupervisorClass:
 
     def create_dataset(self, Strctr: "StructureClass", sampling: str, exp_start: float = None,
                        distance: float = None, dist_noise: float = 0.0, angle_noise: float = 0.0) -> None:
+        # save as variable
+        self.dataset_sampling = sampling
+
+        # tip positions and angles for specified tip dataset
         if sampling == 'uniform':
             x_pos_in_t = np.random.uniform((Strctr.edges-1)*Strctr.L, Strctr.edges*Strctr.L, size=self.T)
             y_pos_in_t = np.random.uniform(-Strctr.L/3, Strctr.L/3, size=self.T)
