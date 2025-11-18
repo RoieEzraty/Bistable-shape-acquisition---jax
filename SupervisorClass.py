@@ -90,7 +90,7 @@ class SupervisorClass:
         self.loss = np.zeros((3 if self.control_tip_angle else 2,), dtype=np.float32)
 
     def create_dataset(self, Strctr: "StructureClass", sampling: str, exp_start: float = None,
-                       distance: float = None, dist_noise: float = 0.0, angle_noise: float = 0.1) -> None:
+                       distance: float = None, dist_noise: float = 0.0, angle_noise: float = 0.0) -> None:
         if sampling == 'uniform':
             x_pos_in_t = np.random.uniform((Strctr.edges-1)*Strctr.L, Strctr.edges*Strctr.L, size=self.T)
             y_pos_in_t = np.random.uniform(-Strctr.L/3, Strctr.L/3, size=self.T)
@@ -119,7 +119,10 @@ class SupervisorClass:
         elif sampling == 'stress strain':
             start = 2*Strctr.L + exp_start
             end = start - distance
-            tip_arr = np.linspace(start, end, self.T, endpoint=False)  # shape (N,)
+            tip_in = np.linspace(start, end, self.T // 2, endpoint=False)  # decreasing: start -> end
+            tip_out = np.linspace(end, start, self.T - self.T // 2, endpoint=False)  # increasing: end -> start
+            tip_arr = np.concatenate([tip_in, tip_out])  # shape (self.T,),  back-and-forth trajectory
+
             noisy_zeros_arr = np.zeros_like(tip_arr) + dist_noise  # shape (N,)
             self.tip_pos_in_t[:] = np.column_stack((tip_arr, noisy_zeros_arr))  # shape (N, 2)
 

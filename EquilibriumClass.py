@@ -415,8 +415,9 @@ class EquilibriumClass(eqx.Module):
         # torque per shim
         tau_shims = - Variabs.torque(theta_eff)  # (H,S)
         # signed + summed per hinge
-        exp_L = 1
-        tau_hinges = jnp.sum(B * tau_shims, axis=1)/Strctr.L*exp_L  # (H,)
+        # exp_L = 1
+        # tau_hinges = jnp.sum(B * tau_shims, axis=1)/Strctr.L*exp_L  # (H,)
+        tau_hinges = jnp.sum(B * tau_shims, axis=1)
 
         # 3) Jacobian of theta for each hinge: (H, n_coords)
         def theta_jac_of_h(h):
@@ -473,8 +474,7 @@ class EquilibriumClass(eqx.Module):
         B = self.buckle_arr  # (H,S)
         theta_eff = B * thetas[:, None]  # (H,S)
         tau_shims = -Variabs.torque(theta_eff)  # (H,S)
-        exp_L = 1
-        tau_hinges = jnp.sum(B * tau_shims, axis=1)/Strctr.L*exp_L  # (H,)
+        tau_hinges = jnp.sum(B * tau_shims, axis=1)  # (H,)
 
         # --- dense Jacobian (simple, OK for plotting; for scale use local-8DOF approach) ---
         def theta_jac_of_h(h):
