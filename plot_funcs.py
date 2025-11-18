@@ -12,24 +12,52 @@ from typing import List
 import colors, helpers_builders
 
 
-def plot_arm(pos_vec: np.ndarray, buckle: np.array, thetas, L: float,  modality: str, arc_scale: float = 0.2) -> None:
-    """
-    Plot an N-link arm given all joint positions.
-    
-    pos_vec: (N,2) array of coordinates (JAX or NumPy).
-             Row 0 is base, row N-1 is tip.
-    L: reference length (used for scaling the arcs and axes).
-    """
+from typing import Union
 
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib import patches
+
+import colors
+import helpers_builders
+
+
+def plot_arm(pos_vec: np.ndarray, buckle: np.ndarray, thetas: Union[np.ndarray, list, tuple], L: float, modality: str,
+             arc_scale: float = 0.2) -> None:
+    """
+    Plot bistable hinge chain (arm) given all joint positions and hinge buckling states.
+
+    Parameters
+    ----------
+    pos_vec : 2D np.ndarray, (N, 2), node coordinates
+    buckle : 1D np.ndarray, (N-1,), with hinge buckling orientation, +1 is shim going down
+    thetas : array-like of float, (N-1,), Hinge angles in radians
+    L : float, edge length, used to scale the arcs and plot limits.
+    modality : str, Plotting mode that sets the color scheme. Recognized values:
+                    - "measurement" : primary color (e.g., blue)
+                    - "update"      : secondary color (e.g., orange)
+    arc_scale : float, optional, Relative radius of the plotted hinge arcs in units of L. Default is 0.2.
+
+    Notes
+    -----
+    - The tip angle shown in the title is computed from the positions via
+      `helpers_builders._get_tip_angle` (in radians) and converted to degrees
+      only for display.
+    - Hinge arcs are drawn such that the sign of `buckle[i]` controls whether
+      the arc is visually clockwise or counter-clockwise: a value of -1 will
+      swap the order of the start/end angles relative to +1.
+    """
     colors_lst, red, custom_cmap = colors.color_scheme()
-    plt.rcParams['axes.prop_cycle'] = plt.cycler('color', colors_lst)
+    plt.rcParams["axes.prop_cycle"] = plt.cycler("color", colors_lst)
 
-    # convert to NumPy for plotting
-    pos = np.asarray(pos_vec)
+    # Convert inputs to NumPy arrays for plotting
+    pos = np.asarray(pos_vec, dtype=float)
+    buckle_arr = np.asarray(buckle)
+    thetas_rad = np.asarray(thetas, dtype=float)  # radians
 
-    # Extract x, y, theta
+    # Extract x, y and tip angle (converted to degrees only for display)
     xs, ys = pos[:, 0], pos[:, 1]
-    tip_angle = np.rad2deg(float(helpers_builders._get_tip_angle(pos_vec)))
+    tip_angle_deg = np.rad2deg(float(helpers_builders._get_tip_angle(pos_vec)))
 
     # ---- figure ----
     plt.figure(figsize=(4, 4))
@@ -38,58 +66,59 @@ def plot_arm(pos_vec: np.ndarray, buckle: np.array, thetas, L: float,  modality:
         clr = colors_lst[0]
     elif modality == "update":
         clr = colors_lst[2]
-    # plot polyline (all links)
+    else:
+        # Fallback color if modality is unknown
+        clr = colors_lst[1]
+
+    # Plot polyline (all links)
     plt.plot(xs, ys, linewidth=4, color=clr)
-    # scatter joints
+    # Scatter joints
     plt.scatter(xs, ys, s=60, zorder=3, color=clr)
-    # origin in black
-    plt.scatter([0], [0], s=60, zorder=3, color='k')
+    # Origin in black
+    plt.scatter([0], [0], s=60, zorder=3, color="k")
 
-    # --- line of wall --- 
-
-    plt.plot([xs[-1], xs[-1]],              # vertical line at tip x
-             [ys[-1] + 0.4*L, ys[-1] - 0.4*L],      # short downward segment
-             linestyle=":", color="k", linewidth=3.0
-             )
+    # --- line of wall ---
+    plt.plot([xs[-1], xs[-1]],  # vertical line at tip x
+             [ys[-1] + 0.4 * L, ys[-1] - 0.4 * L],  # short segment
+             linestyle=":", color="k", linewidth=3.0)
 
     # ---- draw hinge arcs with buckle-directed orientation ----
     r = arc_scale * float(L)
 
-    cumsum_thetas1 = np.cumsum(thetas)
-    # cumsum_thetas2 = cumsum_thetas1-cumsum_thetas1[0]+180
-    cumsum_thetas2 = cumsum_thetas1-cumsum_thetas1[0]+180
+    # cumulative hinge angles in radians
+    cumsum_thetas = np.cumsum(thetas_rad)
+    # a second set shifted by pi (180 degrees) but still in radians
+    cumsum_thetas_shift = cumsum_thetas - cumsum_thetas[0] + np.pi
 
-    for i in range(0, buckle.size):
-        p = pos[i+1]
+    ax = plt.gca()
+    for i in range(buckle_arr.size):
+        p = pos[i + 1]
 
-        # if CW desired (sgn=-1), theta2 < theta1 makes the arc go CW visually
-        if buckle[i] == -1:
-            theta1 = cumsum_thetas1[i]
-            theta2 = cumsum_thetas2[i]
+        if buckle_arr[i] == -1:
+            theta1 = cumsum_thetas[i]
+            theta2 = cumsum_thetas_shift[i]
         else:
-            theta1 = cumsum_thetas2[i]
-            theta2 = cumsum_thetas1[i]
+            theta1 = cumsum_thetas_shift[i]
+            theta2 = cumsum_thetas[i]
 
-        arc = patches.Arc(
-            xy=(p[0], p[1]),
-            width=2*r, height=2*r,
-            angle=0.0,
-            theta1=theta1, theta2=theta2,
-            linewidth=2, zorder=2
-        )
-        plt.gca().add_patch(arc)
+        # Convert to degrees only at the last moment for Matplotlib
+        theta1_deg = float(np.rad2deg(theta1))
+        theta2_deg = float(np.rad2deg(theta2))
+
+        arc = patches.Arc(xy=(p[0], p[1]), width=2 * r, height=2 * r, angle=0.0, theta1=theta1_deg, theta2=theta2_deg,
+                          linewidth=2, zorder=2)
+        ax.add_patch(arc)
 
     # annotate tip
-    plt.annotate("Tip", xy=(xs[-1], ys[-1]),
-                 xytext=(xs[-1]+0.05, ys[-1]+0.05))
+    plt.annotate("Tip", xy=(xs[-1], ys[-1]), xytext=(xs[-1] + 0.05, ys[-1] + 0.05))
 
     # aesthetics
-    plt.axis('equal')
-    plt.xlim(xs.min() - 0.5*L, xs.max() + 0.5*L)
-    plt.ylim(ys.min() - 0.5*L, ys.max() + 0.5*L)
+    plt.axis("equal")
+    plt.xlim(xs.min() - 0.5 * L, xs.max() + 0.5 * L)
+    plt.ylim(ys.min() - 0.5 * L, ys.max() + 0.5 * L)
     plt.xlabel("x")
     plt.ylabel("y")
-    plt.title(f"Tip (x, y, theta)=({xs[-1]:.2f}, {ys[-1]:.2f}, {tip_angle:.2f})")
+    plt.title(f"Tip (x, y, theta)=({xs[-1]:.2f}, {ys[-1]:.2f}, {tip_angle_deg:.2f})")
     plt.show()
 
 
