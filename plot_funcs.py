@@ -1,10 +1,13 @@
 import jax.numpy as jnp
 import numpy as np
 import matplotlib.pyplot as plt
+import pandas as pd
 
 from matplotlib import patches
 from matplotlib.animation import FuncAnimation, PillowWriter  # for GIF export
 from scipy.signal import savgol_filter
+
+from typing import List
 
 import colors, helpers_builders
 
@@ -170,29 +173,66 @@ def animate_arm(traj_pos, L, frames=10, interval_ms=30, save_path=None, fps=30, 
     return fig, anim
 
 
-def plot_compare_sim_exp_stress_strain(exp_df, sim_df, translate_ratio: float, hinges: int) -> None:
-    
+def plot_compare_sim_exp_stress_strain(exp_dfs: List[pd.DataFrame], sim_df: pd.DataFrame, translate_ratio: float) -> None:
+    """
+    Plot experimental and simulated stress–strain curves for comparison of a full chain sumulation.
+
+    Parameters
+    ----------
+    exp_dfs : List[pandas.DataFrame]
+        A list of experimental dataframes. Each dataframe must contain
+        the columns:
+            - "Position (mm)" : tip position in millimeters
+            - "Load2 (N)"    : measured load (force) in Newtons
+
+    sim_df : pandas.DataFrame
+        Simulation results. Must contain:
+            - "x_tip" : simulated tip x-position
+            - "Fx"    : simulated x-direction force
+
+    translate_ratio : float
+        Factor converting displacement units (e.g., mm). Applied as:
+            (x_tip - x_tip_initial) * translate_ratio
+
+    Returns
+    -------
+    None
+        matplotlib figure
+
+    Notes
+    -----
+    - Experimental curves are smoothed using a Savitzky–Golay filter
+      with window length 16 and polynomial order 4.
+    - Simulation force is plotted as -Fx to match the experimental sign
+      convention.
+    """   
     font_size = 16
+    
     # experimental
     window = 16
-    exp_df_pos = exp_df["Position (mm)"]
-    exp_df_load = exp_df["Load2 (N)"]
-    exp_df_load_movmean = savgol_filter(exp_df_load, window_length=window, polyorder=4, mode="interp")
-    plt.plot(exp_df_pos, exp_df_load_movmean, linewidth=3.0)
+    for i, exp_df in enumerate(exp_dfs):
+        exp_df_pos = exp_df["Position (mm)"]
+        exp_df_load = exp_df["Load2 (N)"]
+        exp_df_load_movmean = savgol_filter(exp_df_load, window_length=window, polyorder=4, mode="interp")
+        # plt.plot(exp_df_pos, exp_df_load_movmean, linewidth=1.0, linestyle=":")
+        plt.plot(exp_df_pos, exp_df_load_movmean, linewidth=1.0)
 
     # simulation - change to look like experiment
     # sim_tip = (sim_df['x_tip'] - sim_df['x_tip'][0]) / translate_ratio * 2.6
-    sim_tip = (sim_df['x_tip'] - sim_df['x_tip'][0]) * 1000
-    # sim_Fx = sim_df['Fx'] * translate_ratio/hinges
+    sim_tip = (sim_df['x_tip'] - sim_df['x_tip'][0]) * translate_ratio
     # sim_Fx = -sim_df['Fx'] * 0.045
     sim_Fx = -sim_df['Fx']
-    plt.plot(sim_tip, sim_Fx, '.', markersize=8.0)
+    plt.plot(sim_tip, sim_Fx, '.', markersize=10.0)
 
-    # beautify
+    # Legend: experiment 1, experiment 2, ..., simulation
+    legend_labels = [f"experiment {i+1}" for i in range(len(exp_dfs))]
+    legend_labels.append("simulation")
+
+    # Beautify
     plt.ylim([-0.12, 0.05])
-    plt.xlabel('pos [mm]', fontsize=font_size)
-    plt.ylabel('Force [N]', fontsize=font_size)
-    plt.legend(['Experiment', "Simulation"], fontsize=font_size)
+    plt.xlabel("pos [mm]", fontsize=font_size)
+    plt.ylabel("Force [N]", fontsize=font_size)
+    plt.legend(legend_labels, fontsize=font_size)
     plt.show()
 
 

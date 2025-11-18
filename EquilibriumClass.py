@@ -270,7 +270,6 @@ class EquilibriumClass(eqx.Module):
                 x0 = x0 + (vel_noise * rand) * noise_mask.astype(x0.dtype) 
 
         state_0 = jnp.concatenate([x0, v0], axis=0)
-        jax.debug.print("state_0 {}", state_0)
 
         # -------- run dynamics ----------
         final_pos, pos_in_t, vel_in_t, potential_force_evolution = dynamics.solve_dynamics(
@@ -295,8 +294,8 @@ class EquilibriumClass(eqx.Module):
         F_compare = jnp.hstack([F_stretch_2d, F_theta_2d])
 
         print("\n=== Final-step per-node forces comparison ===")
-        print("(Fx_stretch, Fy_stretch,  Fx_theta, Fy_theta)")
-        print(F_compare)
+        # print("(Fx_stretch, Fy_stretch,  Fx_theta, Fy_theta)")
+        # print(F_compare)
         print("\n=== total forces")
         print(jnp.sum(F_compare, axis=1))
 
