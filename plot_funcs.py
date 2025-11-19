@@ -101,12 +101,21 @@ def plot_arm(pos_vec: np.ndarray, buckle: np.ndarray, thetas: Union[np.ndarray, 
             theta1 = cumsum_thetas_shift[i]
             theta2 = cumsum_thetas[i]
 
-        # Convert to degrees only at the last moment for Matplotlib
+    # Convert to degrees only at the last moment for Matplotlib
         theta1_deg = float(np.rad2deg(theta1))
         theta2_deg = float(np.rad2deg(theta2))
 
-        arc = patches.Arc(xy=(p[0], p[1]), width=2 * r, height=2 * r, angle=0.0, theta1=theta1_deg, theta2=theta2_deg,
-                          linewidth=2, zorder=2)
+        arc = patches.Arc(
+            xy=(p[0], p[1]),
+            width=2 * r,
+            height=2 * r,
+            angle=0.0,
+            theta1=theta1_deg,
+            theta2=theta2_deg,
+            linewidth=2,
+            zorder=2,
+        )
+        ax.add_patch(arc)
         ax.add_patch(arc)
 
     # annotate tip
@@ -234,7 +243,9 @@ def plot_compare_sim_exp_stress_strain(exp_dfs: List[pd.DataFrame], sim_df: pd.D
       with window length 16 and polynomial order 4.
     - Simulation force is plotted as -Fx to match the experimental sign
       convention.
-    """   
+    """  
+    colors_lst, red, custom_cmap = colors.color_scheme()
+    plt.rcParams["axes.prop_cycle"] = plt.cycler("color", colors_lst) 
     font_size = 16
     
     # experimental
@@ -251,14 +262,14 @@ def plot_compare_sim_exp_stress_strain(exp_dfs: List[pd.DataFrame], sim_df: pd.D
     sim_tip = (sim_df['x_tip'] - sim_df['x_tip'][0]) * translate_ratio
     # sim_Fx = -sim_df['Fx'] * 0.045
     sim_Fx = -sim_df['Fx']
-    plt.plot(sim_tip, sim_Fx, '.', markersize=10.0)
+    plt.plot(sim_tip, sim_Fx, '.', markersize=10.0, color=colors_lst[3])
 
     # Legend: experiment 1, experiment 2, ..., simulation
     legend_labels = [f"experiment {i+1}" for i in range(len(exp_dfs))]
     legend_labels.append("simulation")
 
     # Beautify
-    plt.ylim([-0.12, 0.05])
+    plt.ylim([-0.15, 0.15])
     plt.xlabel("pos [mm]", fontsize=font_size)
     plt.ylabel("Force [N]", fontsize=font_size)
     plt.legend(legend_labels, fontsize=font_size)
