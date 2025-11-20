@@ -299,7 +299,7 @@ class EquilibriumClass(eqx.Module):
         # print("\n=== total forces")
         # print(jnp.sum(F_compare, axis=1))
 
-        return final_pos, pos_in_t, vel_in_t, potential_force_evolution
+        return final_pos, pos_in_t, vel_in_t, F_theta
 
     # Helper to map (node, component) -> flat DOF index
     # component: 0 = x, 1 = y
