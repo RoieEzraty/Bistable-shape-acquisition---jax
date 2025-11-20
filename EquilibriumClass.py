@@ -293,11 +293,11 @@ class EquilibriumClass(eqx.Module):
         F_theta_2d = F_theta.reshape(-1, 2)
         F_compare = jnp.hstack([F_stretch_2d, F_theta_2d])
 
-        print("\n=== Final-step per-node forces comparison ===")
-        # print("(Fx_stretch, Fy_stretch,  Fx_theta, Fy_theta)")
-        # print(F_compare)
-        print("\n=== total forces")
-        print(jnp.sum(F_compare, axis=1))
+        # print("\n=== Final-step per-node forces comparison ===")
+        print("(Fx_stretch, Fy_stretch,  Fx_theta, Fy_theta)")
+        print(F_compare)
+        # print("\n=== total forces")
+        # print(jnp.sum(F_compare, axis=1))
 
         return final_pos, pos_in_t, vel_in_t, potential_force_evolution
 

@@ -111,11 +111,11 @@ class SupervisorClass:
             if self.control_tip_angle and self.tip_angle_in_t is not None:
                 self.tip_angle_in_t[:] = 0.0
         elif sampling == 'almost flat':
-            end = float(Strctr.edges)
+            end = float(Strctr.edges*Strctr.L)
             tip_pos = np.array([end,  0.0], dtype=np.float32)  # flat arrangement
 
             # tiny noise around each position (tune scale as you like)
-            noise_scale = 0.1 * Strctr.L
+            noise_scale = 0.0 * Strctr.L
             noise_pos = noise_scale * np.random.randn(self.T, 2).astype(np.float32)
             noise_pos[:, 0] = -np.abs(noise_pos[:, 0])
             self.tip_pos_in_t[:] = tip_pos + noise_pos
@@ -166,8 +166,8 @@ class SupervisorClass:
                         prev_tip_update_angle: Optional[float] = None,) -> None:
         """Compute next tip position/angle commands from current loss and state (pure NumPy)."""
         # Normalised inputs/outputs (NumPy)
-        inputs_normalized = np.array([State.tip_pos[0]/Variabs.norm_pos, State.tip_pos[1]/Variabs.norm_pos,
-                                      State.tip_angle/Variabs.norm_angle], dtype=np.float32)
+        inputs_normalized = np.array([self.tip_pos_in_t[t][0]/Variabs.norm_pos, self.tip_pos_in_t[t][1]/Variabs.norm_pos,
+                                      self.tip_angle_in_t[t]/Variabs.norm_angle], dtype=np.float32)
         outputs_normalized = np.array([State.Fx/Variabs.norm_force, State.Fy/Variabs.norm_force,
                                        State.tip_torque/Variabs.norm_torque], dtype=np.float32)
 
@@ -183,9 +183,12 @@ class SupervisorClass:
             # large_angle = np.arctan2(self.tip_pos_int_t[t, 1], self.tip_pos_in_t[t, 0])
             # R = np.sqrt(self.tip_pos_int_t[t, 1]**2 + self.tip_pos_int_t[t, 1]**2)
 
-            delta_tip = + self.alpha * self.loss[:2] / Variabs.norm_pos
-            delta_angle = - self.alpha * self.loss[2] / Variabs.norm_torque if (self.control_tip_angle and 
+            delta_tip = + self.alpha * self.loss[:2] / Variabs.norm_force
+            delta_angle = + self.alpha * self.loss[2] / Variabs.norm_torque if (self.control_tip_angle and 
                                                                                 self.loss.size == 3) else 0.0
+            print('delta_tip=', delta_tip)
+            print('delta_angle=', delta_angle)
+
         else:
             raise ValueError(f"Unknown update_scheme='{self.update_scheme}'")
 
@@ -194,6 +197,8 @@ class SupervisorClass:
             prev_tip_update_pos = self.tip_pos_update_in_t[t-1, :]
         # delta_tip = self.alpha*(np.array([Fx, Fy]) - current_tip_pos)*(self.loss) * ([2, 0.5])  # not BEASTAL
         self.tip_pos_update_in_t[t, :] = prev_tip_update_pos + delta_tip
+        print('prev_tip_update_pos=', prev_tip_update_pos)
+        print('tip_pos_update_in_t[t, :]=', self.tip_pos_update_in_t[t, :])
 
         # Angle update (only if enabled)
         if self.control_tip_angle and self.tip_angle_update_in_t is not None:
