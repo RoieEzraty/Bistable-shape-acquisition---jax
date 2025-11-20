@@ -143,8 +143,10 @@ class StateClass:
         # Force normal on wall taken from the last row if provided
         if Forces is not None:
             if control_tip_angle:  # tip is controlled, forces are on one before last node
-                self.Fx = Forces[-4] + Forces[-2]
-                self.Fy = Forces[-3] + Forces[-1]
+                # self.Fx = Forces[-4] + Forces[-2]
+                # self.Fy = Forces[-3] + Forces[-1]
+                self.Fx = Forces[-4]
+                self.Fy = Forces[-3]
             else:  # tip is not controlled, forces are on last node
                 self.Fx = Forces[-2]
                 self.Fy = Forces[-1]
