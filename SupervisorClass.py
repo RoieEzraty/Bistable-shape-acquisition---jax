@@ -112,7 +112,7 @@ class SupervisorClass:
                 self.tip_angle_in_t[:] = 0.0
         elif sampling == 'almost flat':
             end = float(Strctr.edges*Strctr.L)
-            tip_pos = np.array([end,  0.0], dtype=np.float32)  # flat arrangement
+            tip_pos = np.array([end-0.1*Strctr.L,  0.3*Strctr.L], dtype=np.float32)  # flat arrangement
 
             # tiny noise around each position (tune scale as you like)
             noise_scale = 0.0 * Strctr.L
