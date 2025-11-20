@@ -112,7 +112,7 @@ class SupervisorClass:
                 self.tip_angle_in_t[:] = 0.0
         elif sampling == 'almost flat':
             end = float(Strctr.edges*Strctr.L)
-            tip_pos = np.array([end-0.1*Strctr.L,  0.3*Strctr.L], dtype=np.float32)  # flat arrangement
+            tip_pos = np.array([end-0.1*Strctr.L,  0.0*Strctr.L], dtype=np.float32)  # flat arrangement
 
             # tiny noise around each position (tune scale as you like)
             noise_scale = 0.0 * Strctr.L
@@ -183,7 +183,10 @@ class SupervisorClass:
             # large_angle = np.arctan2(self.tip_pos_int_t[t, 1], self.tip_pos_in_t[t, 0])
             # R = np.sqrt(self.tip_pos_int_t[t, 1]**2 + self.tip_pos_int_t[t, 1]**2)
 
-            delta_tip = + self.alpha * self.loss[:2] / Variabs.norm_force
+            # delta_tip = - self.alpha * self.loss[:2] / Variabs.norm_force
+            delta_tip_x = + self.alpha * self.loss[0] / Variabs.norm_force
+            delta_tip_y = - self.alpha * self.loss[1] / Variabs.norm_force
+            delta_tip = np.array([delta_tip_x, delta_tip_y])
             delta_angle = + self.alpha * self.loss[2] / Variabs.norm_torque if (self.control_tip_angle and 
                                                                                 self.loss.size == 3) else 0.0
             print('delta_tip=', delta_tip)
