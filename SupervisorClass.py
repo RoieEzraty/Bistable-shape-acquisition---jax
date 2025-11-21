@@ -184,11 +184,11 @@ class SupervisorClass:
             # R = np.sqrt(self.tip_pos_int_t[t, 1]**2 + self.tip_pos_int_t[t, 1]**2)
 
             # delta_tip = - self.alpha * self.loss[:2] / Variabs.norm_force
-            delta_tip_x = + self.alpha * self.loss[0] / Variabs.norm_force
-            delta_tip_y = - self.alpha * self.loss[1] / Variabs.norm_force
+            delta_tip_x = + self.alpha * self.loss[0] / Variabs.norm_force * Strctr.hinges * Strctr.L
+            delta_tip_y = - self.alpha * self.loss[1] / Variabs.norm_force * Strctr.hinges * Strctr.L
             delta_tip = np.array([delta_tip_x, delta_tip_y])
-            delta_angle = + self.alpha * self.loss[2] / Variabs.norm_torque if (self.control_tip_angle and 
-                                                                                self.loss.size == 3) else 0.0
+            delta_angle = + self.alpha * self.loss[2] / Variabs.norm_torque * np.pi/64 if (self.control_tip_angle and 
+                                                                                           self.loss.size == 3) else 0.0
             print('delta_tip=', delta_tip)
             print('delta_angle=', delta_angle)
 

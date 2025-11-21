@@ -88,5 +88,5 @@ class VariablesClass(eqx.Module):
         # normalizations for update values
         self.norm_pos = float(Strctr.hinges*Strctr.L)
         self.norm_angle = float(np.pi/2)
-        self.norm_force = float(self.k_max*(np.pi/2))
-        self.norm_torque = float(self.k_max*(np.pi/2)*Strctr.L)
+        self.norm_force = float(self.k_max*(np.pi/2)/Strctr.L)
+        self.norm_torque = float(self.k_max*(np.pi/2))
