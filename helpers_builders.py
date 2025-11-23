@@ -212,6 +212,71 @@ def _get_tip_angle(pos_arr: np.array) -> np.array:
     return theta_from_negx
 
 
+# def _correct_big_stretch(tip_pos, tip_angle, L, edges):
+#     before_lst_node = np.array([tip_pos[0] - L*np.cos(tip_angle), tip_pos - L*np.sin(tip_angle)])
+#     scnd_node = np.array([L, 0])
+#     actual_stretch = np.sqrt(np.sum((before_lst_node - scnd_node)**2))
+#     maximal_stretch = ((edges-2)*L)
+#     cond = actual_stretch > maximal_stretch
+#     ratio = maximal_stretch / actual_stretch
+#     if cond:
+#         corrected = (before_lst_node - scnd_node) * ratio + (scnd_node + tip_pos - before_lst_node)
+#         print('corrected tip_pos_update_in_t[t, :]=', corrected)
+#     else:
+#         corrected = tip_pos
+#     return corrected
+
+
+def _correct_big_stretch(tip_pos: NDArray[np.float_], tip_angle: float, L: float, edges: int,) -> NDArray[np.float_]:
+    """
+    Physical upper bound on total chain stretch by correcting tip position to not exceed  maximal possible length.
+
+    Parameters
+    ----------
+    tip_pos : ndarray of shape (2,) previous tip position
+    
+    tip_angle : float
+
+    Returns
+    -------
+    corrected_tip_pos : ndarray of shape (2,)
+        If the suggested tip position exceeds the chain's maximum reach, returns corrected position, scaled to maximal
+        physical stretch. Otherwise, the original tip_pos is returned.
+
+    Notes
+    -----
+    - before last node is located at:
+          before = tip_pos - L * [cos(theta), sin(theta)]
+    - Node 2 (second node) is located at (L, 0) in the reference frame.
+    - The correction preserves the direction of the displacement but 
+      rescales its magnitude down to the physical limit.
+    """
+
+    # Compute the location of the node before the tip
+    before_last = np.array([tip_pos[0] - L * np.cos(tip_angle), tip_pos[1] - L * np.sin(tip_angle)])
+
+    # Second node from the base sits at (L, 0)
+    second_node = np.array([L, 0.0], dtype=float)
+
+    # Actual stretch beyond the first two edges
+    vec = before_last - second_node
+    actual_stretch = np.linalg.norm(vec)
+
+    # Maximum physically possible stretch (remaining edges)
+    max_stretch = (edges - 2) * L
+
+    # If unphysical → scale back
+    if actual_stretch > max_stretch:
+        maximal_stretch = (edges-2)*L
+        ratio = maximal_stretch / actual_stretch
+        corrected = (before_last - second_node) * ratio + (second_node + tip_pos - before_last)
+        print('corrected tip_pos_update_in_t[t, :]=', corrected)
+        return corrected
+
+    # Otherwise nothing to correct
+    return tip_pos
+
+
 def torque(tip_angle: float, Fx: float, Fy: float) -> float:
     return np.cos(tip_angle)*Fy-np.sin(tip_angle)*Fx
 

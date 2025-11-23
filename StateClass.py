@@ -156,6 +156,7 @@ class StateClass:
                 self.Fx = Forces[-2]
                 self.Fy = Forces[-1]
         else:
+            Forces = np.array([0, 0, 0, 0])
             self.Fx = 0
             self.Fy = 0
         self.Fx_in_t[t] = self.Fx
