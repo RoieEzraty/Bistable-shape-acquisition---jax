@@ -116,7 +116,7 @@ def build_torque_stiffness_from_file(
     theta_grid  = jnp.asarray(theta_u, dtype=jnp.float32)
     torque_grid = jnp.asarray(tau_u,    dtype=jnp.float32)
     k_grid      = jnp.asarray(k,        dtype=jnp.float32)
-    k_grid = k_grid.at[k_grid<0].set(0.01)  # for numerical stability, singular point of experimental negative k
+    k_grid = k_grid.at[k_grid < 0].set(0.01)  # for numerical stability, singular point of experimental negative k
 
     # --- clamped linear interpolators (JAX) ---
     def _clamp(x, xmin, xmax):

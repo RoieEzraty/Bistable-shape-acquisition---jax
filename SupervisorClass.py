@@ -112,15 +112,17 @@ class SupervisorClass:
                 self.tip_angle_in_t[:] = 0.0
         elif sampling == 'almost flat':
             end = float(Strctr.edges*Strctr.L)
-            tip_pos = np.array([end-0.1*Strctr.L,  0.0*Strctr.L], dtype=np.float32)  # flat arrangement
+            # tip_pos = np.array([end-1.1*Strctr.L,  1.0*Strctr.L], dtype=np.float32)  # flat arrangement
+            tip_pos = np.array([end-0.4*Strctr.L,  0.4*Strctr.L], dtype=np.float32)  # flat arrangement
 
             # tiny noise around each position (tune scale as you like)
-            noise_scale = 0.0 * Strctr.L
+            noise_scale = 0.2 * Strctr.L
             noise_pos = noise_scale * np.random.randn(self.T, 2).astype(np.float32)
             noise_pos[:, 0] = -np.abs(noise_pos[:, 0])
             self.tip_pos_in_t[:] = tip_pos + noise_pos
 
-            noise_angle = noise_scale * np.random.randn(self.T,).astype(np.float32)
+            # noise_angle = noise_scale * np.random.randn(self.T,).astype(np.float32)
+            noise_angle = np.pi/16
             if self.control_tip_angle and self.tip_angle_in_t is not None:
                 self.tip_angle_in_t[:] = noise_angle
         elif sampling == 'stress strain':
@@ -161,6 +163,7 @@ class SupervisorClass:
         self.loss_in_t[t, : self.loss.shape[0]] = self.loss
 
     def calc_update_tip(self, t: int, Strctr: "StructureClass", Variabs: "VariablesClass", State: "StateClass",
+                        current_tip_pos: Optional[np.ndarray] = None,
                         prev_tip_update_pos: Optional[np.ndarray] = None,
                         current_tip_angle: Optional[float] = None,
                         prev_tip_update_angle: Optional[float] = None,) -> None:
@@ -179,6 +182,18 @@ class SupervisorClass:
             update_vec = - self.alpha * np.matmul(Strctr.DM_dagger, grad_loss_vec)
             delta_tip = update_vec[0:2]
             delta_angle = update_vec[2] if self.control_tip_angle else 0.0
+
+        elif self.update_scheme == 'BEASTAL_no_pinv':
+            # large_angle = np.arctan2(self.tip_pos_int_t[t, 1], self.tip_pos_in_t[t, 0])
+            # R = np.sqrt(self.tip_pos_int_t[t, 1]**2 + self.tip_pos_int_t[t, 1]**2)
+
+            # delta_tip = - self.alpha * self.loss[:2] / Variabs.norm_force
+            delta_tip_x = + self.alpha * self.loss[0] / Variabs.norm_force * Strctr.hinges * Strctr.L * (current_tip_pos[0] - Strctr.hinges * Strctr.L)
+            delta_tip_y = - self.alpha * self.loss[1] / Variabs.norm_force * Strctr.hinges * Strctr.L * current_tip_pos[1]
+            delta_tip = np.array([delta_tip_x, delta_tip_y])
+            delta_angle = + self.alpha * self.loss[2] / Variabs.norm_torque * np.pi/64 * current_tip_angle if (self.control_tip_angle and self.loss.size == 3) else 0.0
+            print('delta_tip=', delta_tip)
+            print('delta_angle=', delta_angle)
         elif self.update_scheme == 'one_to_one':
             # large_angle = np.arctan2(self.tip_pos_int_t[t, 1], self.tip_pos_in_t[t, 0])
             # R = np.sqrt(self.tip_pos_int_t[t, 1]**2 + self.tip_pos_int_t[t, 1]**2)

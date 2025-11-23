@@ -70,9 +70,10 @@ class StateClass:
     pos_arr: NDArray[np.float32] = eqx.field(static=True)          # (nodes, 2)
     theta_arr: NDArray[np.float32] = eqx.field(static=True)        # (hinges,)
     buckle_arr: NDArray[np.int32] = eqx.field(static=True)         # (hinges, shims)
-    Fx: float = eqx.field(static=True)
-    Fy: float = eqx.field(static=True)
-    tip_torque: float = eqx.field(static=True)
+    Fx: float = eqx.field(static=True)                             # float
+    Fy: float = eqx.field(static=True)                             # float
+    tip_torque: float = eqx.field(static=True)                     # float, torque just on tip
+    tot_torque: float = eqx.field(static=True)                     # float, torque of whole chain
 
     # --- histories / logs ---
     pos_arr_in_t: NDArray[np.float32] = eqx.field(static=True)     # (nodes, 2, T)
@@ -81,6 +82,7 @@ class StateClass:
     Fx_in_t: NDArray[np.float32] = eqx.field(static=True)          # (T,)
     Fy_in_t: NDArray[np.float32] = eqx.field(static=True)          # (T,)
     tip_torque_in_t: NDArray[np.float32] = eqx.field(static=True)  # (T,)
+    tot_torque_in_t: NDArray[np.float32] = eqx.field(static=True)  # (T,)
 
     def __init__(self, Variabs: "VariablesClass", Strctr: "StructureClass", Sprvsr: "SupervisorClass",
                  pos_arr: Optional[np.ndarray] = None, buckle_arr: Optional[np.ndarray] = None) -> None:
@@ -109,6 +111,9 @@ class StateClass:
 
         self.tip_torque = 0.0
         self.tip_torque_in_t = np.zeros((Sprvsr.T), dtype=np.float32)
+
+        self.tot_torque = 0.0
+        self.tot_torque_in_t = np.zeros((Sprvsr.T), dtype=np.float32)
 
     # ---------- ingest from EquilibriumClass ----------
 
@@ -143,10 +148,10 @@ class StateClass:
         # Force normal on wall taken from the last row if provided
         if Forces is not None:
             if control_tip_angle:  # tip is controlled, forces are on one before last node
-                # self.Fx = Forces[-4] + Forces[-2]
-                # self.Fy = Forces[-3] + Forces[-1]
-                self.Fx = Forces[-4]
-                self.Fy = Forces[-3]
+                self.Fx = Forces[-4] + Forces[-2]
+                self.Fy = Forces[-3] + Forces[-1]
+                # self.Fx = Forces[-4]
+                # self.Fy = Forces[-3]
             else:  # tip is not controlled, forces are on last node
                 self.Fx = Forces[-2]
                 self.Fy = Forces[-1]
@@ -165,7 +170,9 @@ class StateClass:
         
         # tip angle measured from -x
         tip_angle = float(helpers_builders._get_tip_angle(self.pos_arr))
-        self.tip_torque = float(helpers_builders.torque(tip_angle, self.Fx, self.Fy))
+        self.tot_torque = float(helpers_builders.torque(tip_angle, self.Fx, self.Fy))
+        self.tot_torque_in_t[t] = self.tot_torque
+        self.tip_torque = float(helpers_builders.tip_torque(tip_angle, Forces))
         self.tip_torque_in_t[t] = self.tip_torque
 
         self.edge_lengths = Strctr.all_edge_lengths(self.pos_arr)

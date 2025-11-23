@@ -216,6 +216,15 @@ def torque(tip_angle: float, Fx: float, Fy: float) -> float:
     return np.cos(tip_angle)*Fy-np.sin(tip_angle)*Fx
 
 
+def tip_torque(tip_angle: float, Forces: NDArray) -> float:
+    Fy_last = Forces[-1]
+    Fx_last = Forces[-2]
+    Fy_before_last = Forces[-3]
+    Fx_before_last = Forces[-4]
+    return np.cos(tip_angle)*Fy_last-np.sin(tip_angle)*Fx_last - (np.cos(tip_angle)*Fy_before_last -
+                                                                  np.sin(tip_angle)*Fx_before_last)
+
+
 # ### NOT IN USE
 #     @staticmethod
 #     def _compute_thetas_over_traj(Strctr: "StructureClass", traj_pos: jax.Array) -> jax.Array:
