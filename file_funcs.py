@@ -61,14 +61,12 @@ def import_stress_strain_exp_and_plot(path: str, plot: bool = True) -> None:
     return exp_df
 
 
-def build_torque_stiffness_from_file(
-    path: str,
-    *,
-    angles_in_degrees: bool = True,
-    savgol_window: int = None,
-) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, callable, callable]:
+def build_torque_stiffness_from_file(path: str, *, contact: bool = True, angles_in_degrees: bool = True,
+                                     savgol_window: int = None, scale: float = 1e2) -> tuple[jnp.ndarray, jnp.ndarray,
+                                                                                             jnp.ndarray, callable, callable]:
     """
     Load (angle, torque) from text file and construct JAX-friendly interpolants.
+    contact: bool = if True, account for contact between plastic faces where torques explode
 
     Returns
     -------
@@ -116,15 +114,26 @@ def build_torque_stiffness_from_file(
     theta_grid  = jnp.asarray(theta_u, dtype=jnp.float32)
     torque_grid = jnp.asarray(tau_u,    dtype=jnp.float32)
     k_grid      = jnp.asarray(k,        dtype=jnp.float32)
-    k_grid = k_grid.at[k_grid < 0].set(0.01)  # for numerical stability, singular point of experimental negative k
+    k_grid = k_grid.at[k_grid < 0].set(10e-4)  # for numerical stability, singular point of experimental negative k
 
     # --- clamped linear interpolators (JAX) ---
     def _clamp(x, xmin, xmax):
         return jnp.clip(x, xmin, xmax)
 
     def torque_of_theta(theta_query: jnp.ndarray) -> jnp.ndarray:
+        # masks for outside vs inside range
+        above = theta_query > theta_grid[-1]
+        below = theta_query < theta_grid[0]
         th = _clamp(theta_query, theta_grid[0], theta_grid[-1])
-        return jnp.interp(th, theta_grid, torque_grid)
+        out = jnp.interp(th, theta_grid, torque_grid)
+        if contact:
+            # masks for outside vs inside range
+            above = theta_query > theta_grid[-1]
+            below = theta_query < theta_grid[0]
+
+            out = jnp.where(above, scale * jnp.max(torque_grid), out)
+            out = jnp.where(below, scale * jnp.min(torque_grid), out)    
+        return out
 
     def k_of_theta(theta_query: jnp.ndarray) -> jnp.ndarray:
         th = _clamp(theta_query, theta_grid[0], theta_grid[-1])

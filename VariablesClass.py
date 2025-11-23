@@ -69,9 +69,10 @@ class VariablesClass(eqx.Module):
         elif k_type == "Experimental":
             self.k_soft = None
             self.k_stiff = None
-            thetas, torques, ks, torque_of_theta, k_of_theta = file_funcs.build_torque_stiffness_from_file(
-                file_name, savgol_window=9
-            )
+            thetas, torques, ks, torque_of_theta, k_of_theta = file_funcs.build_torque_stiffness_from_file(file_name,
+                                                                                                           savgol_window=9,
+                                                                                                           contact=True,
+                                                                                                           scale=1e1)
             self.k_max = float(np.max(ks))
             self.k = k_of_theta 
             self.torque = torque_of_theta
@@ -80,10 +81,8 @@ class VariablesClass(eqx.Module):
         else:
             raise ValueError(f"Unknown k_type: {k_type}")
 
-        self.thetas_ss = (np.ones((H, S), np.float32) if thetas_ss is None
-                          else np.asarray(thetas_ss, np.float32))
-        self.thresh = (np.ones((H, S), np.float32) if thresh is None
-                       else np.asarray(thresh, np.float32))
+        self.thetas_ss = (np.ones((H, S), np.float32) if thetas_ss is None else np.asarray(thetas_ss, np.float32))
+        self.thresh = (np.ones((H, S), np.float32) if thresh is None else np.asarray(thresh, np.float32))
 
         # normalizations for update values
         self.norm_pos = float(Strctr.hinges*Strctr.L)
