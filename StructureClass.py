@@ -10,7 +10,7 @@ from numpy.typing import NDArray
 from typing import TYPE_CHECKING, Callable, Union, Optional
 from typing import Optional
 
-import learning_funcs
+import learning_funcs, helpers_builders
 
 
 # ===================================================
@@ -21,27 +21,32 @@ import learning_funcs
 class StructureClass(eqx.Module):
     """Bistable buckle structure (1D chain in the plane)."""  
     
-    # --- user-provided (static) ---
+    # ------ user-provided (static) ------
     hinges: int = eqx.field(static=True)     # number of hinges in the chain
     shims: int = eqx.field(static=True)      # shims per hinge
     L: float = eqx.field(static=True)        # rest length of rods
 
-    # --- computed in __init__ (static topology/geometry) ---
-    edges_arr: NDArray[int] = eqx.field(init=False, static=True)     # (hinges+1, 2) int32
+    # ------ computed in __init__ (static topology/geometry) ------
+    edges_arr: NDArray[int] = eqx.field(init=False, static=True)          # (hinges+1, 2) int32
     edges: int = eqx.field(init=False, static=True)
     nodes: int = eqx.field(init=False, static=True)
     n_coords: int = eqx.field(init=False, static=True)
-    hinges_arr: NDArray[int] = eqx.field(init=False, static=True)    # (hinges, 2) int32
+    hinges_arr: NDArray[int] = eqx.field(init=False, static=True)          # (hinges, 2) int32
     rest_lengths: NDArray[np.float_] = eqx.field(init=False, static=True)  # (hinges+1,) float32
 
-    # --- optional learning graph (only if you call _build_learning_parameters) ---
+    # ------ for equilibrium calculation, jax arrays ------
+    fixed_DOFs: jax.Array[bool] = eqx.field(static=True)                   # (2*nodes,) float32
+
+    # ------ optional learning graph (only if you call _build_learning_parameters) ------
     DM: Optional[NDArray[int]] = eqx.field(default=None, init=False, static=True)
     NE: Optional[NDArray[int]] = eqx.field(default=None, init=False, static=True)
     NN: Optional[NDArray[int]] = eqx.field(default=None, init=False, static=True)
     output_nodes_arr: Optional[NDArray[int]] = eqx.field(default=None, init=False, static=True)
 
     def __init__(self, hinges: int, shims: int, L: float, rest_lengths:  Optional[NDArray[np.float_]] = None,
-                 update_scheme: str = 'one_to_one', Nin: Optional[int] = None, Nout: Optional[int] = None):
+                 update_scheme: str = 'one_to_one', Nin: Optional[int] = None, Nout: Optional[int] = None,
+                 control_first_edge: Optional[bool] = True, control_tip_pos: Optional[bool] = True,
+                 control_tip_angle: Optional[bool] = True):
         self.hinges = int(hinges)
         self.shims = int(shims)
         self.L = float(L)
@@ -54,6 +59,7 @@ class StructureClass(eqx.Module):
         self.rest_lengths = self._build_rest_lengths(rest_lengths=rest_lengths)  # rest lengths (float32)
         if update_scheme == 'BEASTAL':
             self.DM, self.NE, self.NN, self.output_nodes_arr = self._build_learning_parameters(Nin, Nout)
+        self.fixed_DOFs = self._build_fixed_DOFs(control_first_edge)
 
         # learning fields left as None until _build_learning_parameters is called
        
@@ -78,7 +84,22 @@ class StructureClass(eqx.Module):
     def _build_learning_parameters(self, Nin: int, Nout: int) -> None:
         _, _, _, DM, NE, NN, output_nodes_arr = learning_funcs.build_incidence(Nin, Nout)
         return DM, NE, NN, output_nodes_arr
-    
+
+    def _build_fixed_DOFs(self, control_first_edge: bool = True) -> None:
+        # --- fixed and imposed DOFs initialize --- 
+        fixed_DOFs = jnp.zeros((self.n_coords,), dtype=bool)
+
+        # --- fixed: node 0, potentially also node 1 ---
+        if control_first_edge:
+            nodes = [0, 1]  # two nodes are at 0
+        else:
+            nodes = [0]     # first node at 0, 0
+
+        for node in nodes:
+            fixed_DOFs = fixed_DOFs.at[helpers_builders.dof_idx(node, 0)].set(True)
+            fixed_DOFs = fixed_DOFs.at[helpers_builders.dof_idx(node, 1)].set(True)
+        return fixed_DOFs
+
     # --- numpy geometry --- 
     def all_edge_lengths(self, pos_arr: NDArray[np.float_]) -> NDArray[np.float_]:
         vecs = pos_arr[self.edges_arr[:, 1]] - pos_arr[self.edges_arr[:, 0]]

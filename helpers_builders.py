@@ -82,6 +82,14 @@ def _reshape_state_2_pos_arr(state: jnp.Array[jnp.float_], pos_arr) -> jnp.Array
     return state.reshape(pos_arr.shape)
 
 
+def dof_idx(node: int, comp: int) -> int:
+    """Return the flat DOF index for a node and component.
+
+    comp = 0 → x, comp = 1 → y
+    """
+    return 2 * node + comp
+
+
 # --- initiate ---
 def _initiate_pos(nodes: int, L: float, numpify: bool = False) -> jax.Array:
     """

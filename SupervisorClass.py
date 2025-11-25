@@ -78,11 +78,14 @@ class SupervisorClass:
     tip_angle_update_in_t: Optional[NDArray[np.float32]] = eqx.field(default=None, init=False, 
                                                                      static=True)  # (T,)
 
+    # ------ for equilibrium calculation, jax arrays ------    
+    imposed_DOFs: jax.ndarray[bool] = eqx.field(static=True)                       # (2*nodes,)
+
     # --- scratch (most recent loss vector) ---
     loss: NDArray[np.float32] = eqx.field(init=False, static=True)                 # (1,), (2,) or (3,) 
 
     def __init__(self, Strctr, alpha: float, T: int, desired_buckle_arr: np.ndarray, sampling='Uniform',
-                 control_tip_angle: bool = True, control_first_edge: bool = True,
+                 control_tip_pos: bool = True, control_tip_angle: bool = True, control_first_edge: bool = True,
                  update_scheme: str = 'one_to_one', loss_type: str = 'cartesian') -> None:
         
         self.T = int(T)  # total training-set size (& algorithm time, not to confuse with time to equilib state)
@@ -90,6 +93,9 @@ class SupervisorClass:
         self.update_scheme = str(update_scheme)
         self.control_tip_angle = bool(control_tip_angle)
         self.control_first_edge = bool(control_first_edge)  # if true, fix nodes (0, 1), else fix only node (0)
+
+        # for equilibrium
+        self.imposed_DOFs = self._build_imposed_DOFs(Strctr, control_tip_pos, control_tip_angle)
 
         # Desired/targets
         self.desired_buckle_arr = np.asarray(desired_buckle_arr, dtype=np.int32)
@@ -120,6 +126,28 @@ class SupervisorClass:
         self.tip_pos_update_in_t = np.zeros((self.T, 2), dtype=np.float32)
         if self.control_tip_angle:
             self.tip_angle_update_in_t = np.zeros((self.T,), dtype=np.float32)
+
+    def _build_imposed_DOFs(self, Strctr: "StructureClass", control_tip_pos: bool = True, control_tip_angle: bool = True):
+        n_coords = Strctr.n_coords
+        N = Strctr.hinges + 2                          # number of nodes
+        last = N - 1
+
+        # --- fixed and imposed DOFs initialize --- 
+        imposed_DOFs = jnp.zeros((n_coords,), dtype=bool)
+
+        # -------- imposed tip position ----------
+        if control_tip_pos:
+            # set tip indices as true 
+            idxs = jnp.array([helpers_builders.dof_idx(last, 0), helpers_builders.dof_idx(last, 1)])
+            if control_tip_angle:
+                before_last_idxs = jnp.array([helpers_builders.dof_idx(last - 1, 0), helpers_builders.dof_idx(last - 1, 1)])
+                idxs = jnp.concatenate([before_last_idxs, idxs])
+            imposed_DOFs = imposed_DOFs.at[idxs].set(True)  
+        else:
+            if control_tip_angle:
+                print("no tip angle could be imposed without tip loc, skipping tip angle")
+
+        return imposed_DOFs
 
     def create_dataset(self, Strctr: "StructureClass", sampling: str, exp_start: float = None,
                        distance: float = None, dist_noise: float = 0.0, angle_noise: float = 0.0) -> None:
