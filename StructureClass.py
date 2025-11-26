@@ -35,7 +35,7 @@ class StructureClass(eqx.Module):
     rest_lengths: NDArray[np.float_] = eqx.field(init=False, static=True)  # (hinges+1,) float32
 
     # ------ for equilibrium calculation, jax arrays ------
-    fixed_DOFs: jax.Array[bool] = eqx.field(static=True)                   # (2*nodes,) float32
+    fixed_mask: jax.Array[bool] = eqx.field(static=True)                   # (2*nodes,) float32
 
     # ------ optional learning graph (only if you call _build_learning_parameters) ------
     DM: Optional[NDArray[int]] = eqx.field(default=None, init=False, static=True)
@@ -59,7 +59,7 @@ class StructureClass(eqx.Module):
         self.rest_lengths = self._build_rest_lengths(rest_lengths=rest_lengths)  # rest lengths (float32)
         if update_scheme == 'BEASTAL':
             self.DM, self.NE, self.NN, self.output_nodes_arr = self._build_learning_parameters(Nin, Nout)
-        self.fixed_DOFs = self._build_fixed_DOFs(control_first_edge)
+        self.fixed_mask = self._build_fixed_mask(control_first_edge)
 
         # learning fields left as None until _build_learning_parameters is called
        
@@ -85,9 +85,9 @@ class StructureClass(eqx.Module):
         _, _, _, DM, NE, NN, output_nodes_arr = learning_funcs.build_incidence(Nin, Nout)
         return DM, NE, NN, output_nodes_arr
 
-    def _build_fixed_DOFs(self, control_first_edge: bool = True) -> None:
+    def _build_fixed_mask(self, control_first_edge: bool = True) -> None:
         # --- fixed and imposed DOFs initialize --- 
-        fixed_DOFs = jnp.zeros((self.n_coords,), dtype=bool)
+        fixed_mask = jnp.zeros((self.n_coords,), dtype=bool)
 
         # --- fixed: node 0, potentially also node 1 ---
         if control_first_edge:
@@ -96,9 +96,9 @@ class StructureClass(eqx.Module):
             nodes = [0]     # first node at 0, 0
 
         for node in nodes:
-            fixed_DOFs = fixed_DOFs.at[helpers_builders.dof_idx(node, 0)].set(True)
-            fixed_DOFs = fixed_DOFs.at[helpers_builders.dof_idx(node, 1)].set(True)
-        return fixed_DOFs
+            fixed_mask = fixed_mask.at[helpers_builders.dof_idx(node, 0)].set(True)
+            fixed_mask = fixed_mask.at[helpers_builders.dof_idx(node, 1)].set(True)
+        return fixed_mask
 
     # --- numpy geometry --- 
     def all_edge_lengths(self, pos_arr: NDArray[np.float_]) -> NDArray[np.float_]:

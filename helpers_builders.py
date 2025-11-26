@@ -219,16 +219,16 @@ def _extend_pos_to_x0_v0(init_pos, pos_noise, vel_noise, rand_key):
     return jnp.concatenate([x0, v0], axis=0)
 
 
-def _get_state_free_from_state(state_0, fixed_DOFs, imposed_DOFs):
+def _get_state_free_from_full(state_0, fixed_mask, imposed_mask):
     # USED
     n_coords = int(len(state_0)/2)
-    free_DOFs = jnp.logical_not(imposed_DOFs | fixed_DOFs)
-    n_free_DOFs = jnp.sum(free_DOFs)
+    free_mask = jnp.logical_not(imposed_mask | fixed_mask)
+    n_free_DOFs = jnp.sum(free_mask)
 
     state_0 = state_0.flatten()
     state_0_x, state_0_x_dot = state_0[:n_coords], state_0[n_coords:]
-    state_0_x_free, state_0_x_dot_free = state_0_x[free_DOFs], state_0_x_dot[free_DOFs]
-    return free_DOFs, n_free_DOFs, jnp.concatenate([state_0_x_free, state_0_x_dot_free])
+    state_0_x_free, state_0_x_dot_free = state_0_x[free_mask], state_0_x_dot[free_mask]
+    return free_mask, n_free_DOFs, jnp.concatenate([state_0_x_free, state_0_x_dot_free])
 
 
 def _get_before_tip(tip_pos: jnp.ndarray,
