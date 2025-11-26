@@ -106,6 +106,7 @@ def solve_dynamics(
 
     # Create the speed function by applying the derivative computation
     imposed_disp_speed_values = compute_disp_speed(imposed_vals)
+    jax.debug.print('imposed_disp_speed_values=', imposed_disp_speed_values)
     # imposed_disp_speed_values = grad(imposed_vals)
     # WIP, adapt to a function the size of the origami pts
 
