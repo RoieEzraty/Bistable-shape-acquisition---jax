@@ -245,8 +245,11 @@ class EquilibriumClass(eqx.Module):
         state_0 = jnp.concatenate([x0, v0], axis=0)
 
         # -------- run dynamics ----------
-        final_pos, pos_in_t, vel_in_t, potential_F_in_t = self.solve_dynamics(state_0, Variabs, Strctr, force_function=None,
-                                                                              fixed_vals=fixed_vals, imposed_vals=imposed_vals)
+        final_pos, pos_in_t, vel_in_t, potential_F_in_t = self.solve_dynamics(state_0, Variabs, Strctr,
+                                                                              fixed_DOFs=Strctr.fixed_DOFs, 
+                                                                              fixed_vals=fixed_vals,
+                                                                              imposed_DOFs=Sprvsr.imposed_DOFs,
+                                                                              imposed_vals=imposed_vals)
 
         # split to components if you want:
         F_stretch = self.stretch_forces(Strctr, Variabs, final_pos)     # (n_coords,)
@@ -538,10 +541,6 @@ class EquilibriumClass(eqx.Module):
         return F.reshape(-1)                  # (n_coords,)
 
     # -------- external forces (optional) ----------
-    def force_function(self, t: float) -> jnp.ndarray:
-        # No external forces; you can add tip forces here if needed
-        return jnp.zeros((self.init_pos.size,), dtype=self.init_pos.dtype)
-
     def force_function_free(self,
                             t: float,
                             force_function: Callable[[float], jax.Array],
@@ -551,12 +550,11 @@ class EquilibriumClass(eqx.Module):
         return force_function(t)[free_mask]
 
     def solve_dynamics(self, state_0: jax.Array, Variabs: "VariablesClass", Strctr: "StructureClass",
-                       force_function: jax.Array[jnp.float_] = None, fixed_DOFs: jax.Array[bool] = None,
-                       fixed_vals: jax.Array[jnp.float_] = None, imposed_DOFs: jax.Array[bool] = None,
-                       imposed_vals: jax.Array[jnp.float_] = None, rtol: float = 1e-2, maxsteps: int = 100):
+                       fixed_DOFs: jax.Array[bool] = None, fixed_vals: jax.Array[jnp.float_] = None,
+                       imposed_DOFs: jax.Array[bool] = None, imposed_vals: jax.Array[jnp.float_] = None, rtol: float = 1e-2,
+                       maxsteps: int = 100):
         # ------ ensure correct sizes ---
-        if force_function is None:
-            force_function = lambda t: jnp.zeros_like(self.init_pos).flatten()
+        force_function = lambda t: jnp.zeros_like(self.init_pos).flatten()
 
         if fixed_DOFs is None:
             fixed_DOFs = jnp.zeros_like(self.init_pos).flatten().astype(bool)
