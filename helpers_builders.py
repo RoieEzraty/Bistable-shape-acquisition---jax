@@ -142,14 +142,14 @@ def _initiate_buckle(hinges: int, shims: int, numpify: bool = False) -> jax.Arra
         return buckle
 
 
-# --- DOFs - free and essential ---
-def _assemble_full(free_mask: jax.Array,       # bool (n_coords,)
-                   fixed_mask: jax.Array,      # bool (n_coords,)
-                   imposed_mask: jax.Array,    # bool (n_coords,)
-                   x_free: jax.Array,
-                   fixed_vals_t: jax.Array,
-                   imposed_vals_t: jax.Array,  # (n_coords,)
-                   ) -> jax.Array:
+# ------ DOFs - free and essential ------
+def _assemble_full_from_free(free_mask: jax.Array,       # bool (n_coords,)
+                             fixed_mask: jax.Array,      # bool (n_coords,)
+                             imposed_mask: jax.Array,    # bool (n_coords,)
+                             x_free: jax.Array,
+                             fixed_vals_t: jax.Array,
+                             imposed_vals_t: jax.Array,  # (n_coords,)
+                             ) -> jax.Array:
     """
     Build full flattened x from free DOFs + constraints at time t.
 
@@ -174,115 +174,11 @@ def _assemble_full(free_mask: jax.Array,       # bool (n_coords,)
         Complete flattened coordinate vector, consistent with all masks
         and imposed values.
     """
-    # x_full = jnp.zeros((n_coords,), dtype=imposed_vals_t.dtype)
-    # x_full = x_full.at[free_mask].set(x_free)
-    # x_full = jnp.where(fixed_mask, 0.0, x_full)
-    # x_full = jnp.where(imposed_mask, imposed_vals_t, x_full)
-    # return x_full
     x_full = jnp.zeros((free_mask.size,), dtype=fixed_vals_t.dtype)
     x_full = x_full.at[free_mask].set(x_free)
     x_full = jnp.where(fixed_mask, fixed_vals_t, x_full)
     x_full = jnp.where(imposed_mask, imposed_vals_t, x_full)
     return x_full
-
-
-def _get_before_tip(tip_pos: jnp.ndarray,
-                    tip_angle: jnp.ndarray,
-                    L: float,
-                    *,
-                    dtype=jnp.float32) -> jnp.ndarray:
-    """Return coordinates of the node that is one before the tip.
-
-    tip_pos: (2,) tip [x, y]
-    tip_angle: scalar (radians), CCW from +x
-    L: edge length of last link
-    """
-    tip_pos = jnp.asarray(tip_pos, dtype=dtype).reshape((2,))
-    dx = L * jnp.cos(tip_angle)
-    dy = L * jnp.sin(tip_angle)
-    return tip_pos - jnp.array([dx, dy], dtype=dtype)
-
-
-def _get_tip_angle(pos_arr: np.array) -> np.array:
-    """
-    pos_arr: array of shape (H, 2)
-    Returns: angle (radians) in [-pi, pi], measured from -x axis
-    """
-    pos_arr = np.asarray(pos_arr)
-    p0, p1 = pos_arr[-2], pos_arr[-1]   # last two points
-    dx, dy = p1 - p0                    # displacement vector
-
-    # shift so that 0 is along -x
-    theta_from_negx = np.arctan2(dy, dx) - np.pi
-    # normalize back to [-pi, pi]
-    theta_from_negx = (theta_from_negx + np.pi) % (2*np.pi) - np.pi
-
-    return theta_from_negx
-
-
-# def _correct_big_stretch(tip_pos, tip_angle, L, edges):
-#     before_lst_node = np.array([tip_pos[0] - L*np.cos(tip_angle), tip_pos - L*np.sin(tip_angle)])
-#     scnd_node = np.array([L, 0])
-#     actual_stretch = np.sqrt(np.sum((before_lst_node - scnd_node)**2))
-#     maximal_stretch = ((edges-2)*L)
-#     cond = actual_stretch > maximal_stretch
-#     ratio = maximal_stretch / actual_stretch
-#     if cond:
-#         corrected = (before_lst_node - scnd_node) * ratio + (scnd_node + tip_pos - before_lst_node)
-#         print('corrected tip_pos_update_in_t[t, :]=', corrected)
-#     else:
-#         corrected = tip_pos
-#     return corrected
-
-
-def _correct_big_stretch(tip_pos: NDArray[np.float_], tip_angle: float, L: float, edges: int,) -> NDArray[np.float_]:
-    """
-    Physical upper bound on total chain stretch by correcting tip position to not exceed  maximal possible length.
-
-    Parameters
-    ----------
-    tip_pos : ndarray of shape (2,) previous tip position
-    
-    tip_angle : float
-
-    Returns
-    -------
-    corrected_tip_pos : ndarray of shape (2,)
-        If the suggested tip position exceeds the chain's maximum reach, returns corrected position, scaled to maximal
-        physical stretch. Otherwise, the original tip_pos is returned.
-
-    Notes
-    -----
-    - before last node is located at:
-          before = tip_pos - L * [cos(theta), sin(theta)]
-    - Node 2 (second node) is located at (L, 0) in the reference frame.
-    - The correction preserves the direction of the displacement but 
-      rescales its magnitude down to the physical limit.
-    """
-
-    # Compute the location of the node before the tip
-    before_last = np.array([tip_pos[0] - L * np.cos(tip_angle), tip_pos[1] - L * np.sin(tip_angle)])
-
-    # Second node from the base sits at (L, 0)
-    second_node = np.array([L, 0.0], dtype=float)
-
-    # Actual stretch beyond the first two edges
-    vec = before_last - second_node
-    actual_stretch = np.linalg.norm(vec)
-
-    # Maximum physically possible stretch (remaining edges)
-    max_stretch = (edges - 2) * L
-
-    # If unphysical → scale back
-    if actual_stretch > max_stretch:
-        maximal_stretch = (edges-2)*L
-        ratio = maximal_stretch / actual_stretch
-        corrected = (before_last - second_node) * ratio + (second_node + tip_pos - before_last)
-        print('corrected tip_pos_update_in_t[t, :]=', corrected)
-        return corrected
-
-    # Otherwise nothing to correct
-    return tip_pos
 
 
 def _extend_pos_to_x0_v0(init_pos, pos_noise, vel_noise, rand_key):
@@ -333,6 +229,105 @@ def _get_state_free_from_state(state_0, fixed_DOFs, imposed_DOFs):
     state_0_x, state_0_x_dot = state_0[:n_coords], state_0[n_coords:]
     state_0_x_free, state_0_x_dot_free = state_0_x[free_DOFs], state_0_x_dot[free_DOFs]
     return free_DOFs, n_free_DOFs, jnp.concatenate([state_0_x_free, state_0_x_dot_free])
+
+
+def _get_before_tip(tip_pos: jnp.ndarray,
+                    tip_angle: jnp.ndarray,
+                    L: float,
+                    *,
+                    dtype=jnp.float32) -> jnp.ndarray:
+    """Return coordinates of the node that is one before the tip.
+
+    tip_pos: (2,) tip [x, y]
+    tip_angle: scalar (radians), CCW from +x
+    L: edge length of last link
+    """
+    tip_pos = jnp.asarray(tip_pos, dtype=dtype).reshape((2,))
+    dx = L * jnp.cos(tip_angle)
+    dy = L * jnp.sin(tip_angle)
+    return tip_pos - jnp.array([dx, dy], dtype=dtype)
+
+
+def _get_tip_angle(pos_arr: np.array) -> np.array:
+    """
+    pos_arr: array of shape (H, 2)
+    Returns: angle (radians) in [-pi, pi], measured from -x axis
+    """
+    pos_arr = np.asarray(pos_arr)
+    p0, p1 = pos_arr[-2], pos_arr[-1]   # last two points
+    dx, dy = p1 - p0                    # displacement vector
+
+    # shift so that 0 is along -x
+    theta_from_negx = np.arctan2(dy, dx) - np.pi
+    # normalize back to [-pi, pi]
+    theta_from_negx = (theta_from_negx + np.pi) % (2*np.pi) - np.pi
+
+    return theta_from_negx
+
+
+# def _correct_big_stretch(tip_pos, tip_angle, L, edges):
+#     before_lst_node = np.array([tip_pos[0] - L*np.cos(tip_angle), tip_pos - L*np.sin(tip_angle)])
+#     scnd_node = np.array([L, 0])
+#     actual_stretch = np.sqrt(np.sum((before_lst_node - scnd_node)**2))
+#     maximal_stretch = ((edges-2)*L)
+#     cond = actual_stretch > maximal_stretch
+#     ratio = maximal_stretch / actual_stretch
+#     if cond:
+#         corrected = (before_lst_node - scnd_node) * ratio + (scnd_node + tip_pos - before_lst_node)
+#         print('corrected tip_pos_update_in_t[t, :]=', corrected)
+#     else:
+#         corrected = tip_pos
+#     return corrected
+
+# ------contact etc. ------
+def _correct_big_stretch(tip_pos: NDArray[np.float_], tip_angle: float, L: float, edges: int,) -> NDArray[np.float_]:
+    """
+    Physical upper bound on total chain stretch by correcting tip position to not exceed  maximal possible length.
+
+    Parameters
+    ----------
+    tip_pos : ndarray of shape (2,) previous tip position
+    
+    tip_angle : float
+
+    Returns
+    -------
+    corrected_tip_pos : ndarray of shape (2,)
+        If the suggested tip position exceeds the chain's maximum reach, returns corrected position, scaled to maximal
+        physical stretch. Otherwise, the original tip_pos is returned.
+
+    Notes
+    -----
+    - before last node is located at:
+          before = tip_pos - L * [cos(theta), sin(theta)]
+    - Node 2 (second node) is located at (L, 0) in the reference frame.
+    - The correction preserves the direction of the displacement but 
+      rescales its magnitude down to the physical limit.
+    """
+
+    # Compute the location of the node before the tip
+    before_last = np.array([tip_pos[0] - L * np.cos(tip_angle), tip_pos[1] - L * np.sin(tip_angle)])
+
+    # Second node from the base sits at (L, 0)
+    second_node = np.array([L, 0.0], dtype=float)
+
+    # Actual stretch beyond the first two edges
+    vec = before_last - second_node
+    actual_stretch = np.linalg.norm(vec)
+
+    # Maximum physically possible stretch (remaining edges)
+    max_stretch = (edges - 2) * L
+
+    # If unphysical → scale back
+    if actual_stretch > max_stretch:
+        maximal_stretch = (edges-2)*L
+        ratio = maximal_stretch / actual_stretch
+        corrected = (before_last - second_node) * ratio + (second_node + tip_pos - before_last)
+        print('corrected tip_pos_update_in_t[t, :]=', corrected)
+        return corrected
+
+    # Otherwise nothing to correct
+    return tip_pos
 
 
 def torque(tip_angle: float, Fx: float, Fy: float) -> float:

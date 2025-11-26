@@ -288,8 +288,8 @@ class EquilibriumClass(eqx.Module):
                                     imposed_mask: jax.Array, fixed_vals: jax.Array, imposed_vals: jax.Array):
         fixed_vals_t = fixed_vals(t)
         imposed_vals_t = imposed_vals(t)
-        x_full = helpers_builders._assemble_full(free_mask, fixed_mask, imposed_mask, x_free, fixed_vals_t,
-                                                 imposed_vals_t)
+        x_full = helpers_builders._assemble_full_from_free(free_mask, fixed_mask, imposed_mask, x_free, fixed_vals_t,
+                                                           imposed_vals_t)
         return self.total_potential_energy(Variabs, Strctr, x_full)
 
     def total_potential_force(self, Variabs: "VariablesClass", Strctr: "StructureClass", t: float,
@@ -336,8 +336,8 @@ class EquilibriumClass(eqx.Module):
         # 1) Rebuild full x vector and reshape
         fixed_vals_t = fixed_vals(t) if callable(fixed_vals) else fixed_vals
         imposed_vals_t = imposed_vals(t)  # callable by construction above
-        x_full = helpers_builders._assemble_full(free_mask, fixed_mask, imposed_mask, x_free, fixed_vals_t,
-                                                 imposed_vals_t)
+        x_full = helpers_builders._assemble_full_from_free(free_mask, fixed_mask, imposed_mask, x_free, fixed_vals_t,
+                                                           imposed_vals_t)
         pos_arr = helpers_builders._reshape_state_2_pos_arr(x_full, self.init_pos)
 
         # 2) Hinge torques: tau_hinges (H,)
@@ -398,7 +398,6 @@ class EquilibriumClass(eqx.Module):
         jax.Array, shape: (n_coords,)
             Internal reaction force on **all position DOFs**.
         """
-
         # x_full: (n_coords,) flattened positions ONLY (no velocities)
         pos_arr = helpers_builders._reshape_state_2_pos_arr(x_full, self.init_pos)
 
@@ -692,4 +691,3 @@ class EquilibriumClass(eqx.Module):
 #             "rel_L2_err_vs_grad": rel_l2_err,
 #             "max_abs_diff": max_abs_diff,
 #         }
-# # 
