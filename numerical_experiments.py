@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from EquilibriumClass import EquilibriumClass
 
 
-def compress_to_tip_pos(Strctr: "StructureClass", Variabs: "VariablesClass", Sprvsr: "SupervisorClass",
+def compress_to_tip_pos(Strctr: "StructureClass", Variabs: "VariablesClass", Sprvsr: "SupervisorClass", rand_key: int,
                         tip_pos_i, tip_angle_i, tip_pos_f, tip_angle_f, Eq_iterations, T_eq: int, damping: float, mass: float,
                         tolerance: float, buckle: NDArray) -> Tuple["StateClass", NDArray, NDArray]:
     """
@@ -109,15 +109,15 @@ def compress_to_tip_pos(Strctr: "StructureClass", Variabs: "VariablesClass", Spr
     pos_init = pos_in_t[-1][-1]
     T_eq = 1 * T_eq  # increase time for equilibrium
     damping = 3 * damping  # increase damping
-    State, pos_in_t_i, force_in_t_0 = one_shot(Strctr, Variabs, Sprvsr, T_eq, damping, mass, tolerance, buckle, tip_pos,
-                                               tip_angle, init_pos=pos_init)
+    State, pos_in_t_i, force_in_t_0 = one_shot(Strctr, Variabs, Sprvsr, T_eq, damping, mass, tolerance, rand_key, buckle,
+                                               tip_pos, tip_angle, init_pos=pos_init)
     pos_in_t.append(pos_in_t_i)
     force_in_t.append(force_in_t_0)
     return State, pos_in_t, force_in_t
 
 
 def one_shot(Strctr: "StructureClass", Variabs: "VariablesClass", Sprvsr: "SupervisorClass",
-             T_eq: int, damping: float, mass: float, tolerance: float, buckle: NDArray,
+             T_eq: int, damping: float, mass: float, tolerance: float, rand_key: int, buckle: NDArray,
              tip_pos: NDArray, tip_angle: NDArray, init_pos: NDArray = None) -> Tuple["StateClass", NDArray, NDArray]:
     """
     Perform a single equilibrium computation and state update for the system.
@@ -173,8 +173,7 @@ def one_shot(Strctr: "StructureClass", Variabs: "VariablesClass", Sprvsr: "Super
 
     # --- initialize, no tip movement yet
     Eq = EquilibriumClass(Strctr, T_eq, damping, mass, tolerance, buckle_arr=buckle, pos_arr=State.pos_arr)
-    final_pos, pos_in_t, vel_in_t, potential_force_in_t = Eq.calculate_state(Variabs, Strctr,
-                                                                             control_first_edge=Sprvsr.control_first_edge,
+    final_pos, pos_in_t, vel_in_t, potential_force_in_t = Eq.calculate_state(Variabs, Strctr, Sprvsr, rand_key,
                                                                              tip_pos=tip_pos, tip_angle=tip_angle)
     State._save_data(0, Strctr, final_pos, State.buckle_arr, potential_force_in_t, compute_thetas_if_missing=True,
                      control_tip_angle=Sprvsr.control_tip_angle)
@@ -190,8 +189,8 @@ def one_shot(Strctr: "StructureClass", Variabs: "VariablesClass", Sprvsr: "Super
 
 
 def ADMET_stress_strain(Strctr: StructureClass, Variabs: VariablesClass, Sprvsr: SupervisorClass, State: StateClass,  T_eq: float,
-                        damping: float, mass: float, tolerance: float, tip_angle: float, *, pos_noise: Optional[float] = None,
-                        vel_noise: Optional[float] = None, plot_every: int = 1
+                        damping: float, mass: float, tolerance: float, tip_angle: float, rand_key, *,
+                        pos_noise: Optional[float] = None, vel_noise: Optional[float] = None, plot_every: int = 1
                         ) -> Tuple[NDArray[np.float_],   # Fx_afo_pos
                                    NDArray[np.float_],   # pos_frames  (T, nodes, 2)
                                    NDArray[np.int_],     # buckle_frames (T, hinges, shims)
@@ -263,8 +262,7 @@ def ADMET_stress_strain(Strctr: StructureClass, Variabs: VariablesClass, Sprvsr:
             Eq = EquilibriumClass(Strctr, T_eq, damping, mass, tolerance, buckle_arr=State.buckle_arr)
         else:
             Eq = EquilibriumClass(Strctr, T_eq, damping, mass, tolerance, buckle_arr=State.buckle_arr, pos_arr=final_pos)
-        final_pos, pos_in_t, vel_in_t, potential_force_in_t = Eq.calculate_state(Variabs, Strctr,
-                                                                                 control_first_edge=Sprvsr.control_first_edge,
+        final_pos, pos_in_t, vel_in_t, potential_force_in_t = Eq.calculate_state(Variabs, Strctr, Sprvsr, rand_key,
                                                                                  tip_pos=tip_pos, tip_angle=tip_angle,
                                                                                  pos_noise=pos_noise, vel_noise=vel_noise)
 

@@ -285,6 +285,56 @@ def _correct_big_stretch(tip_pos: NDArray[np.float_], tip_angle: float, L: float
     return tip_pos
 
 
+def _extend_pos_to_x0_v0(init_pos, pos_noise, vel_noise, rand_key):
+    # USED
+    # start from current geometry
+    x0 = init_pos.flatten()  # (n_coords,)
+    n_nodes = int(len(x0)/2)
+    last = n_nodes-1
+    # velocities: start at rest
+    v0 = jnp.zeros_like(x0)
+
+    # (a) Add positional noise only to interior nodes (exclude nodes 0,1,last-1,last)
+    if pos_noise is not None or vel_noise is not None:
+        # mask True for DOFs that *can* get noise, False for boundary nodes
+        noise_mask = jnp.ones_like(x0, dtype=bool)
+        boundary_nodes = (0, 1, last - 1, last)
+
+        for node in boundary_nodes:
+            if 0 <= node < n_nodes:
+                noise_mask = noise_mask.at[dof_idx(node, 0)].set(False)
+                noise_mask = noise_mask.at[dof_idx(node, 1)].set(False)
+
+        if pos_noise is not None:
+            # uniform noise in [-1, 1] per DOF
+            key = jax.random.PRNGKey(rand_key)  # for reproducibility; swap to a passed-in key if needed
+            rand = jax.random.uniform(key, shape=x0.shape, minval=-1.0, maxval=1.0)
+
+            # apply scaled noise only where noise_mask is True
+            x0 = x0 + (pos_noise * rand) * noise_mask.astype(x0.dtype)
+
+        if vel_noise is not None:
+            # uniform noise in [-1, 1] per DOF
+            key = jax.random.PRNGKey(rand_key)  # for reproducibility; swap to a passed-in key if needed
+            rand = jax.random.uniform(key, shape=v0.shape, minval=-1.0, maxval=1.0)
+
+            # apply scaled noise only where noise_mask is True
+            v0 = v0 + (vel_noise * rand) * noise_mask.astype(v0.dtype) 
+    return jnp.concatenate([x0, v0], axis=0)
+
+
+def _get_state_free_from_state(state_0, fixed_DOFs, imposed_DOFs):
+    # USED
+    n_coords = int(len(state_0)/2)
+    free_DOFs = jnp.logical_not(imposed_DOFs | fixed_DOFs)
+    n_free_DOFs = jnp.sum(free_DOFs)
+
+    state_0 = state_0.flatten()
+    state_0_x, state_0_x_dot = state_0[:n_coords], state_0[n_coords:]
+    state_0_x_free, state_0_x_dot_free = state_0_x[free_DOFs], state_0_x_dot[free_DOFs]
+    return free_DOFs, n_free_DOFs, jnp.concatenate([state_0_x_free, state_0_x_dot_free])
+
+
 def torque(tip_angle: float, Fx: float, Fy: float) -> float:
     return np.cos(tip_angle)*Fy-np.sin(tip_angle)*Fx
 
