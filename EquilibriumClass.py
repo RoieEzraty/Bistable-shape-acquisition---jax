@@ -88,10 +88,11 @@ class EquilibriumClass(eqx.Module):
     """
     
     # --- User input ---
-    damping_coeff: float  # damping coefficient for right hand side of eqn of motion
-    mass: float           # Newtonian mass for right hand side of eqn of motion
-    tolerance: float      # tolerance for dynamics simulation step size
+    damping_coeff: float       # damping coefficient for right hand side of eqn of motion
+    mass: float                # Newtonian mass for right hand side of eqn of motion
+    tolerance: float           # tolerance for dynamics simulation step size
     calc_through_energy: bool  # whether to calculate state through grad of energy or derictly w/forces
+    ramp_pos: bool             # if True, ramp imposed vals during equilibrium simulation from initials vals to final imposed
 
     # ---- state / derived ----
     rest_lengths: jax.Array                      # (H+1,) edge rest lengths (from initial pos)
@@ -100,7 +101,8 @@ class EquilibriumClass(eqx.Module):
     time_points: jax.Array                       # (T_eq, ) time steps for simulating equilibrium configuration
     
     def __init__(self, Strctr: "StructureClass", T: float, damping_coeff: float, mass: float, tolerance: float,
-                 calc_through_energy: bool = False, buckle_arr: jax.Array = None, pos_arr: jax.Array = None):
+                 ramp_pos: bool = True, calc_through_energy: bool = False, buckle_arr: jax.Array = None,
+                 pos_arr: jax.Array = None):
         self.damping_coeff = damping_coeff
         self.mass = mass        
         self.time_points = jnp.linspace(0, T, int(1e3))
@@ -120,9 +122,8 @@ class EquilibriumClass(eqx.Module):
             
         # each edge's rest length is L, it's fixed and very stiff 
         self.rest_lengths = jnp.full((Strctr.hinges + 1,), Strctr.L, dtype=jnp.float32)
-
-        # whether to calculate through grad of energy or through forces
         self.calc_through_energy = calc_through_energy
+        self.ramp_pos = ramp_pos
 
     def calculate_state(self, Variabs: "VariablesClass", Strctr: "StructureClass", Sprvsr: "SupervisorClass", rand_key: int,
                         control_first_edge: bool = True, tip_pos: jax.Array | None = None, 
@@ -222,30 +223,82 @@ class EquilibriumClass(eqx.Module):
         fixed_vals = jnp.zeros((len(fixed_mask),), dtype=float)
         return fixed_vals.at[fixed_mask].set(self.init_pos.reshape((-1,))[fixed_mask])
 
-    def _set_imposed_vals(self, Strctr: "StructureClass", Sprvsr: "SupervisorClass", imposed_mask, tip_pos, tip_angle,
-                          fixed_vals):
-        # USED
-        # # Must return a length-n_coords vector (flattened order) for any time t
-        base_vec = fixed_vals  # start from initial positions
-        imposed_arr = base_vec
+    # def _set_imposed_vals(self, Strctr: "StructureClass", Sprvsr: "SupervisorClass", imposed_mask, tip_pos, tip_angle,
+    #                       fixed_vals):
+    #     # USED
+    #     # # Must return a length-n_coords vector (flattened order) for any time t
+    #     base_vec = fixed_vals  # start from initial positions
+    #     imposed_arr = base_vec
 
-        # fill in using DOFs and vals
+    #     # fill in using DOFs and vals
+    #     if tip_pos is None:
+    #         return (lambda t, v=base_vec: v)
+    #     else:
+    #         tip_xy = jnp.asarray(tip_pos, dtype=self.init_pos.dtype).reshape((2,))
+    #         if tip_angle is None:
+    #             imposed_arr = imposed_arr.at[imposed_mask].set(tip_xy)
+    #         else:
+    #             before_tip_xy = helpers_builders._get_before_tip(tip_pos=tip_xy,
+    #                                                              tip_angle=jnp.asarray(tip_angle, dtype=self.init_pos.dtype),
+    #                                                              L=Strctr.L, dtype=self.init_pos.dtype)
+    #             imposed_arr = imposed_arr.at[Sprvsr.imposed_mask].set(jnp.concatenate([before_tip_xy, tip_xy]))
+    #     #     vals = jnp.zeros((self.init_pos.size,), dtype=self.init_pos.dtype)
+    #     #     # First node pinned at (0,0) → both DOFs are zero; nothing else imposed.
+    #     #     # If you ever want a moving base, set these two entries to your function of t.
+    #     #     return vals
+    #         return (lambda t, v=imposed_arr: v)
+
+    def _set_imposed_vals(self, Strctr: "StructureClass", Sprvsr: "SupervisorClass", imposed_mask, tip_pos, tip_angle, 
+                          fixed_vals):
+        """
+        Build a time-dependent imposed displacement function.
+
+        - At t = 0: imposed DOFs equal the previous equilibrium positions (self.init_pos).
+        - For 0 < t < T_ramp: linearly ramp to the new tip pose.
+        - For t >= T_ramp: imposed DOFs stay at the new pose.
+        """
+        # Full starting geometry (previous equilibrium), flattened
+        start_vec = self.init_pos.reshape(-1)  # (n_coords,)
+
+        # If there's nothing to impose, keep the previous equilibrium for all t
         if tip_pos is None:
-            return (lambda t, v=base_vec: v)
+            return (lambda t, v=start_vec: v)
+
+        # Build target vector: same as start_vec, but with tip / before-tip overwritten
+        target_vec = start_vec
+
+        tip_xy = jnp.asarray(tip_pos, dtype=self.init_pos.dtype).reshape((2,))
+
+        if tip_angle is None:
+            # Only tip position is imposed:
+            # imposed_mask selects the DOFs we want to overwrite with tip_xy
+            target_vec = target_vec.at[imposed_mask].set(tip_xy)
         else:
-            tip_xy = jnp.asarray(tip_pos, dtype=self.init_pos.dtype).reshape((2,))
-            if tip_angle is None:
-                imposed_arr = imposed_arr.at[imposed_mask].set(tip_xy)
-            else:
-                before_tip_xy = helpers_builders._get_before_tip(tip_pos=tip_xy,
-                                                                 tip_angle=jnp.asarray(tip_angle, dtype=self.init_pos.dtype),
-                                                                 L=Strctr.L, dtype=self.init_pos.dtype)
-                imposed_arr = imposed_arr.at[Sprvsr.imposed_mask].set(jnp.concatenate([before_tip_xy, tip_xy]))
-        #     vals = jnp.zeros((self.init_pos.size,), dtype=self.init_pos.dtype)
-        #     # First node pinned at (0,0) → both DOFs are zero; nothing else imposed.
-        #     # If you ever want a moving base, set these two entries to your function of t.
-        #     return vals
-            return (lambda t, v=imposed_arr: v)
+            # Tip position + tip angle: impose node before tip as well
+            before_tip_xy = helpers_builders._get_before_tip(
+                tip_pos=tip_xy,
+                tip_angle=jnp.asarray(tip_angle, dtype=self.init_pos.dtype),
+                L=Strctr.L,
+                dtype=self.init_pos.dtype,
+            )
+            tip_vals = jnp.concatenate([before_tip_xy, tip_xy])  # (4,)
+            # Sprvsr.imposed_mask should correspond to [before_tip_xy, tip_xy]
+            target_vec = target_vec.at[Sprvsr.imposed_mask].set(tip_vals)
+
+        # -------- linear ramp in time --------
+        T_total = self.time_points[-1]
+        ramp_fraction = 0.5  # use half of the simulation time for the ramp
+        T_ramp = ramp_fraction * T_total
+
+        if self.ramp_pos:
+            def imposed_vals(t, start=start_vec, target=target_vec, T_r=T_ramp):
+                # Linear ramp parameter s(t) in [0, 1]
+                s = jnp.clip(t / T_r, 0.0, 1.0)
+                return (1.0 - s) * start + s * target
+        else:
+            imposed_vals = lambda t, v=target_vec: v
+
+        return imposed_vals
 
     # --- energy ---
     @eqx.filter_jit
