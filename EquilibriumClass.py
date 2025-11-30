@@ -126,7 +126,7 @@ class EquilibriumClass(eqx.Module):
         self.ramp_pos = ramp_pos
 
     def calculate_state(self, Variabs: "VariablesClass", Strctr: "StructureClass", Sprvsr: "SupervisorClass", rand_key: int,
-                        control_first_edge: bool = True, tip_pos: jax.Array | None = None, 
+                        init_pos: NDArray[float], control_first_edge: bool = True, tip_pos: jax.Array | None = None, 
                         tip_angle: float | jax.Array | None = None,
                         pos_noise: float | jax.Array | None = None,
                         vel_noise: float | jax.Array | None = None) -> Tuple[jax.Array, jax.Array, jax.Array, jax.Array]:
@@ -183,16 +183,17 @@ class EquilibriumClass(eqx.Module):
         - Positional noise is applied **after** flattening `init_pos` and **before**
           concatenating with the velocity vector.
         """
+        init_pos = helpers_builders.jaxify(init_pos)
 
         # ------ fixed values (vector, not function) ------
         fixed_vals = self._set_fixed_vals(Strctr.fixed_mask)
 
         # ------ imposed tip position and possibly angle ------
         # Build a callable (always), even if mask is all False.
-        imposed_vals = self._set_imposed_vals(Strctr, Sprvsr, Sprvsr.imposed_mask, tip_pos, tip_angle, fixed_vals)
+        imposed_vals = self._set_imposed_vals(Strctr, Sprvsr, Sprvsr.imposed_mask, tip_pos, tip_angle, fixed_vals, init_pos)
 
         # -------- initial state (positions & velocities) ----------
-        state_0 = helpers_builders._extend_pos_to_x0_v0(self.init_pos, pos_noise, vel_noise, rand_key)
+        state_0 = helpers_builders._extend_pos_to_x0_v0(init_pos, pos_noise, vel_noise, rand_key)
 
         # -------- run dynamics ----------
         final_pos, pos_in_t, vel_in_t, potential_F_in_t = self.solve_dynamics(state_0, Variabs, Strctr,
@@ -200,6 +201,8 @@ class EquilibriumClass(eqx.Module):
                                                                               fixed_vals=fixed_vals,
                                                                               imposed_mask=Sprvsr.imposed_mask,
                                                                               imposed_vals=imposed_vals)
+
+        # self.init_pos = pos_in_t[-1]
 
         # split to components if you want:
         F_stretch = self.stretch_forces(Strctr, Variabs, final_pos)     # (n_coords,)
@@ -249,7 +252,7 @@ class EquilibriumClass(eqx.Module):
     #         return (lambda t, v=imposed_arr: v)
 
     def _set_imposed_vals(self, Strctr: "StructureClass", Sprvsr: "SupervisorClass", imposed_mask, tip_pos, tip_angle, 
-                          fixed_vals):
+                          fixed_vals, init_pos):
         """
         Build a time-dependent imposed displacement function.
 
@@ -258,7 +261,8 @@ class EquilibriumClass(eqx.Module):
         - For t >= T_ramp: imposed DOFs stay at the new pose.
         """
         # Full starting geometry (previous equilibrium), flattened
-        start_vec = self.init_pos.reshape(-1)  # (n_coords,)
+        # start_vec = self.init_pos.reshape(-1)  # (n_coords,)
+        start_vec = init_pos.reshape(-1)  # (n_coords,)
 
         # If there's nothing to impose, keep the previous equilibrium for all t
         if tip_pos is None:
@@ -267,7 +271,7 @@ class EquilibriumClass(eqx.Module):
         # Build target vector: same as start_vec, but with tip / before-tip overwritten
         target_vec = start_vec
 
-        tip_xy = jnp.asarray(tip_pos, dtype=self.init_pos.dtype).reshape((2,))
+        tip_xy = jnp.asarray(tip_pos, dtype=init_pos.dtype).reshape((2,))
 
         if tip_angle is None:
             # Only tip position is imposed:
@@ -277,9 +281,9 @@ class EquilibriumClass(eqx.Module):
             # Tip position + tip angle: impose node before tip as well
             before_tip_xy = helpers_builders._get_before_tip(
                 tip_pos=tip_xy,
-                tip_angle=jnp.asarray(tip_angle, dtype=self.init_pos.dtype),
+                tip_angle=jnp.asarray(tip_angle, dtype=init_pos.dtype),
                 L=Strctr.L,
-                dtype=self.init_pos.dtype,
+                dtype=init_pos.dtype,
             )
             tip_vals = jnp.concatenate([before_tip_xy, tip_xy])  # (4,)
             # Sprvsr.imposed_mask should correspond to [before_tip_xy, tip_xy]
