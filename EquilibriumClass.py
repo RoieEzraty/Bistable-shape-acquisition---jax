@@ -214,8 +214,8 @@ class EquilibriumClass(eqx.Module):
         F_compare = jnp.hstack([F_stretch_2d, F_theta_2d])
 
         # print("\n=== Final-step per-node forces comparison ===")
-        print("(Fx_stretch, Fy_stretch,  Fx_theta, Fy_theta)")
-        print(F_compare)
+        # print("(Fx_stretch, Fy_stretch,  Fx_theta, Fy_theta)")
+        # print(F_compare)
         # print("\n=== total forces")
         # print(jnp.sum(F_compare, axis=1))
 
@@ -291,7 +291,7 @@ class EquilibriumClass(eqx.Module):
 
         # -------- linear ramp in time --------
         T_total = self.time_points[-1]
-        ramp_fraction = 0.5  # use half of the simulation time for the ramp
+        ramp_fraction = 0.25  # use half of the simulation time for the ramp
         T_ramp = ramp_fraction * T_total
 
         if self.ramp_pos:

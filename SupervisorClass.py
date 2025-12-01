@@ -261,26 +261,23 @@ class SupervisorClass:
                 delta_angle = + self.alpha * self.loss[2] / Variabs.norm_torque * np.pi/64 * current_tip_angle
             else:
                 delta_angle = 0.0
-            print('delta_tip=', delta_tip)
-            print('delta_angle=', delta_angle)
         elif self.update_scheme == 'one_to_one':
             # large_angle = np.arctan2(self.tip_pos_int_t[t, 1], self.tip_pos_in_t[t, 0])
             # R = np.sqrt(self.tip_pos_int_t[t, 1]**2 + self.tip_pos_int_t[t, 1]**2)
 
             # delta_tip = - self.alpha * self.loss[:2] / Variabs.norm_force
-            delta_tip_x = + self.alpha * self.loss[0] / Variabs.norm_force * Strctr.hinges * Strctr.L
+            # delta_tip_x = + self.alpha * self.loss[0] / Variabs.norm_force * Strctr.hinges * Strctr.L
+            delta_tip_x = 0.0
             if self.loss_type == 'cartesian':
                 delta_tip_y = - self.alpha * self.loss[1] / Variabs.norm_force * Strctr.hinges * Strctr.L
                 delta_angle = + self.alpha * self.loss[2] / Variabs.norm_torque * np.pi/64 if (self.control_tip_angle and 
                                                                                                self.loss.size == 3) else 0.0
             elif self.loss_type == 'Fx_and_tip_torque':
-                delta_tip_y = + self.alpha * self.loss[0] / Variabs.norm_force * Strctr.hinges * Strctr.L
-                delta_angle = - self.alpha * self.loss[1] / Variabs.norm_torque * np.pi/360 if (self.control_tip_angle and 
-                                                                                                self.loss.size == 2) else 0.0
+                norm_y = Variabs.norm_force * Strctr.hinges * Strctr.L
+                norm_angle = Variabs.norm_torque * np.pi/360 if (self.control_tip_angle and self.loss.size == 2) else 0.0
+                delta_tip_y = - self.alpha * current_tip_pos[1] / Strctr.L * self.loss[0] / norm_y
+                delta_angle = - self.alpha * current_tip_angle / (2*np.pi) * self.loss[1] / norm_angle
             delta_tip = np.array([delta_tip_x, delta_tip_y])
-            
-            print('delta_tip=', delta_tip)
-            print('delta_angle=', delta_angle)
         # elif self.update_scheme == 'one_to_one_2D':
         #     # large_angle = np.arctan2(self.tip_pos_int_t[t, 1], self.tip_pos_in_t[t, 0])
         #     # R = np.sqrt(self.tip_pos_int_t[t, 1]**2 + self.tip_pos_int_t[t, 1]**2)
@@ -295,14 +292,14 @@ class SupervisorClass:
         #     print('delta_angle=', delta_angle)
         else:
             raise ValueError(f"Unknown update_scheme='{self.update_scheme}'")
+        print('delta_tip=', delta_tip)
+        print('delta_angle=', delta_angle)
 
         # insert into tip_pos_update
         if prev_tip_update_pos is None:
             prev_tip_update_pos = self.tip_pos_update_in_t[t-1, :]
         # delta_tip = self.alpha*(np.array([Fx, Fy]) - current_tip_pos)*(self.loss) * ([2, 0.5])  # not BEASTAL
         self.tip_pos_update_in_t[t, :] = prev_tip_update_pos + delta_tip
-        print('prev_tip_update_pos=', prev_tip_update_pos)
-        print('tip_pos_update_in_t[t, :]=', self.tip_pos_update_in_t[t, :])
 
         # Angle update (only if enabled)
         if self.control_tip_angle and self.tip_angle_update_in_t is not None:
