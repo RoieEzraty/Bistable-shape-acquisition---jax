@@ -84,26 +84,34 @@ class SupervisorClass:
     # --- scratch (most recent loss vector) ---
     loss: NDArray[np.float32] = eqx.field(init=False, static=True)                 # (1,), (2,) or (3,) 
 
-    def __init__(self, Strctr, alpha: float, T: int, desired_buckle_arr: np.ndarray, sampling='Uniform',
-                 control_tip_pos: bool = True, control_tip_angle: bool = True, control_first_edge: bool = True,
-                 update_scheme: str = 'one_to_one', loss_type: str = 'cartesian') -> None:
-        
-        self.T = int(T)  # total training-set size (& algorithm time, not to confuse with time to equilib state)
-        self.alpha = float(alpha)
-        self.update_scheme = str(update_scheme)
-        self.control_tip_angle = bool(control_tip_angle)
-        self.control_first_edge = bool(control_first_edge)  # if true, fix nodes (0, 1), else fix only node (0)
+    def __init__(self, Strctr, CFG) -> None:
+        self.T = int(CFG.Train.T)  # total training-set size (& algorithm time, not to confuse with time to equilib state)
+        self.alpha = float(CFG.Train.alpha)
+        self.update_scheme = str(CFG.Train.update_scheme)
+        self.control_tip_pos = bool(CFG.Train.control_tip_pos)
+        self.control_tip_angle = bool(CFG.Train.control_tip_angle)
+        self.control_first_edge = bool(CFG.Train.control_first_edge)  # if true, fix nodes (0, 1), else fix only node (0)
 
         # for equilibrium
-        self.imposed_mask = self._build_imposed_mask(Strctr, control_tip_pos, control_tip_angle)
+        self.imposed_mask = self._build_imposed_mask(Strctr, self.control_tip_pos, self.control_tip_angle)
 
         # Desired/targets
-        self.desired_buckle_arr = np.asarray(desired_buckle_arr, dtype=np.int32)
-        self.desired_pos_in_t = np.zeros((Strctr.nodes, 2, T), dtype=np.float32)
-        self.desired_Fx_in_t = np.zeros((T), dtype=np.float32)
-        self.desired_Fy_in_t = np.zeros((T), dtype=np.float32)
-        if control_tip_angle:
-            self.desired_tau_in_t = np.zeros((T), dtype=np.float32)
+        if CFG.Train.desired_buckle_type == 'random':  # uniformly distributed values of +1 and -1
+            key = jax.random.PRNGKey(CFG.Traindesired_buckle_rand_key)   # seed
+            desired_buckle = jax.random.randint(key, (Strctr.hinges, Strctr.shims), minval=-1, maxval=2)  # +1, 0 or -1
+            desired_buckle = desired_buckle.at[desired_buckle == 0].set(-1)  # replace 0 w/ -1
+        elif CFG.Train.desired_buckle_type == 'opposite':  # opposite than initial buckle, requires creating the initial buckle
+            desired_buckle = - helpers_builders._initiate_buckle(Strctr.hinges, Strctr.shims,
+                                                                 hinges_to_buckle=CFG.Train.shims_to_buckle, numpify=True)
+        elif CFG.Train.desired_buckle_type == 'straight':  # same as initial buckle, requires creating the initial buckle
+            desired_buckle = helpers_builders._initiate_buckle(Strctr.hinges, Strctr.shims,
+                                                               hinges_to_buckle=CFG.Train.shims_to_buckle, numpify=True)
+        self.desired_buckle_arr = np.asarray(desired_buckle, dtype=np.int32)
+        self.desired_pos_in_t = np.zeros((Strctr.nodes, 2, self.T), dtype=np.float32)
+        self.desired_Fx_in_t = np.zeros((self.T), dtype=np.float32)
+        self.desired_Fy_in_t = np.zeros((self.T), dtype=np.float32)
+        if self.control_tip_angle:
+            self.desired_tau_in_t = np.zeros((self.T), dtype=np.float32)
 
         # Dataset (commands)
         self.tip_pos_in_t = np.zeros((self.T, 2), dtype=np.float32)
@@ -111,15 +119,15 @@ class SupervisorClass:
             self.tip_angle_in_t = np.zeros((self.T,), dtype=np.float32)
 
         # Logs / updates
-        if self.control_tip_angle and loss_type == 'cartesian':
+        if self.control_tip_angle and CFG.Train.loss_type == 'cartesian':
             loss_size = 3
-        elif not self.control_tip_angle and loss_type == 'Fx_and_tip_torque':
+        elif not self.control_tip_angle and CFG.Train.loss_type == 'Fx_and_tip_torque':
             loss_size = 1
         else:
             loss_size = 2
         self.loss_in_t = np.zeros((self.T, loss_size), dtype=np.float32)
 
-        self.loss_type = loss_type
+        self.loss_type = CFG.Train.loss_type
         # Last loss vector (shape matches control mode)
         self.loss = np.zeros(loss_size, dtype=np.float32)
 
@@ -149,14 +157,14 @@ class SupervisorClass:
 
         return imposed_mask
 
-    def create_dataset(self, Strctr: "StructureClass", sampling: str, rand_key: int, exp_start: float = None,
-                       distance: float = None, dist_noise: float = 0.0, angle_noise: float = 0.0) -> None:
+    def create_dataset(self, Strctr: "StructureClass", CFG, sampling: str, dist_noise: float = 0.0,
+                       angle_noise: float = 0.0) -> None:
         # save as variable
         self.dataset_sampling = sampling
 
         # tip positions and angles for specified tip dataset
         if sampling == 'uniform':
-            np.random.seed(rand_key)
+            np.random.seed(CFG.Train.rand_key_dataset)
             x_pos_in_t = np.random.uniform((Strctr.edges-1)*Strctr.L, Strctr.edges*Strctr.L, size=self.T)
             y_pos_in_t = np.random.uniform(-Strctr.L/3, Strctr.L/3, size=self.T)
             self.tip_pos_in_t = np.stack(((x_pos_in_t), (y_pos_in_t.T)), axis=1)
@@ -185,8 +193,8 @@ class SupervisorClass:
             if self.control_tip_angle and self.tip_angle_in_t is not None:
                 self.tip_angle_in_t[:] = noise_angle
         elif sampling == 'stress strain':
-            start = 2*Strctr.L + exp_start
-            end = start - distance
+            start = 2*Strctr.L + CFG.Variabs.exp_start
+            end = start - CFG.Variabs.distance
             tip_in = np.linspace(start, end, self.T // 2, endpoint=False)  # decreasing: start -> end
             tip_out = np.linspace(end, start, self.T - self.T // 2, endpoint=False)  # increasing: end -> start
             tip_arr = np.concatenate([tip_in, tip_out])  # shape (self.T,),  back-and-forth trajectory
@@ -201,7 +209,7 @@ class SupervisorClass:
 
     def set_desired(self, pos_arr: jax.Array, Fx: float, Fy: float, t: int, tau: Optional[float] = None) -> None:
         """Store ground-truth targets for step t."""
-        self.desired_pos_in_t[:, :, t] = helpers_builders.numpify(pos_arr)
+        self.desired_pos_in_t[:, :, t] = helpers_builders.jax2numpy(pos_arr)
         self.desired_Fx_in_t[t] = float(Fx)
         self.desired_Fy_in_t[t] = float(Fy)
         if self.control_tip_angle and self.desired_tau_in_t is not None and tau is not None:

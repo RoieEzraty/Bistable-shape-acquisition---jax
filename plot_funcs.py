@@ -276,6 +276,14 @@ def plot_compare_sim_exp_stress_strain(exp_dfs: List[pd.DataFrame], sim_df: pd.D
     plt.show()
 
 
+def plot_tau_afo_theta(torque_func) -> None:
+    thetas = np.linspace(-np.pi, np.pi, 100)
+    taus = torque_func(thetas)
+    plt.plot(thetas, taus)
+    plt.ylabel(r'$\tau$')
+    plt.xlabel(r'$\theta\,\left[rad\right]$')
+    plt.show()
+
 # def plot_energies(Variabs: "VariablesClass", Strctr: "StructureClass", pos_in_t: np.array[np.float_], Energy_func, ):
 #     T = np.shape(pos_in_t)[0]
 #     energies = np.zeros(int(T))

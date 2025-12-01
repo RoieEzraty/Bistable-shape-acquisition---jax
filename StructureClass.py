@@ -43,13 +43,16 @@ class StructureClass(eqx.Module):
     NN: Optional[NDArray[int]] = eqx.field(default=None, init=False, static=True)
     output_nodes_arr: Optional[NDArray[int]] = eqx.field(default=None, init=False, static=True)
 
-    def __init__(self, hinges: int, shims: int, L: float, rest_lengths:  Optional[NDArray[np.float_]] = None,
+    def __init__(self, CFG, rest_lengths:  Optional[NDArray[np.float_]] = None,
                  update_scheme: str = 'one_to_one', Nin: Optional[int] = None, Nout: Optional[int] = None,
                  control_first_edge: Optional[bool] = True, control_tip_pos: Optional[bool] = True,
                  control_tip_angle: Optional[bool] = True):
-        self.hinges = int(hinges)
-        self.shims = int(shims)
-        self.L = float(L)
+        self.hinges = int(CFG.Strctr.H)
+        self.shims = int(CFG.Strctr.S)
+        if CFG.Variabs.k_type == 'Experimental':
+            self.L = 0.045  # ~45mm
+        else:
+            self.L = 1.0
 
         self.edges_arr = self._build_edges()            # (E=hinges+1, 2)
         self.edges = int(self.edges_arr.shape[0])
@@ -127,7 +130,7 @@ class StructureClass(eqx.Module):
     def _angle_from_uv(self, u, v):
         un = self._normalize(u)
         vn = self._normalize(v)
-        dot   = jnp.clip(jnp.dot(un, vn), -1.0, 1.0)  # not strictly needed for atan2, but helps near ±1
+        dot = jnp.clip(jnp.dot(un, vn), -1.0, 1.0)  # not strictly needed for atan2, but helps near ±1
         cross = un[0]*vn[1] - un[1]*vn[0]
         return jnp.arctan2(cross, dot)
 
@@ -135,9 +138,9 @@ class StructureClass(eqx.Module):
         """Angle at a hinge (radians), CCW positive."""
         edges = jnp.asarray(self.edges_arr)
         hinges = jnp.asarray(self.hinges_arr)
-        e0, e1  = hinges[hinge]
-        i0, i1  = edges[e0]
-        j0, j1  = edges[e1]
+        e0, e1 = hinges[hinge]
+        i0, i1 = edges[e0]
+        j0, j1 = edges[e1]
         u = pos_arr[i1] - pos_arr[i0]
         v = pos_arr[j1] - pos_arr[j0]
         return self._angle_from_uv(u, v)

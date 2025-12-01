@@ -116,7 +116,6 @@ class StateClass:
         self.tot_torque_in_t = np.zeros((Sprvsr.T), dtype=np.float32)
 
     # ---------- ingest from EquilibriumClass ----------
-
     def _save_data(self, 
                    t: int,
                    Strctr: "StructureClass",
@@ -132,17 +131,17 @@ class StateClass:
         """
         # positions (if provided)
         if pos_arr is not None:
-            self.pos_arr = helpers_builders.numpify(pos_arr)
+            self.pos_arr = helpers_builders.jax2numpy(pos_arr)
         else:
             pos_arr = helpers_builders._initiate_pos(Strctr.edges+1, Strctr.L)
-            self.pos_arr = helpers_builders.numpify(pos_arr)
+            self.pos_arr = helpers_builders.jax2numpy(pos_arr)
         self.pos_arr_in_t[:, :, t] = self.pos_arr
 
         # buckle state
         if buckle_arr is not None:
-            self.buckle_arr = helpers_builders.numpify(buckle_arr)
+            self.buckle_arr = helpers_builders.jax2numpy(buckle_arr)
         else:
-            self.buckle_arr = helpers_builders.numpify(helpers_builders._initiate_buckle(Strctr.hinges, Strctr.shims))
+            self.buckle_arr = helpers_builders.jax2numpy(helpers_builders._initiate_buckle(Strctr.hinges, Strctr.shims))
         self.buckle_in_t[:, :, t] = self.buckle_arr
 
         # Force normal on wall taken from the last row if provided
@@ -167,7 +166,7 @@ class StateClass:
             # thetas = vmap(lambda h: Strctr._get_theta(pos_arr, h))(jnp.arange(Strctr.hinges))
             thetas = Strctr.all_hinge_angles(self.pos_arr)  # (H,)
             # self.theta_arr = np.asarray(jax.device_get(thetas), dtype=np.float32).reshape(-1)
-            self.theta_arr = helpers_builders.numpify(thetas).reshape(-1)
+            self.theta_arr = helpers_builders.jax2numpy(thetas).reshape(-1)
         
         # tip angle measured from -x
         tip_angle = float(helpers_builders._get_tip_angle(self.pos_arr))

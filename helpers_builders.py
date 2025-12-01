@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 
 
 # --- convenience: move from jax to numpy arrays and vice-verse ---
-def numpify(arr: jax.Array) -> NDArray[np.float_]:
+def jax2numpy(arr: jax.Array) -> NDArray[np.float_]:
     """
     Convert JAX array to NumPy array.
 
@@ -32,7 +32,7 @@ def numpify(arr: jax.Array) -> NDArray[np.float_]:
     return np.asarray(jax.device_get(arr))
 
 
-def jaxify(arr: NDArray[np.float_]) -> jnp.ndarray:
+def numpy2jax(arr: NDArray[np.float_]) -> jnp.ndarray:
     """
     Convert a NumPy array (or Python list) back to a JAX array.
 
@@ -111,12 +111,12 @@ def _initiate_pos(nodes: int, L: float, numpify: bool = False) -> jax.Array:
     flat = L*jnp.arange(nodes, dtype=jnp.float32)
     pos_arr = jnp.stack([flat, jnp.zeros_like(flat)], axis=1)
     if numpify:
-        return numpify(pos_arr)
+        return jax2numpy(pos_arr)
     else:
         return pos_arr
 
 
-def _initiate_buckle(hinges: int, shims: int, numpify: bool = False) -> jax.Array:
+def _initiate_buckle(hinges: int, shims: int, hinges_to_buckle: list = [], numpify: bool = False) -> jax.Array:
     """
     `(hinges+2, 2)` each pair is (xi, yi) of point i going like [[0, 0], [1, 0], [2, 0], etc]
     
@@ -134,10 +134,11 @@ def _initiate_buckle(hinges: int, shims: int, numpify: bool = False) -> jax.Arra
         [[0,0], [1,0], [2,0], [3,0]]
     """
     buckle = jnp.ones((hinges, shims))
+    buckle.at[(hinges_to_buckle, 0)].set(-1)
     # pos_arr_in_t = copy.copy(pos_arr)
     # return pos_arr, pos_arr_in_t
     if numpify:
-        return numpify(buckle)
+        return jax2numpy(buckle)
     else:
         return buckle
 

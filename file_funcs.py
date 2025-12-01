@@ -62,8 +62,9 @@ def import_stress_strain_exp_and_plot(path: str, plot: bool = True) -> None:
 
 
 def build_torque_stiffness_from_file(path: str, *, contact: bool = True, angles_in_degrees: bool = True,
-                                     savgol_window: int = None, scale: float = 1e2) -> tuple[jnp.ndarray, jnp.ndarray,
-                                                                                             jnp.ndarray, callable, callable]:
+                                     savgol_window: int = None,
+                                     contact_scale: float = 1e2) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, callable,
+                                                                          callable]:
     """
     Load (angle, torque) from text file and construct JAX-friendly interpolants.
     contact: bool = if True, account for contact between plastic faces where torques explode
@@ -125,15 +126,15 @@ def build_torque_stiffness_from_file(path: str, *, contact: bool = True, angles_
         above = theta_query > theta_grid[-1]
         below = theta_query < theta_grid[0]
         th = _clamp(theta_query, theta_grid[0], theta_grid[-1])
-        out = jnp.interp(th, theta_grid, torque_grid)
-        if contact:
+        tau = jnp.interp(th, theta_grid, torque_grid)  # torque
+        if contact:  # account for plates in contact, torque diverges
             # masks for outside vs inside range
             above = theta_query > theta_grid[-1]
             below = theta_query < theta_grid[0]
 
-            out = jnp.where(above, scale * jnp.max(torque_grid), out)
-            out = jnp.where(below, scale * jnp.min(torque_grid), out)    
-        return out
+            tau = jnp.where(above, contact_scale * jnp.max(torque_grid), tau)
+            tau = jnp.where(below, contact_scale * jnp.min(torque_grid), tau)
+        return tau
 
     def k_of_theta(theta_query: jnp.ndarray) -> jnp.ndarray:
         th = _clamp(theta_query, theta_grid[0], theta_grid[-1])

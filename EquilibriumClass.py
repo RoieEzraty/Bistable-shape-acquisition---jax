@@ -183,7 +183,7 @@ class EquilibriumClass(eqx.Module):
         - Positional noise is applied **after** flattening `init_pos` and **before**
           concatenating with the velocity vector.
         """
-        init_pos = helpers_builders.jaxify(init_pos)
+        init_pos = helpers_builders.numpy2jax(init_pos)
 
         # ------ fixed values (vector, not function) ------
         fixed_vals = self._set_fixed_vals(Strctr.fixed_mask)

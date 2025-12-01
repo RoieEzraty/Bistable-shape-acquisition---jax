@@ -47,42 +47,38 @@ class VariablesClass(eqx.Module):
     norm_force: float = eqx.field(init=False, static=True)
     norm_torque: float = eqx.field(init=False, static=True)
 
-    def __init__(self,
-                 Strctr: "StructureClass",
-                 k_type: str = "Numerical",
-                 k_soft: NDArray[np.float_] | None = None,
-                 k_stiff: NDArray[np.float_] | None = None,
-                 thetas_ss: NDArray[np.float_] | None = None,
-                 thresh: NDArray[np.float_] | None = None,
-                 stretch_scale: float = 1e3,
-                 file_name: str | None = None):
+    def __init__(self, Strctr: "StructureClass", CFG):
         H, S = Strctr.hinges, Strctr.shims
-        self.k_type = k_type  # static
+        self.k_type = CFG.Variabs.k_type  # static
 
-        if k_type == "Numerical":
-            self.k_soft = np.ones((H, S), np.float32) if k_soft is None else np.asarray(k_soft,  np.float32)
-            self.k_stiff = np.ones((H, S), np.float32) if k_stiff is None else np.asarray(k_stiff, np.float32)
+        if CFG.Variabs.k_type == "Numerical":
+            self.k_soft = CFG.Variabs.k_soft_uniform * np.array((H, S), dtype=jnp.float32)
+            self.k_stiff = CFG.Variabs.k_stiff_uniform * np.array((H, S), dtype=jnp.float32)
             self.k = None
             self.k_max = float(np.max(self.k_stiff))
-            self.k_stretch = np.asarray(stretch_scale * self.k_max, np.float32)
+            self.k_stretch = np.asarray(CFG.Eq.k_stretch_ratio * self.k_max, np.float32)
+            thetas_ss = CFG.Variabs.thetas_ss_uniform
+            thresh = CFG.Variabs.thresh_uniform
 
-        elif k_type == "Experimental":
+        elif CFG.Variabs.k_type == "Experimental":
             self.k_soft = None
             self.k_stiff = None
-            thetas, torques, ks, torque_of_theta, k_of_theta = file_funcs.build_torque_stiffness_from_file(file_name,
+            thetas, torques, ks, torque_of_theta, k_of_theta = file_funcs.build_torque_stiffness_from_file(CFG.Variabs.tau_file,
                                                                                                            savgol_window=9,
                                                                                                            contact=True,
-                                                                                                           scale=1e1)
+                                                                                                           contact_scale=1e1)
             self.k_max = float(np.max(ks))
             self.k = k_of_theta 
             self.torque = torque_of_theta
-            self.k_stretch = np.asarray(stretch_scale * np.max(ks), np.float32)
+            self.k_stretch = np.asarray(CFG.Eq.k_stretch_ratio * np.max(ks), np.float32)
+            thetas_ss = CFG.Variabs.thetas_ss_exp
+            thresh = CFG.Variabs.thresh_exp
 
         else:
-            raise ValueError(f"Unknown k_type: {k_type}")
+            raise ValueError(f"Unknown k_type: {CFG.Variabs.k_type}")
 
-        self.thetas_ss = (np.ones((H, S), np.float32) if thetas_ss is None else np.asarray(thetas_ss, np.float32))
-        self.thresh = (np.ones((H, S), np.float32) if thresh is None else np.asarray(thresh, np.float32))
+        self.thetas_ss = thetas_ss * np.ones((H, S), np.float32)
+        self.thresh = thresh * np.ones((H, S), np.float32)
 
         # normalizations for update values
         self.norm_pos = float(Strctr.hinges*Strctr.L)
