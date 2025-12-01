@@ -149,13 +149,14 @@ class SupervisorClass:
 
         return imposed_mask
 
-    def create_dataset(self, Strctr: "StructureClass", sampling: str, exp_start: float = None,
+    def create_dataset(self, Strctr: "StructureClass", sampling: str, rand_key: int, exp_start: float = None,
                        distance: float = None, dist_noise: float = 0.0, angle_noise: float = 0.0) -> None:
         # save as variable
         self.dataset_sampling = sampling
 
         # tip positions and angles for specified tip dataset
         if sampling == 'uniform':
+            np.random.seed(rand_key)
             x_pos_in_t = np.random.uniform((Strctr.edges-1)*Strctr.L, Strctr.edges*Strctr.L, size=self.T)
             y_pos_in_t = np.random.uniform(-Strctr.L/3, Strctr.L/3, size=self.T)
             self.tip_pos_in_t = np.stack(((x_pos_in_t), (y_pos_in_t.T)), axis=1)
@@ -274,8 +275,8 @@ class SupervisorClass:
                                                                                                self.loss.size == 3) else 0.0
             elif self.loss_type == 'Fx_and_tip_torque':
                 norm_y = Variabs.norm_force * Strctr.hinges * Strctr.L
-                norm_angle = Variabs.norm_torque * np.pi/360 if (self.control_tip_angle and self.loss.size == 2) else 0.0
-                delta_tip_y = - self.alpha * current_tip_pos[1] / Strctr.L * self.loss[0] / norm_y
+                norm_angle = Variabs.norm_torque * np.pi if (self.control_tip_angle and self.loss.size == 2) else 0.0
+                delta_tip_y = + self.alpha * current_tip_pos[1] / Strctr.L * self.loss[0] / norm_y
                 delta_angle = - self.alpha * current_tip_angle / (2*np.pi) * self.loss[1] / norm_angle
             delta_tip = np.array([delta_tip_x, delta_tip_y])
         # elif self.update_scheme == 'one_to_one_2D':
@@ -292,7 +293,7 @@ class SupervisorClass:
         #     print('delta_angle=', delta_angle)
         else:
             raise ValueError(f"Unknown update_scheme='{self.update_scheme}'")
-        print('delta_tip=', delta_tip)
+        print('delta_tip_y=', delta_tip_y)
         print('delta_angle=', delta_angle)
 
         # insert into tip_pos_update
@@ -308,6 +309,9 @@ class SupervisorClass:
             elif prev_tip_update_angle is None:
                 prev_tip_update_angle = 0.0
             self.tip_angle_update_in_t[t] = float(prev_tip_update_angle + float(delta_angle))
+
+        print('update_tip_y', self.tip_pos_update_in_t[t][1])
+        print('update angle', self.tip_angle_update_in_t[t])
 
         # correct for to big a stretch
         self.tip_pos_update_in_t[t, :] = helpers_builders._correct_big_stretch(self.tip_pos_update_in_t[t],
