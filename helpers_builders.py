@@ -116,7 +116,7 @@ def _initiate_pos(nodes: int, L: float, numpify: bool = False) -> jax.Array:
         return pos_arr
 
 
-def _initiate_buckle(hinges: int, shims: int, hinges_to_buckle: list = [], numpify: bool = False) -> jax.Array:
+def _initiate_buckle(hinges: int, shims: int, hinges_to_buckle: tuple = (), numpify: bool = False) -> jax.Array:
     """
     `(hinges+2, 2)` each pair is (xi, yi) of point i going like [[0, 0], [1, 0], [2, 0], etc]
     
@@ -134,7 +134,7 @@ def _initiate_buckle(hinges: int, shims: int, hinges_to_buckle: list = [], numpi
         [[0,0], [1,0], [2,0], [3,0]]
     """
     buckle = jnp.ones((hinges, shims))
-    buckle.at[(hinges_to_buckle, 0)].set(-1)
+    buckle = buckle.at[(hinges_to_buckle, 0)].set(-1)
     # pos_arr_in_t = copy.copy(pos_arr)
     # return pos_arr, pos_arr_in_t
     if numpify:

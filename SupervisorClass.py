@@ -215,7 +215,7 @@ class SupervisorClass:
         if self.control_tip_angle and self.desired_tau_in_t is not None and tau is not None:
             self.desired_tau_in_t[t] = float(tau)
 
-    def calc_loss(self, t: int, Fx: float, Fy: float, tau: Optional[float] = None) -> None:
+    def calc_loss(self, Variabs: "VariablesClass", t: int, Fx: float, Fy: float, tau: Optional[float] = None) -> None:
         """Compute loss vector (Fx,Fy[,tau]) at step t and log it."""
         if self.loss_type == 'cartesian':
             if self.control_tip_angle and tau is not None and self.desired_tau_in_t is not None:
@@ -231,8 +231,12 @@ class SupervisorClass:
         elif self.loss_type == 'Fx_and_tip_torque':
             if self.control_tip_angle and tau is not None and self.desired_tau_in_t is not None:
                 self.loss = np.array([self.desired_Fx_in_t[t] - Fx, self.desired_tau_in_t[t] - tau], dtype=np.float32)
+                # normalize, dimless
+                self.loss = self.loss / np.array([Variabs.norm_force, Variabs.norm_torque], dtype=np.float32)
             else:
                 self.loss = np.array([self.desired_Fx_in_t[t] - Fx], dtype=np.float32)
+                # normalize, dimless
+                self.loss = self.loss / np.array([Variabs.norm_force], dtype=np.float32)
         self.loss_in_t[t, : self.loss.shape[0]] = self.loss
 
     def calc_update_tip(self, t: int, Strctr: "StructureClass", Variabs: "VariablesClass", State: "StateClass",
@@ -284,8 +288,10 @@ class SupervisorClass:
             elif self.loss_type == 'Fx_and_tip_torque':
                 norm_y = Variabs.norm_force * Strctr.hinges * Strctr.L
                 norm_angle = Variabs.norm_torque * np.pi if (self.control_tip_angle and self.loss.size == 2) else 0.0
-                delta_tip_y = + self.alpha * current_tip_pos[1] / Strctr.L * self.loss[0] / norm_y
-                delta_angle = - self.alpha * current_tip_angle / (2*np.pi) * self.loss[1] / norm_angle
+                delta_tip_y = - self.alpha * current_tip_pos[1] / Strctr.L * self.loss[0] / norm_y
+                # delta_angle = - self.alpha * current_tip_angle / (2*np.pi) * self.loss[1] / norm_angle
+                # delta_tip_y = - self.alpha * self.loss[0] / norm_y
+                delta_angle = - self.alpha * self.loss[1] / norm_angle * np.pi/90
             delta_tip = np.array([delta_tip_x, delta_tip_y])
         # elif self.update_scheme == 'one_to_one_2D':
         #     # large_angle = np.arctan2(self.tip_pos_int_t[t, 1], self.tip_pos_in_t[t, 0])

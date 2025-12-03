@@ -48,7 +48,11 @@ class VariablesClass(eqx.Module):
     norm_torque: float = eqx.field(init=False, static=True)
 
     def __init__(self, Strctr: "StructureClass", CFG):
-        H, S = Strctr.hinges, Strctr.shims
+        H, S, L = Strctr.hinges, Strctr.shims, Strctr.L
+        # normalizations for update values
+        self.norm_pos = float(H*L)
+        self.norm_angle = float(np.pi/2)
+
         self.k_type = CFG.Variabs.k_type  # static
 
         if CFG.Variabs.k_type == "Numerical":
@@ -59,14 +63,16 @@ class VariablesClass(eqx.Module):
             self.k_stretch = np.asarray(CFG.Eq.k_stretch_ratio * self.k_max, np.float32)
             thetas_ss = CFG.Variabs.thetas_ss_uniform
             thresh = CFG.Variabs.thresh_uniform
+            self.norm_torque = float(self.k_max*self.norm_angle)
+            self.norm_force = float(self.k_max*self.norm_angle/self.norm_pos)
 
         elif CFG.Variabs.k_type == "Experimental":
             self.k_soft = None
             self.k_stiff = None
-            thetas, torques, ks, torque_of_theta, k_of_theta = file_funcs.build_torque_stiffness_from_file(CFG.Variabs.tau_file,
-                                                                                                           savgol_window=9,
-                                                                                                           contact=True,
-                                                                                                           contact_scale=1e1)
+            thetas, torques, ks, torque_of_theta, k_of_theta = file_funcs.build_torque_and_k_from_file(CFG.Variabs.tau_file,
+                                                                                                       savgol_window=9,
+                                                                                                       contact=True,
+                                                                                                       contact_scale=1e1)
             self.k_max = float(np.max(ks))
             self.k = k_of_theta 
             self.torque = torque_of_theta
@@ -74,14 +80,13 @@ class VariablesClass(eqx.Module):
             thetas_ss = CFG.Variabs.thetas_ss_exp
             thresh = CFG.Variabs.thresh_exp
 
+            self.norm_torque = np.mean([np.abs(self.torque(self.norm_angle)), np.abs(self.torque(-self.norm_angle))])
+            self.norm_force = self.norm_torque / self.norm_pos
+
         else:
             raise ValueError(f"Unknown k_type: {CFG.Variabs.k_type}")
 
         self.thetas_ss = thetas_ss * np.ones((H, S), np.float32)
         self.thresh = thresh * np.ones((H, S), np.float32)
-
-        # normalizations for update values
-        self.norm_pos = float(Strctr.hinges*Strctr.L)
-        self.norm_angle = float(np.pi/2)
-        self.norm_force = float(self.k_max*(np.pi/2)/Strctr.L)
-        self.norm_torque = float(self.k_max*(np.pi))
+    
+        

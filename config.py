@@ -62,7 +62,7 @@ class EquilibriumConfig:
 @dataclass(frozen=True)
 class TrainingConfig:
     T: int = 8  # total training set time (not time to reach equilibrium during every step)
-    alpha: float = 16.0  # learning rate
+    alpha: float = 4.0  # learning rate
 
     # desired_buckle_type: str = 'random'
     desired_buckle_rand_key = 169
@@ -83,7 +83,7 @@ class TrainingConfig:
     control_tip_pos: bool = True  # imposed tip position in measurement and update. If False, tip is free
     control_tip_angle: bool = True  # impose tip angle in measurement and update. If False, imposed tip pos but free to ratoate
     control_first_edge: bool = True  # if True, fix nodes (0, 1) to zero. if Flase, just the first
-    shims_to_buckle: tuple = ()  # which shims should be buckled up, initially
+    shims_to_buckle: tuple = (0, 1, 2, 3)  # which shims should be buckled up, initially
 
     rand_key_dataset: int = 2  # for random sampling of dataset, if dataset_sampling is True
 

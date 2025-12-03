@@ -61,10 +61,9 @@ def import_stress_strain_exp_and_plot(path: str, plot: bool = True) -> None:
     return exp_df
 
 
-def build_torque_stiffness_from_file(path: str, *, contact: bool = True, angles_in_degrees: bool = True,
-                                     savgol_window: int = None,
-                                     contact_scale: float = 1e2) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, callable,
-                                                                          callable]:
+def build_torque_and_k_from_file(path: str, *, contact: bool = True, angles_in_degrees: bool = True, savgol_window: int = None,
+                                 contact_scale: float = 1e2) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray,
+                                                                      callable, callable]:
     """
     Load (angle, torque) from text file and construct JAX-friendly interpolants.
     contact: bool = if True, account for contact between plastic faces where torques explode
@@ -85,7 +84,7 @@ def build_torque_stiffness_from_file(path: str, *, contact: bool = True, angles_
     # --- load ---
     data = np.loadtxt(path)                # shape (N, 2)
     theta = data[:, 0]
-    tau   = data[:, 1]
+    tau = data[:, 1]
 
     # degrees -> radians if needed
     if angles_in_degrees:
@@ -94,7 +93,7 @@ def build_torque_stiffness_from_file(path: str, *, contact: bool = True, angles_
     # --- sort & unique (interp requires monotonic x) ---
     order = np.argsort(theta)
     theta = theta[order]
-    tau   = tau[order]
+    tau = tau[order]
     # collapse duplicates (if any)
     theta_u, idx = np.unique(theta, return_index=True)
     tau_u = tau[idx]
@@ -112,9 +111,9 @@ def build_torque_stiffness_from_file(path: str, *, contact: bool = True, angles_
             print('SciPy isnt available, just skip smoothing')
 
     # --- wrap as JAX arrays ---
-    theta_grid  = jnp.asarray(theta_u, dtype=jnp.float32)
-    torque_grid = jnp.asarray(tau_u,    dtype=jnp.float32)
-    k_grid      = jnp.asarray(k,        dtype=jnp.float32)
+    theta_grid = jnp.asarray(theta_u, dtype=jnp.float32)
+    torque_grid = jnp.asarray(tau_u, dtype=jnp.float32)
+    k_grid = jnp.asarray(k, dtype=jnp.float32)
     k_grid = k_grid.at[k_grid < 0].set(10e-4)  # for numerical stability, singular point of experimental negative k
 
     # --- clamped linear interpolators (JAX) ---
