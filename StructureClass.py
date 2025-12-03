@@ -9,6 +9,7 @@ from numpy import array, zeros
 from numpy.typing import NDArray
 from typing import TYPE_CHECKING, Callable, Union, Optional
 from typing import Optional
+from config import ExperimentConfig
 
 import learning_funcs, helpers_builders
 
@@ -43,7 +44,7 @@ class StructureClass(eqx.Module):
     NN: Optional[NDArray[int]] = eqx.field(default=None, init=False, static=True)
     output_nodes_arr: Optional[NDArray[int]] = eqx.field(default=None, init=False, static=True)
 
-    def __init__(self, CFG, rest_lengths:  Optional[NDArray[np.float_]] = None,
+    def __init__(self, CFG: ExperimentConfig, rest_lengths:  Optional[NDArray[np.float_]] = None,
                  update_scheme: str = 'one_to_one', Nin: Optional[int] = None, Nout: Optional[int] = None,
                  control_first_edge: Optional[bool] = True, control_tip_pos: Optional[bool] = True,
                  control_tip_angle: Optional[bool] = True):

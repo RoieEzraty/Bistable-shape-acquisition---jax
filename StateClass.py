@@ -12,6 +12,7 @@ from typing import Tuple, List
 from numpy import array, zeros
 from numpy.typing import NDArray
 from typing import TYPE_CHECKING, Callable, Union, Optional
+from config import ExperimentConfig
 
 import dynamics, helpers_builders
 
@@ -116,20 +117,22 @@ class StateClass:
         self.tot_torque_in_t = np.zeros((Sprvsr.T), dtype=np.float32)
 
     # ---------- ingest from EquilibriumClass ----------
-    def _save_data(self, 
-                   t: int,
-                   Strctr: "StructureClass",
-                   pos_arr: jax.Array = None,
-                   buckle_arr: NDArray = None,
-                   Forces: jax.Array = None,
-                   compute_thetas_if_missing: bool = True,
-                   control_tip_angle: bool = True) -> None:
+    def _save_data(self, t: int, Strctr: "StructureClass", pos_arr: jax.Array = None, buckle_arr: NDArray = None,
+                   Forces: jax.Array = None, control_tip_angle: bool = True) -> None:
         """
         Copy arrays from an EquilibriumClass equilibrium solve (JAX) into this (NumPy) state.
 
         If thetas are missing and compute_thetas_if_missing=True, they are computed from traj_pos.
+
+        Saves:
+            pos_arr: 
+            buckle_arr:
+            Forces: for x and y, taken from the last row, if provided
+            thetas: hinge angles (JAX compute -> NumPy store) 
+            tot_torque: measured from -x
+            edge_lengths: 
         """
-        # positions (if provided)
+        # ------- positions -------
         if pos_arr is not None:
             self.pos_arr = helpers_builders.jax2numpy(pos_arr)
         else:
@@ -137,14 +140,14 @@ class StateClass:
             self.pos_arr = helpers_builders.jax2numpy(pos_arr)
         self.pos_arr_in_t[:, :, t] = self.pos_arr
 
-        # buckle state
+        # ------- buckle state -------
         if buckle_arr is not None:
             self.buckle_arr = helpers_builders.jax2numpy(buckle_arr)
         else:
             self.buckle_arr = helpers_builders.jax2numpy(helpers_builders._initiate_buckle(Strctr.hinges, Strctr.shims))
         self.buckle_in_t[:, :, t] = self.buckle_arr
 
-        # Force normal on wall taken from the last row if provided
+        # ------- Force normal on wall -------
         if Forces is not None:
             if control_tip_angle:  # tip is controlled, forces are on one before last node
                 self.Fx = Forces[-4] + Forces[-2]
@@ -161,20 +164,18 @@ class StateClass:
         self.Fx_in_t[t] = self.Fx
         self.Fy_in_t[t] = self.Fy
 
-        # thetas - hinge angles (JAX compute -> NumPy store)
-        if compute_thetas_if_missing:
-            # thetas = vmap(lambda h: Strctr._get_theta(pos_arr, h))(jnp.arange(Strctr.hinges))
-            thetas = Strctr.all_hinge_angles(self.pos_arr)  # (H,)
-            # self.theta_arr = np.asarray(jax.device_get(thetas), dtype=np.float32).reshape(-1)
-            self.theta_arr = helpers_builders.jax2numpy(thetas).reshape(-1)
+        # ------- thetas -------
+        thetas = Strctr.all_hinge_angles(self.pos_arr)  # (H,)
+        self.theta_arr = helpers_builders.jax2numpy(thetas).reshape(-1)
         
-        # tip angle measured from -x
-        tip_angle = float(helpers_builders._get_tip_angle(self.pos_arr))
+        # ------- torque -------
+        tip_angle = float(helpers_builders._get_tip_angle(self.pos_arr))  # measured from -x
         self.tot_torque = float(helpers_builders.torque(tip_angle, self.Fx, self.Fy))
         self.tot_torque_in_t[t] = self.tot_torque
         self.tip_torque = float(helpers_builders.tip_torque(tip_angle, Forces))
         self.tip_torque_in_t[t] = self.tip_torque
 
+        # ------- edge_lengths -------
         self.edge_lengths = Strctr.all_edge_lengths(self.pos_arr)
 
     def buckle(self, Variabs: "VariablesClass", Strctr: "StructureClass", t: int, State_measured: "StateClass"):

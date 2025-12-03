@@ -13,6 +13,7 @@ from typing import Tuple, List
 from numpy import array, zeros
 from numpy.typing import NDArray
 from typing import TYPE_CHECKING, Callable, Union, Optional
+from config import ExperimentConfig
 
 import dynamics, helpers_builders
 
@@ -93,6 +94,9 @@ class EquilibriumClass(eqx.Module):
     tolerance: float           # tolerance for dynamics simulation step size
     calc_through_energy: bool  # whether to calculate state through grad of energy or derictly w/forces
     ramp_pos: bool             # if True, ramp imposed vals during equilibrium simulation from initials vals to final imposed
+    rand_key: int              # random key for noise on DOFs during equilibrium calculation
+    pos_noise: float           # noise amplitude on initial positions
+    vel_noise: float           # noise amplitude on initial velocities
 
     # ---- state / derived ----
     rest_lengths: jax.Array                      # (H+1,) edge rest lengths (from initial pos)
@@ -100,13 +104,12 @@ class EquilibriumClass(eqx.Module):
     buckle_arr: jax.Array                        # (H,) ∈ {+1,-1} per hinge/shim (direction of stiff side)
     time_points: jax.Array                       # (T_eq, ) time steps for simulating equilibrium configuration
     
-    def __init__(self, Strctr: "StructureClass", T: float, damping_coeff: float, mass: float, tolerance: float,
-                 ramp_pos: bool = True, calc_through_energy: bool = False, buckle_arr: jax.Array = None,
+    def __init__(self, Strctr: "StructureClass", CFG: ExperimentConfig, ramp_pos: bool = True, buckle_arr: jax.Array = None,
                  pos_arr: jax.Array = None):
-        self.damping_coeff = damping_coeff
-        self.mass = mass        
-        self.time_points = jnp.linspace(0, T, int(1e3))
-        self.tolerance = tolerance
+        self.damping_coeff = CFG.Eq.damping
+        self.mass = CFG.Eq.mass        
+        self.time_points = jnp.linspace(0, CFG.Eq.T_eq, int(1e3))
+        self.tolerance = CFG.Eq.tolerance
 
         # default buckle: all +1
         if buckle_arr is None:
@@ -122,13 +125,15 @@ class EquilibriumClass(eqx.Module):
             
         # each edge's rest length is L, it's fixed and very stiff 
         self.rest_lengths = jnp.full((Strctr.hinges + 1,), Strctr.L, dtype=jnp.float32)
-        self.calc_through_energy = calc_through_energy
-        self.ramp_pos = ramp_pos
+        self.calc_through_energy = CFG.Eq.calc_through_energy
+        self.ramp_pos = CFG.Eq.ramp_pos
+        self.rand_key = CFG.Eq.rand_key_Eq
+        self.pos_noise = CFG.Eq.pos_noise
+        self.vel_noise = CFG.Eq.vel_noise
 
-    def calculate_state(self, Variabs: "VariablesClass", Strctr: "StructureClass", Sprvsr: "SupervisorClass", rand_key: int,
-                        init_pos: NDArray[float], control_first_edge: bool = True, tip_pos: jax.Array | None = None, 
-                        tip_angle: float | jax.Array | None = None,
-                        pos_noise: float | jax.Array | None = None,
+    def calculate_state(self, Variabs: "VariablesClass", Strctr: "StructureClass", Sprvsr: "SupervisorClass",
+                        init_pos: NDArray[float], control_first_edge: bool = True,  tip_pos: jax.Array | None = None,
+                        tip_angle: float | jax.Array | None = None, pos_noise: float | jax.Array | None = None,
                         vel_noise: float | jax.Array | None = None) -> Tuple[jax.Array, jax.Array, jax.Array, jax.Array]:
         """
         Compute the equilibrium state of the chain given boundary conditions and optional noise.
@@ -193,7 +198,9 @@ class EquilibriumClass(eqx.Module):
         imposed_vals = self._set_imposed_vals(Strctr, Sprvsr, Sprvsr.imposed_mask, tip_pos, tip_angle, fixed_vals, init_pos)
 
         # -------- initial state (positions & velocities) ----------
-        state_0 = helpers_builders._extend_pos_to_x0_v0(init_pos, pos_noise, vel_noise, rand_key)
+        pos_noise = Strctr.L * self.pos_noise  # scale relative to length
+        vel_noise = 1.5 * self.vel_noise  # from equating 1/2mv^2 = mean(Torque)*L
+        state_0 = helpers_builders._extend_pos_to_x0_v0(init_pos, pos_noise, vel_noise, self.rand_key)
 
         # -------- run dynamics ----------
         final_pos, pos_in_t, vel_in_t, potential_F_in_t = self.solve_dynamics(state_0, Variabs, Strctr,
@@ -204,14 +211,14 @@ class EquilibriumClass(eqx.Module):
 
         # self.init_pos = pos_in_t[-1]
 
-        # split to components if you want:
-        F_stretch = self.stretch_forces(Strctr, Variabs, final_pos)     # (n_coords,)
-        F_theta = potential_F_in_t[-1] - F_stretch           # (n_coords,)
+        # # split to components if you want:
+        # F_stretch = self.stretch_forces(Strctr, Variabs, final_pos)     # (n_coords,)
+        # F_theta = potential_F_in_t[-1] - F_stretch           # (n_coords,)
 
-        # reshape for per-node view
-        F_stretch_2d = F_stretch.reshape(-1, 2)
-        F_theta_2d = F_theta.reshape(-1, 2)
-        F_compare = jnp.hstack([F_stretch_2d, F_theta_2d])
+        # # reshape for per-node view
+        # F_stretch_2d = F_stretch.reshape(-1, 2)
+        # F_theta_2d = F_theta.reshape(-1, 2)
+        # F_compare = jnp.hstack([F_stretch_2d, F_theta_2d])
 
         # print("\n=== Final-step per-node forces comparison ===")
         # print("(Fx_stretch, Fy_stretch,  Fx_theta, Fy_theta)")

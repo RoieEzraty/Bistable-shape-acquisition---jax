@@ -50,7 +50,9 @@ class EquilibriumConfig:
     mass: float = 5e-3  # divides right-hand-side of ODE, [kg]
     tolerance: float = 1e-8  # for ODE
     calc_through_energy: bool = False  # If False, calculate through torque and stretch forces
-    rand_key_eq = 2  # noise on initial positions and velocities
+    rand_key_Eq = 2  # random key for noise on initial positions and velocities
+    pos_noise = 0.05  # noise on initial positions
+    vel_noise = 0.005  # noise on initial velocities
     ramp_pos = True  # ramp up tip position from previous to next, during equilibrium calculation
 
 
