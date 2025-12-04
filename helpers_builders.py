@@ -261,12 +261,29 @@ def _get_before_tip(tip_pos: jnp.ndarray,
 
 def _get_tip_angle(pos_arr: np.array) -> np.array:
     """
+    angle of edge connected to tip relative to horizontal, CCW
     pos_arr: array of shape (H, 2)
     Returns: angle (radians) in [-pi, pi], measured from -x axis
     """
     pos_arr = np.asarray(pos_arr)
-    p0, p1 = pos_arr[-2], pos_arr[-1]   # last two points
+    p0, p1 = pos_arr[-2], pos_arr[-1]   # last two nodes
     dx, dy = p1 - p0                    # displacement vector
+
+    # shift so that 0 is along -x
+    theta_from_negx = np.arctan2(dy, dx) - np.pi
+    # normalize back to [-pi, pi]
+    theta_from_negx = (theta_from_negx + np.pi) % (2*np.pi) - np.pi
+
+    return theta_from_negx
+
+
+def _get_total_angle(tip_pos: np.array, L: float) -> np.array:
+    """
+    angle between tip and last fixed node, CCW
+    pos_arr: array of shape (H, 2)
+    Returns: angle (radians) in [-pi, pi], measured from -x axis
+    """
+    dx, dy = np.array([L, 0]) - tip_pos  # displacement vector
 
     # shift so that 0 is along -x
     theta_from_negx = np.arctan2(dy, dx) - np.pi

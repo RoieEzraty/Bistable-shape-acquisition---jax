@@ -246,7 +246,8 @@ class SupervisorClass:
                         current_tip_pos: Optional[np.ndarray] = None,
                         prev_tip_update_pos: Optional[np.ndarray] = None,
                         current_tip_angle: Optional[float] = None,
-                        prev_tip_update_angle: Optional[float] = None,) -> None:
+                        prev_tip_update_angle: Optional[float] = None,
+                        correct_for_total_angle: Optional[bool] = False) -> None:
         """Compute next tip position/angle commands from current loss and state (pure NumPy)."""
         # Normalised inputs/outputs (NumPy)
         inputs_normalized = np.array([self.tip_pos_in_t[t][0]/Variabs.norm_pos, self.tip_pos_in_t[t][1]/Variabs.norm_pos,
@@ -296,7 +297,7 @@ class SupervisorClass:
                 # delta_angle = - self.alpha * current_tip_angle * self.loss[1] * Variabs.norm_angle
                 # delta_tip_y = - self.alpha * np.sign(current_tip_pos[1]) * self.loss[0] * norm_y
                 # delta_angle = - self.alpha * np.sign(current_tip_angle) * self.loss[1] * norm_angle
-                delta_tip_y = - self.alpha * self.loss[0] * Strctr.hinges * Variabs.norm_pos * 200
+                delta_tip_y = - self.alpha * self.loss[0] * Strctr.hinges * Variabs.norm_pos * 10
                 delta_tip_x = copy.copy(delta_tip_y) * 2
                 delta_angle = - self.alpha * self.loss[1] * Variabs.norm_angle
             delta_tip = np.array([delta_tip_x, delta_tip_y])
@@ -329,7 +330,12 @@ class SupervisorClass:
                 prev_tip_update_angle = float(self.tip_angle_update_in_t[t - 1])
             elif prev_tip_update_angle is None:
                 prev_tip_update_angle = 0.0
-            self.tip_angle_update_in_t[t] = float(prev_tip_update_angle + float(delta_angle))
+            self.tip_angle_update_in_t[t] = prev_tip_update_angle + float(delta_angle)
+
+        if correct_for_total_angle:
+            total_angle = helpers_builders._get_total_angle(self.tip_pos_update_in_t[t, :], Strctr.L)
+            print('total_angle', total_angle)
+            self.tip_angle_update_in_t[t] += total_angle
 
         print('update_tip_y', self.tip_pos_update_in_t[t][1])
         print('update angle', self.tip_angle_update_in_t[t])
