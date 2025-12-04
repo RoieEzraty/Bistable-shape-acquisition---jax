@@ -72,7 +72,7 @@ class VariablesClass(eqx.Module):
             thetas, torques, ks, torque_of_theta, k_of_theta = file_funcs.build_torque_and_k_from_file(CFG.Variabs.tau_file,
                                                                                                        savgol_window=9,
                                                                                                        contact=True,
-                                                                                                       contact_scale=1e1)
+                                                                                                       contact_scale=2)
             self.k_max = float(np.max(ks))
             self.k = k_of_theta 
             self.torque = torque_of_theta

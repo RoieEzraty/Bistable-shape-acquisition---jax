@@ -46,13 +46,13 @@ class EquilibriumConfig:
     k_stretch_ratio: float = 2e4  # Stretch force to Torque force ratio, to make edges stiff but not inifinitely stiff.
     contact_scale: float = 1e2  # max experimental torque and torque upon edge contact ratio, for numerical stability
     T_eq: float = 0.04  # total time for equilibrium calculation, [s]
-    damping = 4.0  # damping coefficient for right-hand-side of ODE. Should be something*sqrt(k*m)
+    damping = 3.0  # damping coefficient for right-hand-side of ODE. Should be something*sqrt(k*m)
     mass: float = 5e-3  # divides right-hand-side of ODE, [kg]
     tolerance: float = 1e-8  # for ODE
     calc_through_energy: bool = False  # If False, calculate through torque and stretch forces
     rand_key_Eq = 2  # random key for noise on initial positions and velocities
-    pos_noise = 0.05  # noise on initial positions
-    vel_noise = 0.005  # noise on initial velocities
+    pos_noise = 0.1  # noise on initial positions
+    vel_noise = 1.0  # noise on initial velocities
     ramp_pos = True  # ramp up tip position from previous to next, during equilibrium calculation
 
 
@@ -62,14 +62,17 @@ class EquilibriumConfig:
 @dataclass(frozen=True)
 class TrainingConfig:
     T: int = 8  # total training set time (not time to reach equilibrium during every step)
-    alpha: float = 4.0  # learning rate
+    alpha: float = 0.004  # learning rate
 
     # desired_buckle_type: str = 'random'
     desired_buckle_rand_key = 169
-    desired_buckle_type: str = 'opposite'
+    # desired_buckle_type: str = 'opposite'
     # desired_buckle_type: str = 'straight'
+    desired_buckle_type: str = 'specified'
+    desired_buckle_pattern: tuple = (-1, -1, -1, -1, 1)  # which shims should be buckled up, initially
 
     dataset_sampling: str = 'uniform'  # random uniform vals for x, y, angle
+    # dataset_sampling: str = 'specified'  # random uniform vals for x, y, angle
     # dataset_sampling = 'almost flat'  # flat piece, single measurement
     # dataset_sampling = 'stress strain'
 
@@ -83,9 +86,9 @@ class TrainingConfig:
     control_tip_pos: bool = True  # imposed tip position in measurement and update. If False, tip is free
     control_tip_angle: bool = True  # impose tip angle in measurement and update. If False, imposed tip pos but free to ratoate
     control_first_edge: bool = True  # if True, fix nodes (0, 1) to zero. if Flase, just the first
-    shims_to_buckle: tuple = (0, 1, 2, 3)  # which shims should be buckled up, initially
+    init_buckle_pattern: tuple = (1, -1, -1, -1, -1)  # which shims should be buckled up, initially
 
-    rand_key_dataset: int = 2  # for random sampling of dataset, if dataset_sampling is True
+    rand_key_dataset: int = 7  # for random sampling of dataset, if dataset_sampling is True
 
 
 # -----------------------------

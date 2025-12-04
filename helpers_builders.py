@@ -116,7 +116,7 @@ def _initiate_pos(nodes: int, L: float, numpify: bool = False) -> jax.Array:
         return pos_arr
 
 
-def _initiate_buckle(hinges: int, shims: int, hinges_to_buckle: tuple = (), numpify: bool = False) -> jax.Array:
+def _initiate_buckle(hinges: int, shims: int, buckle_pattern: tuple = (), numpify: bool = False) -> jax.Array:
     """
     `(hinges+2, 2)` each pair is (xi, yi) of point i going like [[0, 0], [1, 0], [2, 0], etc]
     
@@ -133,8 +133,18 @@ def _initiate_buckle(hinges: int, shims: int, hinges_to_buckle: tuple = (), nump
         Example for hinges=2:
         [[0,0], [1,0], [2,0], [3,0]]
     """
-    buckle = jnp.ones((hinges, shims))
-    buckle = buckle.at[(hinges_to_buckle, 0)].set(-1)
+    buckle = -jnp.ones((hinges, shims))
+    # buckle = buckle.at[(buckle_pattern, 0)].set(1)
+    # buckle = -jnp.ones((CFG.Strctr.H, CFG.Strctr.S))
+
+    pattern = jnp.array(buckle_pattern)   # shape (H,)
+
+    # top shim = index 0
+    # buckle = buckle.at[jnp.where(pattern == -1)[0], 0].set(1)
+
+    # bottom shim = index 1
+    buckle = buckle.at[jnp.where(pattern == +1)[0], 0].set(1)
+
     # pos_arr_in_t = copy.copy(pos_arr)
     # return pos_arr, pos_arr_in_t
     if numpify:

@@ -102,10 +102,13 @@ class SupervisorClass:
             desired_buckle = desired_buckle.at[desired_buckle == 0].set(-1)  # replace 0 w/ -1
         elif CFG.Train.desired_buckle_type == 'opposite':  # opposite than initial buckle, requires creating the initial buckle
             desired_buckle = - helpers_builders._initiate_buckle(Strctr.hinges, Strctr.shims,
-                                                                 hinges_to_buckle=CFG.Train.shims_to_buckle, numpify=True)
+                                                                 buckle_pattern=CFG.Train.init_buckle_pattern, numpify=True)
         elif CFG.Train.desired_buckle_type == 'straight':  # same as initial buckle, requires creating the initial buckle
             desired_buckle = helpers_builders._initiate_buckle(Strctr.hinges, Strctr.shims,
-                                                               hinges_to_buckle=CFG.Train.shims_to_buckle, numpify=True)
+                                                               buckle_pattern=CFG.Train.init_buckle_pattern, numpify=True)
+        elif CFG.Train.desired_buckle_type == 'specified':
+            desired_buckle = helpers_builders._initiate_buckle(Strctr.hinges, Strctr.shims,
+                                                               buckle_pattern=CFG.Train.desired_buckle_pattern, numpify=True)
         self.desired_buckle_arr = np.asarray(desired_buckle, dtype=np.int32)
         self.desired_pos_in_t = np.zeros((Strctr.nodes, 2, self.T), dtype=np.float32)
         self.desired_Fx_in_t = np.zeros((self.T), dtype=np.float32)
@@ -288,10 +291,14 @@ class SupervisorClass:
             elif self.loss_type == 'Fx_and_tip_torque':
                 norm_y = Variabs.norm_force * Strctr.hinges * Strctr.L
                 norm_angle = Variabs.norm_torque * np.pi if (self.control_tip_angle and self.loss.size == 2) else 0.0
-                delta_tip_y = - self.alpha * current_tip_pos[1] / Strctr.L * self.loss[0] / norm_y
+                # delta_tip_y = - self.alpha * current_tip_pos[1] / Strctr.L * self.loss[0] / norm_y
                 # delta_angle = - self.alpha * current_tip_angle / (2*np.pi) * self.loss[1] / norm_angle
-                # delta_tip_y = - self.alpha * self.loss[0] / norm_y
-                delta_angle = - self.alpha * self.loss[1] / norm_angle * np.pi/90
+                delta_angle = - self.alpha * current_tip_angle * self.loss[1] * norm_angle
+                # delta_tip_y = - self.alpha * np.sign(current_tip_pos[1]) * self.loss[0] * norm_y
+                # delta_angle = - self.alpha * np.sign(current_tip_angle) * self.loss[1] * norm_angle
+                delta_tip_y = - self.alpha * self.loss[0] * norm_y
+                delta_tip_x = copy.copy(delta_tip_y)
+                # delta_angle = - self.alpha * self.loss[1] / norm_angle * np.pi/90
             delta_tip = np.array([delta_tip_x, delta_tip_y])
         # elif self.update_scheme == 'one_to_one_2D':
         #     # large_angle = np.arctan2(self.tip_pos_int_t[t, 1], self.tip_pos_in_t[t, 0])

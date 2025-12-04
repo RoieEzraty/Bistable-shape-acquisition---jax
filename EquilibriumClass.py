@@ -267,8 +267,8 @@ class EquilibriumClass(eqx.Module):
         - For 0 < t < T_ramp: linearly ramp to the new tip pose.
         - For t >= T_ramp: imposed DOFs stay at the new pose.
         """
+        # ------ instantiate sizes ------
         # Full starting geometry (previous equilibrium), flattened
-        # start_vec = self.init_pos.reshape(-1)  # (n_coords,)
         start_vec = init_pos.reshape(-1)  # (n_coords,)
 
         # If there's nothing to impose, keep the previous equilibrium for all t
@@ -278,14 +278,13 @@ class EquilibriumClass(eqx.Module):
         # Build target vector: same as start_vec, but with tip / before-tip overwritten
         target_vec = start_vec
 
+        # jaxify tip coordiantes 
         tip_xy = jnp.asarray(tip_pos, dtype=init_pos.dtype).reshape((2,))
 
-        if tip_angle is None:
-            # Only tip position is imposed:
-            # imposed_mask selects the DOFs we want to overwrite with tip_xy
+        # ------ final position as vector ------
+        if tip_angle is None:  # Only tip position is imposed:
             target_vec = target_vec.at[imposed_mask].set(tip_xy)
-        else:
-            # Tip position + tip angle: impose node before tip as well
+        else:  # Tip position + tip angle: impose node before tip as well
             before_tip_xy = helpers_builders._get_before_tip(
                 tip_pos=tip_xy,
                 tip_angle=jnp.asarray(tip_angle, dtype=init_pos.dtype),
@@ -296,17 +295,16 @@ class EquilibriumClass(eqx.Module):
             # Sprvsr.imposed_mask should correspond to [before_tip_xy, tip_xy]
             target_vec = target_vec.at[Sprvsr.imposed_mask].set(tip_vals)
 
-        # -------- linear ramp in time --------
-        T_total = self.time_points[-1]
-        ramp_fraction = 0.25  # use half of the simulation time for the ramp
-        T_ramp = ramp_fraction * T_total
+        # ------- position as temporal function ------
+        if self.ramp_pos:  # linear ramp in time 
+            T_total = self.time_points[-1]
+            ramp_fraction = 0.25  # use half of the simulation time for the ramp
+            T_ramp = ramp_fraction * T_total
 
-        if self.ramp_pos:
             def imposed_vals(t, start=start_vec, target=target_vec, T_r=T_ramp):
-                # Linear ramp parameter s(t) in [0, 1]
-                s = jnp.clip(t / T_r, 0.0, 1.0)
+                s = jnp.clip(t / T_r, 0.0, 1.0)  # Linear ramp parameter s(t) in [0, 1]
                 return (1.0 - s) * start + s * target
-        else:
+        else:  # constant
             imposed_vals = lambda t, v=target_vec: v
 
         return imposed_vals
