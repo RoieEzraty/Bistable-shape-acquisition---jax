@@ -50,7 +50,7 @@ class VariablesClass(eqx.Module):
     def __init__(self, Strctr: "StructureClass", CFG):
         H, S, L = Strctr.hinges, Strctr.shims, Strctr.L
         # normalizations for update values
-        self.norm_pos = float(H*L)
+        self.norm_pos = float(L)
         self.norm_angle = float(np.pi/2)
 
         self.k_type = CFG.Variabs.k_type  # static
@@ -69,10 +69,11 @@ class VariablesClass(eqx.Module):
         elif CFG.Variabs.k_type == "Experimental":
             self.k_soft = None
             self.k_stiff = None
-            thetas, torques, ks, torque_of_theta, k_of_theta = file_funcs.build_torque_and_k_from_file(CFG.Variabs.tau_file,
-                                                                                                       savgol_window=9,
-                                                                                                       contact=True,
-                                                                                                       contact_scale=2)
+            thetas, torques, ks, \
+                torque_of_theta, k_of_theta = file_funcs.build_torque_and_k_from_file(CFG.Variabs.tau_file,
+                                                                                      savgol_window=9,
+                                                                                      contact=True,
+                                                                                      contact_scale=CFG.Variabs.contact_scale)
             self.k_max = float(np.max(ks))
             self.k = k_of_theta 
             self.torque = torque_of_theta

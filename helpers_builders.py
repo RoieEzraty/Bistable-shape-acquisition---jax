@@ -327,14 +327,20 @@ def _correct_big_stretch(tip_pos: NDArray[np.float_], tip_angle: float, L: float
     actual_stretch = np.linalg.norm(vec)
 
     # Maximum physically possible stretch (remaining edges)
-    max_stretch = (edges - 2) * L
+    epsilon = 0.1*L  # add some breathing room
+    if np.abs(tip_angle) < np.pi:
+        max_stretch = (edges - 2) * L - epsilon
+    elif np.abs(tip_angle) < 2*np.pi:
+        max_stretch = (edges - 4) * L - epsilon
+    elif np.abs(tip_angle) < 3*np.pi:
+        max_stretch = (edges - 6) * L - epsilon
 
     # If unphysical → scale back
     if actual_stretch > max_stretch:
-        maximal_stretch = (edges-2)*L
-        ratio = maximal_stretch / actual_stretch
+        ratio = max_stretch / actual_stretch
         corrected = (before_last - second_node) * ratio + (second_node + tip_pos - before_last)
         print('corrected tip_pos_update_in_t[t, :]=', corrected)
+        print('with maximal stretch', max_stretch)
         return corrected
 
     # Otherwise nothing to correct
