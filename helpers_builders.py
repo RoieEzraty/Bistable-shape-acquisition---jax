@@ -348,9 +348,11 @@ def _correct_big_stretch(tip_pos: NDArray[np.float_], tip_angle: float, L: float
     if np.abs(tip_angle) < np.pi:
         max_stretch = (edges - 2) * L - epsilon
     elif np.abs(tip_angle) < 2*np.pi:
-        max_stretch = (edges - 4) * L - epsilon
+        max_stretch = (edges - 3) * L - epsilon
     elif np.abs(tip_angle) < 3*np.pi:
-        max_stretch = (edges - 6) * L - epsilon
+        max_stretch = (edges - 4) * L - epsilon
+    elif np.abs(tip_angle) < 4*np.pi:
+        max_stretch = (edges - 5) * L - epsilon
 
     # If unphysical → scale back
     if actual_stretch > max_stretch:

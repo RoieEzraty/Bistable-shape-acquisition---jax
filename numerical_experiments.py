@@ -5,7 +5,6 @@ import time
 from numpy.typing import NDArray
 from typing import TYPE_CHECKING, Tuple, Optional
 
-
 import plot_funcs
 
 from StructureClass import StructureClass
@@ -13,20 +12,117 @@ from VariablesClass import VariablesClass
 from StateClass import StateClass
 from SupervisorClass import SupervisorClass
 from EquilibriumClass import EquilibriumClass
+from config import ExperimentConfig
 
-if TYPE_CHECKING:
-    from StructureClass import StructureClass
-    from VariablesClass import VariablesClass
-    from StateClass import StateClass
-    from SupervisorClass import SupervisorClass
-    from EquilibriumClass import EquilibriumClass
+
+def train(Strctr: StructureClass, Variabs: VariablesClass, Sprvsr: SupervisorClass, State_meas: StateClass,
+          State_update: StateClass, State_des: StateClass, CFG: ExperimentConfig):
+    """
+    comment here
+    """
+    for t in range(1, Sprvsr.T):    
+        print('t=', t)   
+        
+        ## MEASUREMENT
+        print('===MEASUREMENT===')
+        
+    #     tip_pos = Sprvsr.tip_pos_in_t[t]
+    #     tip_angle = Sprvsr.tip_angle_in_t[t] 
+        tip_pos = np.array([0.24, 0.033769])
+        tip_angle = 0.54186946
+        # print('tip_pos=', tip_pos)
+        # print('tip_angle=', tip_angle)
+        
+        init_tip_update_pos = np.array([Strctr.L*Strctr.edges, 0.0])
+        init_tip_update_angle = 0.0
+        
+        # --- equilibrium - measured & desired---
+        Eq_meas = EquilibriumClass(Strctr, CFG, buckle_arr=State_meas.buckle_arr, pos_arr=State_meas.pos_arr)  # meausrement
+        Eq_des = EquilibriumClass(Strctr, CFG, buckle_arr=Sprvsr.desired_buckle_arr, pos_arr=State_des.pos_arr)  # desired
+        final_pos, pos_in_t, _, F_theta = Eq_meas.calculate_state(Variabs, Strctr, Sprvsr,
+                                                                  init_pos=State_meas.pos_arr_in_t[:, :, t-1], tip_pos=tip_pos,
+                                                                  tip_angle=tip_angle)
+        final_pos_des, pos_in_t_des, _, F_theta_des = Eq_des.calculate_state(Variabs, Strctr, Sprvsr, 
+                                                                  init_pos=State_meas.pos_arr_in_t[:, :, t-1], tip_pos=tip_pos,
+                                                                  tip_angle=tip_angle)
+    #     edge_lengths = vmap(lambda e: Strctr._get_edge_length(final_pos, e))(jnp.arange(Strctr.edges))
+    #     print('edge lengths', helpers_builders.numpify(edge_lengths))
+
+        # --- save sizes and plot - measured & desired ---
+        State_meas._save_data(t, Strctr, final_pos, State_meas.buckle_arr, F_theta, control_tip_angle=Sprvsr.control_tip_angle)
+        State_des._save_data(t, Strctr, final_pos_des, State_des.buckle_arr, F_theta_des,
+                             control_tip_angle=Sprvsr.control_tip_angle)
+        
+        Sprvsr.set_desired(final_pos_des, State_des.Fx, State_des.Fy, t, tau=State_des.tip_torque)
+        plot_funcs.plot_arm(final_pos, State_meas.buckle_arr, State_meas.theta_arr, Strctr.L, modality="measurement")
+    #     print('potential F sum', F_theta)
+        plot_funcs.plot_arm(final_pos_des, State_des.buckle_arr, State_des.theta_arr, Strctr.L, modality="measurement")
+    #     print('potential F summed desired', F_theta_des)
+    #     # print('Forces', potential_force_in_t[-1])
+    #     print('Fx on tip, measurement', State_meas.Fx)
+    #     print('Fx on tip, desired', State_des.Fx)
+    #     print('Fy on tip, measurement', State_meas.Fy)
+    #     print('Fy on tip, desired', State_des.Fy)
+    # #     plt.plot(potential_force_in_t[-1,:], '.')
+    # #     plt.show()
+    #     print('torque on tip, measurement', State_meas.tip_torque)
+    #     print('torque on tip, desired', State_des.tip_torque)
+        
+        # ------- loss ------- 
+        Sprvsr.calc_loss(Variabs, t, State_meas.Fx, State_meas.Fy, tau=State_meas.tip_torque)
+        print('desired Fx=', Sprvsr.desired_Fx_in_t[t])
+        print('measured Fx=', State_meas.Fx)
+        print('desired torque=', Sprvsr.desired_tau_in_t[t])
+        print('measured torque=', State_meas.tip_torque)
+        print('loss', Sprvsr.loss)
+        
+        # ------- UPDATE ------- 
+        print('===UPDATE===')
+        
+        print('current_tip_pos =', tip_pos)
+        print('current_tip_angle =', tip_angle)
+        if t == 1:
+            Sprvsr.calc_update_tip(t, Strctr, Variabs, State_meas, current_tip_pos=tip_pos, current_tip_angle=tip_angle,
+                                   prev_tip_update_pos=init_tip_update_pos, prev_tip_update_angle=init_tip_update_angle,
+                                   correct_for_total_angle=True)
+        else:
+            Sprvsr.calc_update_tip(t, Strctr, Variabs, State_meas, current_tip_pos=tip_pos, current_tip_angle=tip_angle,
+                                   correct_for_total_angle=True)
+
+        # --- equilibrium ---
+        # print('init_pos_update', State_update.pos_arr_in_t[:, :, t-1])
+        final_pos, pos_in_t_update, _, F_theta = Eq_meas.calculate_state(Variabs, Strctr, Sprvsr,
+                                                                         State_update.pos_arr_in_t[:, :, t-1],
+                                                                         tip_pos=Sprvsr.tip_pos_update_in_t[t],
+                                                                         tip_angle=Sprvsr.tip_angle_update_in_t[t])
+
+        # --- save sizes and plot ---
+        State_update._save_data(t, Strctr, final_pos, State_update.buckle_arr, F_theta,
+                                control_tip_angle=Sprvsr.control_tip_angle)
+        plot_funcs.plot_arm(final_pos, State_update.buckle_arr, State_update.theta_arr, Strctr.L, modality="update")
+    #     print('pre buckle', State_update.buckle_arr.T)
+        # print('energy', Eq.energy(Variabs, Strctr, final_pos)[-1])
+        
+        # --- shims buckle ---
+        State_update.buckle(Variabs, Strctr, t, State_measured=State_meas)      
+    #     Eq = EquilibriumClass(Strctr, T_eq, damping, mass, buckle_arr=helpers_builders.jaxify(State_update.buckle_arr),
+    #                           pos_arr=helpers_builders.jaxify(State_update.pos_arr))
+    #     print('post buckle', State_update.buckle_arr.T)
+    #     # print('post buckle update', State_update.buckle_arr)
+    #     # print('energy', Eq.energy(Variabs, Strctr, final_pos)[-1])
+        plot_funcs.plot_arm(final_pos, State_update.buckle_arr, State_update.theta_arr, Strctr.L, modality="update")
+
+        pos_in_t_meas = np.moveaxis(State_meas.pos_arr_in_t, 2, 0)
+        pos_in_t_udpate = np.moveaxis(State_update.pos_arr_in_t, 2, 0)
+
+    return pos_in_t_meas, pos_in_t_udpate
 
 
 def compress_to_tip_pos(Strctr: "StructureClass", Variabs: "VariablesClass", Sprvsr: "SupervisorClass", rand_key: int,
                         tip_pos_i, tip_angle_i, tip_pos_f, tip_angle_f, Eq_iterations, T_eq: int, damping: float, mass: float,
                         tolerance: float, buckle: NDArray) -> Tuple["StateClass", NDArray, NDArray]:
     """
-        Incrementally compress origami toward final tip position and angle, ensuring stable convergence, in Eq_iterations steps.
+        Incrementally compress origami to final tip position and angle, ensuring stable convergence, in Eq_iterations steps.
 
         This function performs a sequence of equilibrium simulations, gradually moving the tip 
         from an initial position and angle `(tip_pos_i, tip_angle_i)` to a final configuration 
@@ -188,8 +284,8 @@ def one_shot(Strctr: "StructureClass", Variabs: "VariablesClass", Sprvsr: "Super
     return State, pos_in_t, potential_force_in_t
 
 
-def ADMET_stress_strain(Strctr: StructureClass, Variabs: VariablesClass, Sprvsr: SupervisorClass, State: StateClass,  T_eq: float,
-                        damping: float, mass: float, tolerance: float, tip_angle: float, rand_key, *,
+def ADMET_stress_strain(Strctr: StructureClass, Variabs: VariablesClass, Sprvsr: SupervisorClass, State: StateClass, 
+                        T_eq: float, damping: float, mass: float, tolerance: float, tip_angle: float, rand_key, *,
                         pos_noise: Optional[float] = None, vel_noise: Optional[float] = None, plot_every: int = 1
                         ) -> Tuple[NDArray[np.float_],   # Fx_afo_pos
                                    NDArray[np.float_],   # pos_frames  (T, nodes, 2)

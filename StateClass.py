@@ -180,15 +180,18 @@ class StateClass:
 
     def buckle(self, Variabs: "VariablesClass", Strctr: "StructureClass", t: int, State_measured: "StateClass"):
         """Update buckle states based on current hinge angles and thresholds (NumPy)."""
+        buckle_bool = False
         buckle_nxt = np.zeros((Strctr.hinges, Strctr.shims), dtype=np.int32)
         for i in range(Strctr.hinges):
             for j in range(Strctr.shims):
                 if self.buckle_arr[i, j] == 1 and self.theta_arr[i] < -Variabs.thresh[i, j]:  # buckle up, thetas are CCwise
                     buckle_nxt[i, j] = -1
                     print('buckled up, theta=', self.theta_arr[i])
+                    buckle_bool = True
                 elif self.buckle_arr[i, j] == -1 and self.theta_arr[i] > Variabs.thresh[i, j]:  # buckle down, thetas are CCwise
                     buckle_nxt[i, j] = 1
                     print('buckled down, theta=', self.theta_arr[i])
+                    buckle_bool = True
                 else:
                     buckle_nxt[i, j] = self.buckle_arr[i, j]
         self.buckle_arr = copy.copy(buckle_nxt)
@@ -197,6 +200,7 @@ class StateClass:
         # buckling is the same also in measurement state
         State_measured.buckle_arr = copy.copy(buckle_nxt)
         State_measured.buckle_in_t[:, :, t] = State_measured.buckle_arr
+        return buckle_bool
 
     def stretch_energy(self, Variabs: "VariablesClass", Strctr: "StructureClass") -> NDArray:
         """

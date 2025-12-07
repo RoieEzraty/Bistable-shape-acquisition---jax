@@ -298,7 +298,7 @@ class SupervisorClass:
                 # delta_tip_y = - self.alpha * np.sign(current_tip_pos[1]) * self.loss[0] * norm_y
                 # delta_angle = - self.alpha * np.sign(current_tip_angle) * self.loss[1] * norm_angle
                 delta_tip_y = - self.alpha * self.loss[0] * Strctr.hinges * Variabs.norm_pos * 10
-                delta_tip_x = copy.copy(delta_tip_y) * 2
+                delta_tip_x = copy.copy(delta_tip_y)
                 delta_angle = - self.alpha * self.loss[1] * Variabs.norm_angle
             delta_tip = np.array([delta_tip_x, delta_tip_y])
         # elif self.update_scheme == 'one_to_one_2D':

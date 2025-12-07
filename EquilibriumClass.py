@@ -13,7 +13,6 @@ from typing import Tuple, List
 from numpy import array, zeros
 from numpy.typing import NDArray
 from typing import TYPE_CHECKING, Callable, Union, Optional
-from config import ExperimentConfig
 
 import dynamics, helpers_builders
 
@@ -21,6 +20,7 @@ if TYPE_CHECKING:
     from StructureClass import StructureClass
     from VariablesClass import VariablesClass
     from SupervisorClass import SupervisorClass
+    from config import ExperimentConfig
 
 
 # ===================================================
