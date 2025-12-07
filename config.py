@@ -64,14 +64,14 @@ class EquilibriumConfig:
 @dataclass(frozen=True)
 class TrainingConfig:
     T: int = 64  # total training set time (not time to reach equilibrium during every step)
-    alpha: float = 0.003  # learning rate
+    alpha: float = 0.01  # learning rate
 
     # desired_buckle_type: str = 'random'
     desired_buckle_rand_key = 169
     # desired_buckle_type: str = 'opposite'
     # desired_buckle_type: str = 'straight'
     desired_buckle_type: str = 'specified'
-    desired_buckle_pattern: tuple = (-1, -1, -1, -1, -1)  # which shims should be buckled up, initially
+    desired_buckle_pattern: tuple = (1, -1, -1, -1, -1)  # which shims should be buckled up, initially
 
     dataset_sampling: str = 'uniform'  # random uniform vals for x, y, angle
     # dataset_sampling: str = 'specified'  # random uniform vals for x, y, angle
@@ -83,12 +83,12 @@ class TrainingConfig:
     # update_scheme: str = 'BEASTAL'  # update using the BEASTAL scheme (with pseudoinverse of the incidence matrix).
     # update_scheme: str = 'BEASTAL_no_pinv'  # update using (y_j)(Loss_j), no psuedo inv of the incidence matrix.
 
-    # loss_type: str = 'cartesian'
-    loss_type: str = 'Fx_and_tip_torque'
+    loss_type: str = 'cartesian'
+    # loss_type: str = 'Fx_and_tip_torque'
     control_tip_pos: bool = True  # imposed tip position in measurement and update. If False, tip is free
     control_tip_angle: bool = True  # impose tip angle in measurement and update. If False, imposed tip pos but free to ratoate
     control_first_edge: bool = True  # if True, fix nodes (0, 1) to zero. if Flase, just the first
-    init_buckle_pattern: tuple = (-1, -1, -1, 1, 1)  # which shims should be buckled up, initially
+    init_buckle_pattern: tuple = (-1, -1, -1, -1, 1)  # which shims should be buckled up, initially
 
     rand_key_dataset: int = 7  # for random sampling of dataset, if dataset_sampling is True
 

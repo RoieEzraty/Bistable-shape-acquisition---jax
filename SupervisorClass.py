@@ -222,15 +222,14 @@ class SupervisorClass:
         """Compute loss vector (Fx,Fy[,tau]) at step t and log it."""
         if self.loss_type == 'cartesian':
             if self.control_tip_angle and tau is not None and self.desired_tau_in_t is not None:
-                self.loss = np.array(
-                    [self.desired_Fx_in_t[t] - Fx, self.desired_Fy_in_t[t] - Fy, self.desired_tau_in_t[t] - tau],
-                    dtype=np.float32,
-                )
+                self.loss = np.array([self.desired_Fx_in_t[t] - Fx, self.desired_Fy_in_t[t] - Fy,
+                                      self.desired_tau_in_t[t] - tau], dtype=np.float32)
+                self.loss = self.loss / np.array([Variabs.norm_force, Variabs.norm_force, 
+                                                  Variabs.norm_torque], dtype=np.float32)
             else:
-                self.loss = np.array(
-                    [self.desired_Fx_in_t[t] - Fx, self.desired_Fy_in_t[t] - Fy],
-                    dtype=np.float32,
-                )
+                self.loss = np.array([self.desired_Fx_in_t[t] - Fx,
+                                      self.desired_Fy_in_t[t] - Fy], dtype=np.float32)
+                self.loss = self.loss / np.array([Variabs.norm_force, Variabs.norm_torque], dtype=np.float32)
         elif self.loss_type == 'Fx_and_tip_torque':
             if self.control_tip_angle and tau is not None and self.desired_tau_in_t is not None:
                 self.loss = np.array([self.desired_Fx_in_t[t] - Fx, self.desired_tau_in_t[t] - tau], dtype=np.float32)
@@ -286,9 +285,12 @@ class SupervisorClass:
             # delta_tip_x = + self.alpha * self.loss[0] / Variabs.norm_force * Strctr.hinges * Strctr.L
             delta_tip_x = 0.0
             if self.loss_type == 'cartesian':
-                delta_tip_y = - self.alpha * self.loss[1] / Variabs.norm_force * Strctr.hinges * Strctr.L
-                delta_angle = + self.alpha * self.loss[2] / Variabs.norm_torque * np.pi/64 if (self.control_tip_angle and 
-                                                                                               self.loss.size == 3) else 0.0
+                # delta_tip_y = - self.alpha * self.loss[1] / Variabs.norm_force * Strctr.hinges * Strctr.L
+                # delta_angle = + self.alpha * self.loss[2] / Variabs.norm_torque * np.pi/64 if (self.control_tip_angle and 
+                #                                                                                self.loss.size == 3) else 0.0
+                delta_tip_y = - self.alpha * self.loss[0] * Strctr.hinges * Variabs.norm_pos * 10
+                delta_tip_x = - copy.copy(np.abs(delta_tip_y))
+                delta_angle = - self.alpha * self.loss[1] * Variabs.norm_angle
             elif self.loss_type == 'Fx_and_tip_torque':
                 # norm_y = Variabs.norm_force * Strctr.hinges * Strctr.L
                 # norm_angle = Variabs.norm_torque * np.pi if (self.control_tip_angle and self.loss.size == 2) else 0.0
