@@ -796,8 +796,9 @@ class EquilibriumClass(eqx.Module):
 
         return (final_disp, displacements, velocities, potential_F_evolution)
 
-
+# # ==========
 # # NOT IN USE
+# # ==========
 
 # def calculate_energy_in_t(self, Variabs: "VariablesClass", Strctr: "StructureClass",
 #                           displacements: NDArray[np.float_]) -> jax.array:

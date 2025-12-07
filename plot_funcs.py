@@ -132,88 +132,8 @@ def plot_arm(pos_vec: np.ndarray, buckle: np.ndarray, thetas: Union[np.ndarray, 
     plt.show()
 
 
-def animate_arm(traj_pos, L, frames=10, interval_ms=30, save_path=None, fps=30, show_inline=False):
-    """
-    Animate an N-link arm over time.
-    traj_pos: array-like, shape (T, N, 2), positions over time
-    L: reference link length (used only for nice padding if needed)
-    interval_ms: delay between frames (for interactive playback)
-    save_path: if provided, writes an animation ('.gif' or '.mp4')
-    fps: frames per second when saving
-
-    Returns: (fig, anim) so you can display or save later.
-    """
-    pos = np.asarray(traj_pos)              # (T, N, 2)
-    T = np.shape(pos)[0]
-    assert pos.ndim == 3 and pos.shape[2] == 2
-
-    # --- downsample time ---
-    stride = int(T/frames)
-    pos = pos[::max(1, int(stride))]
-    T, N, _ = pos.shape
-
-    fig, ax = plt.subplots(figsize=(4, 4))
-    ax.set_aspect('equal', adjustable='box')
-    ax.set_xlim([-L, 8*L])
-    ax.set_ylim([-4.5*L, 4.5*L])
-    ax.set_xlabel("x")
-    ax.set_ylabel("y")
-
-    # Polyline + joints + tip label
-    line, = ax.plot([], [], linewidth=4)
-    scat = ax.scatter([], [], s=60, zorder=3)
-    tip_text = ax.text(0, 0, "", va="bottom", ha="left")
-
-    def init():
-        line.set_data([], [])
-        scat.set_offsets(np.empty((0, 2)))
-        tip_text.set_text("")
-        return line, scat, tip_text
-
-    def update(ti):
-        pts = pos[ti]                    # (N, 2)
-        xs, ys = pts[:, 0], pts[:, 1]
-        line.set_data(xs, ys)
-        scat.set_offsets(pts)
-        tip_text.set_position((xs[-1], ys[-1]))
-        tip_text.set_text(f"Tip ({xs[-1]:.2f}, {ys[-1]:.2f})")
-        ax.set_title(f"Frame {ti+1}/{T}")
-        return line, scat, tip_text
-
-    anim = FuncAnimation(fig, update, frames=T, init_func=init,
-                         interval=interval_ms, blit=True)
-
-    if save_path is not None:
-        if save_path.lower().endswith(".gif"):
-            anim.save(save_path, writer=PillowWriter(fps=fps))
-        elif save_path.lower().endswith(".mp4"):
-            # Requires ffmpeg installed
-            anim.save(save_path, writer="ffmpeg", fps=fps)
-        else:
-            raise ValueError("save_path must end with .gif or .mp4")
-
-    # ---- Inline display (keep small!) ----
-    if show_inline:
-        # reduce embed size by downsampling and smaller fig/dpi
-        from IPython.display import HTML
-        return HTML(anim.to_jshtml())
-
-    plt.close(fig)
-    return fig, anim
-
-
-def animate_arm_w_arcs(
-    traj_pos,
-    L,
-    frames=10,
-    interval_ms=30,
-    save_path=None,
-    fps=30,
-    show_inline=False,
-    buckle_traj=None,   # NEW: shape (T, H, S) or (T, H)
-    theta_traj=None,    # NEW: shape (T, H)
-    arc_scale: float = 0.2,
-):
+def animate_arm_w_arcs(traj_pos, L, frames=10, interval_ms=30, save_path=None, fps=30, show_inline=False, buckle_traj=None,
+                       theta_traj=None, arc_scale: float = 0.2):
     """
     Animate an N-link arm over time, optionally drawing hinge arcs.
 
@@ -350,6 +270,47 @@ def animate_arm_w_arcs(
     return fig, anim
 
 
+def loss_and_buckle_in_t(loss_in_t, buckle_in_t, start=0, end=None):
+    """
+    plot the SE loss as well as the buckle a.f.o simulation time.
+
+    loss_in_t  : np array of (T, 2), loss vector in time
+    buckle_in_t: np array of (T, H), hinge buckles in time
+    start      : optional, time to start plot
+    end        : optional, time to end plot, if simulation cesses before total simulation time
+    """
+    # -------- time vector --------
+    if end is None:
+        end = np.shape(loss_in_t)[1]
+
+    t = np.linspace(start, end, end-start+1)
+
+    # -------- instantiate plot --------
+    fig, axes = plt.subplots(2, 1, figsize=(6, 6), sharex=False)
+
+    # -------- subplot 1: loss --------
+    axes[0].plot(t, np.sum(np.sqrt(loss_in_t[start-1:end, :]**2), axis=1))
+    axes[0].set_ylabel("Loss")
+    # axes[0].set_title("Training Loss")
+    # integer ticks:
+    axes[0].set_xticks(t)
+
+    # -------- subplot 2: buckle states --------
+    for i in range(5):
+        axes[1].plot(t, buckle_in_t[i, 0, start-1:end], label=f"hinge {i+1}")
+
+    # -------- beautify --------
+    axes[1].set_ylabel("buckle")
+    axes[1].set_xlabel("training step")
+    axes[1].legend()
+
+    # integer ticks again:
+    axes[1].set_xticks(t)
+
+    plt.tight_layout()
+    plt.show()
+
+
 def plot_compare_sim_exp_stress_strain(exp_dfs: List[pd.DataFrame], sim_df: pd.DataFrame, translate_ratio: float) -> None:
     """
     Plot experimental and simulated stress–strain curves for comparison of a full chain sumulation.
@@ -423,6 +384,11 @@ def plot_tau_afo_theta(torque_func) -> None:
     plt.xlabel(r'$\theta\,\left[rad\right]$')
     plt.show()
 
+
+# # ==========
+# # NOT IN USE
+# # ==========
+
 # def plot_energies(Variabs: "VariablesClass", Strctr: "StructureClass", pos_in_t: np.array[np.float_], Energy_func, ):
 #     T = np.shape(pos_in_t)[0]
 #     energies = np.zeros(int(T))
@@ -431,3 +397,73 @@ def plot_tau_afo_theta(torque_func) -> None:
         
 #     plt.plot(energies)
 #     plt.yscale('log')
+
+# def animate_arm(traj_pos, L, frames=10, interval_ms=30, save_path=None, fps=30, show_inline=False):
+#     """
+#     Animate an N-link arm over time.
+#     traj_pos: array-like, shape (T, N, 2), positions over time
+#     L: reference link length (used only for nice padding if needed)
+#     interval_ms: delay between frames (for interactive playback)
+#     save_path: if provided, writes an animation ('.gif' or '.mp4')
+#     fps: frames per second when saving
+
+#     Returns: (fig, anim) so you can display or save later.
+#     """
+#     pos = np.asarray(traj_pos)              # (T, N, 2)
+#     T = np.shape(pos)[0]
+#     assert pos.ndim == 3 and pos.shape[2] == 2
+
+#     # --- downsample time ---
+#     stride = int(T/frames)
+#     pos = pos[::max(1, int(stride))]
+#     T, N, _ = pos.shape
+
+#     fig, ax = plt.subplots(figsize=(4, 4))
+#     ax.set_aspect('equal', adjustable='box')
+#     ax.set_xlim([-L, 8*L])
+#     ax.set_ylim([-4.5*L, 4.5*L])
+#     ax.set_xlabel("x")
+#     ax.set_ylabel("y")
+
+#     # Polyline + joints + tip label
+#     line, = ax.plot([], [], linewidth=4)
+#     scat = ax.scatter([], [], s=60, zorder=3)
+#     tip_text = ax.text(0, 0, "", va="bottom", ha="left")
+
+#     def init():
+#         line.set_data([], [])
+#         scat.set_offsets(np.empty((0, 2)))
+#         tip_text.set_text("")
+#         return line, scat, tip_text
+
+#     def update(ti):
+#         pts = pos[ti]                    # (N, 2)
+#         xs, ys = pts[:, 0], pts[:, 1]
+#         line.set_data(xs, ys)
+#         scat.set_offsets(pts)
+#         tip_text.set_position((xs[-1], ys[-1]))
+#         tip_text.set_text(f"Tip ({xs[-1]:.2f}, {ys[-1]:.2f})")
+#         ax.set_title(f"Frame {ti+1}/{T}")
+#         return line, scat, tip_text
+
+#     anim = FuncAnimation(fig, update, frames=T, init_func=init,
+#                          interval=interval_ms, blit=True)
+
+#     if save_path is not None:
+#         if save_path.lower().endswith(".gif"):
+#             anim.save(save_path, writer=PillowWriter(fps=fps))
+#         elif save_path.lower().endswith(".mp4"):
+#             # Requires ffmpeg installed
+#             anim.save(save_path, writer="ffmpeg", fps=fps)
+#         else:
+#             raise ValueError("save_path must end with .gif or .mp4")
+
+#     # ---- Inline display (keep small!) ----
+#     if show_inline:
+#         # reduce embed size by downsampling and smaller fig/dpi
+#         from IPython.display import HTML
+#         return HTML(anim.to_jshtml())
+
+#     plt.close(fig)
+#     return fig, anim
+

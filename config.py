@@ -47,7 +47,7 @@ class VariablesConfig:
 @dataclass(frozen=True)
 class EquilibriumConfig:
     k_stretch_ratio: float = 2e4  # Stretch force to Torque force ratio, to make edges stiff but not inifinitely stiff.
-    T_eq: float = 0.005  # total time for equilibrium calculation, [s]
+    T_eq: float = 0.04  # total time for equilibrium calculation, [s]
     damping = 4.0  # damping coefficient for right-hand-side of ODE. Should be something*sqrt(k*m)
     mass: float = 5e-3  # divides right-hand-side of ODE, [kg]
     tolerance: float = 1e-8  # for ODE
@@ -88,7 +88,7 @@ class TrainingConfig:
     control_tip_pos: bool = True  # imposed tip position in measurement and update. If False, tip is free
     control_tip_angle: bool = True  # impose tip angle in measurement and update. If False, imposed tip pos but free to ratoate
     control_first_edge: bool = True  # if True, fix nodes (0, 1) to zero. if Flase, just the first
-    init_buckle_pattern: tuple = (-1, -1, -1, 1, -1)  # which shims should be buckled up, initially
+    init_buckle_pattern: tuple = (-1, -1, -1, 1, 1)  # which shims should be buckled up, initially
 
     rand_key_dataset: int = 7  # for random sampling of dataset, if dataset_sampling is True
 
