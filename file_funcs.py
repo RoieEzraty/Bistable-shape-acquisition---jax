@@ -130,9 +130,13 @@ def build_torque_and_k_from_file(path: str, *, contact: bool = True, angles_in_d
             # masks for outside vs inside range
             above = theta_query > theta_grid[-1]
             below = theta_query < theta_grid[0]
+            above_parabola = contact_scale * jnp.max(k_grid) * (theta_query - theta_grid[-1])**2 + jnp.max(torque_grid)
+            below_parabola = - contact_scale * jnp.max(k_grid) * (theta_query - theta_grid[0])**2 + jnp.min(torque_grid)
 
-            tau = jnp.where(above, contact_scale * jnp.max(torque_grid), tau)
-            tau = jnp.where(below, contact_scale * jnp.min(torque_grid), tau)
+            # tau = jnp.where(above, contact_scale * jnp.max(torque_grid), tau)
+            # tau = jnp.where(below, contact_scale * jnp.min(torque_grid), tau)
+            tau = jnp.where(above, above_parabola, tau)
+            tau = jnp.where(below, below_parabola, tau)
         return tau
 
     def k_of_theta(theta_query: jnp.ndarray) -> jnp.ndarray:
