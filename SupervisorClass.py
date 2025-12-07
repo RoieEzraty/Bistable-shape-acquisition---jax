@@ -288,9 +288,11 @@ class SupervisorClass:
                 # delta_tip_y = - self.alpha * self.loss[1] / Variabs.norm_force * Strctr.hinges * Strctr.L
                 # delta_angle = + self.alpha * self.loss[2] / Variabs.norm_torque * np.pi/64 if (self.control_tip_angle and 
                 #                                                                                self.loss.size == 3) else 0.0
-                delta_tip_y = - self.alpha * self.loss[0] * Strctr.hinges * Variabs.norm_pos * 10
+                delta_tip_y = - self.alpha * self.loss[0] * Strctr.hinges * Variabs.norm_pos
                 delta_tip_x = - copy.copy(np.abs(delta_tip_y))
-                delta_angle = - self.alpha * self.loss[1] * Variabs.norm_angle
+                correct_sign = np.sign(self.tip_pos_update_in_t[t-1, 0])
+                delta_tip_y = delta_tip_y * correct_sign
+                delta_angle = - self.alpha * self.loss[1] * Variabs.norm_angle * np.pi
             elif self.loss_type == 'Fx_and_tip_torque':
                 # norm_y = Variabs.norm_force * Strctr.hinges * Strctr.L
                 # norm_angle = Variabs.norm_torque * np.pi if (self.control_tip_angle and self.loss.size == 2) else 0.0
@@ -299,9 +301,9 @@ class SupervisorClass:
                 # delta_angle = - self.alpha * current_tip_angle * self.loss[1] * Variabs.norm_angle
                 # delta_tip_y = - self.alpha * np.sign(current_tip_pos[1]) * self.loss[0] * norm_y
                 # delta_angle = - self.alpha * np.sign(current_tip_angle) * self.loss[1] * norm_angle
-                delta_tip_y = - self.alpha * self.loss[0] * Strctr.hinges * Variabs.norm_pos * 10
+                delta_tip_y = - self.alpha * self.loss[0] * Strctr.hinges * Variabs.norm_pos
                 delta_tip_x = copy.copy(delta_tip_y)
-                delta_angle = - self.alpha * self.loss[1] * Variabs.norm_angle
+                delta_angle = - self.alpha * self.loss[1] * Variabs.norm_angle * np.pi
             delta_tip = np.array([delta_tip_x, delta_tip_y])
         # elif self.update_scheme == 'one_to_one_2D':
         #     # large_angle = np.arctan2(self.tip_pos_int_t[t, 1], self.tip_pos_in_t[t, 0])
@@ -336,11 +338,18 @@ class SupervisorClass:
 
         if correct_for_total_angle:
             total_angle = helpers_builders._get_total_angle(self.tip_pos_update_in_t[t, :], Strctr.L)
+            if t == 1:
+                prev_total_angle = 0.0
+            else:
+                prev_total_angle = helpers_builders._get_total_angle(self.tip_pos_update_in_t[t-1, :], Strctr.L)
+            delta_total_angle = total_angle - prev_total_angle
             print('total_angle', total_angle)
-            self.tip_angle_update_in_t[t] += total_angle
+            print('delta_total_angle', delta_total_angle)
+            self.tip_angle_update_in_t[t] += delta_total_angle
 
         print('update_tip_y', self.tip_pos_update_in_t[t][1])
         print('update angle', self.tip_angle_update_in_t[t])
+        print('update angle change', self.tip_angle_update_in_t[t]-self.tip_angle_update_in_t[t-1])
 
         # correct for to big a stretch
         self.tip_pos_update_in_t[t, :] = helpers_builders._correct_big_stretch(self.tip_pos_update_in_t[t],
