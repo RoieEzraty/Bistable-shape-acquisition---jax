@@ -55,7 +55,7 @@ class VariablesClass(eqx.Module):
 
         self.k_type = CFG.Variabs.k_type  # static
 
-        if CFG.Variabs.k_type == "Numerical":
+        if CFG.Variabs.k_type == "Numerical":  # numerical model - Hookean torque
             self.k_soft = CFG.Variabs.k_soft_uniform * np.array((H, S), dtype=jnp.float32)
             self.k_stiff = CFG.Variabs.k_stiff_uniform * np.array((H, S), dtype=jnp.float32)
             self.k = None
@@ -66,7 +66,7 @@ class VariablesClass(eqx.Module):
             self.norm_torque = float(self.k_max*self.norm_angle)
             self.norm_force = float(self.k_max*self.norm_angle/self.norm_pos)
 
-        elif CFG.Variabs.k_type == "Experimental":
+        elif CFG.Variabs.k_type == "Experimental":  # Leon's shim
             self.k_soft = None
             self.k_stiff = None
             thetas, torques, ks, \

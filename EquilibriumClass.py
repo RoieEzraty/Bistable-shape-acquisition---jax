@@ -399,14 +399,14 @@ class EquilibriumClass(eqx.Module):
             the sign used in the equations of motion:
                 accel = (f_ext + f_internal - damping * xdot_free) / mass
         """
-        # 1) Rebuild full x vector and reshape
+        # ------ Rebuild full x vector and reshape ------
         fixed_vals_t = fixed_vals(t) if callable(fixed_vals) else fixed_vals
         imposed_vals_t = imposed_vals(t)  # callable by construction above
         x_full = helpers_builders._assemble_full_from_free(free_mask, fixed_mask, imposed_mask, x_free, fixed_vals_t,
                                                            imposed_vals_t)  # full node positions, shape (2*nodes)
         pos_arr = helpers_builders._reshape_state_2_pos_arr(x_full, self.init_pos)
 
-        # 2) Hinge torques: tau_hinges (H,)
+        # ------ Hinge torques: tau_hinges (H,) ------
         thetas = jax.vmap(lambda h: Strctr._get_theta(pos_arr, h))(jnp.arange(Strctr.hinges))  # (H,)
         B = self.buckle_arr  # (H,S)
         theta_eff = B * thetas[:, None]   # (H,S)
@@ -415,69 +415,16 @@ class EquilibriumClass(eqx.Module):
         # signed + summed per hinge
         tau_hinges = jnp.sum(B * tau_shims, axis=1)
 
-        # 3) Jacobian of theta for each hinge: (H, n_coords)
-        # --- efficient local-6DOF Jacobians for hinge angles ---
-        def theta_of_x(x_flat, h):
-            """θ_h(x_flat): scalar hinge angle for hinge h."""
-            pa = helpers_builders._reshape_state_2_pos_arr(x_flat, self.init_pos)
-            return Strctr._get_theta(pa, h)
+        # Jacobian of theta for each hinge: (H, n_coords)
+        theta_jacs = self._theta_jacs_local(Strctr, x_full)  # (H, n_coords)
 
-        def hinge_local_dof_indices(h: int) -> jax.Array:
-            """
-            For hinge h in a chain, the angle depends on nodes (h, h+1, h+2),
-            each with x,y → 6 position DOFs total.
-            Returns a 1D array of length 6 with the global DOF indices.
-            """
-            # nodes: [h, h+1, h+2]
-            nodes = jnp.array([h, h + 1, h + 2], dtype=jnp.int32)
-            # DOFs: [2*node, 2*node+1] for each node
-            dofs = jnp.stack([2 * nodes, 2 * nodes + 1], axis=1)  # (3, 2)
-            return dofs.reshape(-1)  # (6,)
-
-        def hinge_grad_global(x_flat, h: int) -> jax.Array:
-            """
-            Compute ∂θ_h/∂x_flat as a length-n_coords vector, but only using
-            JVPs on the 6 local DOFs for hinge h.
-            """
-            local_idx = hinge_local_dof_indices(h)  # (6,)
-
-            def f(x):
-                return theta_of_x(x, h)
-
-            def jvp_single(idx):
-                v = jnp.zeros_like(x_flat)
-                v = v.at[idx].set(1.0)
-                _, g = jax.jvp(f, (x_flat,), (v,))
-                return g  # scalar derivative dθ_h/dx_idx
-
-            # derivatives with respect to the 6 local DOFs: (6,)
-            g_local = jax.vmap(jvp_single)(local_idx)
-
-            # scatter into global gradient vector (n_coords,)
-            grad_global = jnp.zeros_like(x_flat)
-            grad_global = grad_global.at[local_idx].set(g_local)
-            return grad_global
-
-        # theta_jacs: shape (H, n_coords)
-        theta_jacs = jax.vmap(
-            hinge_grad_global,
-            in_axes=(None, 0),   # x_full shared, h varies
-        )(x_full, jnp.arange(Strctr.hinges))
-
-        # # old 3) Jacobian of theta for each hinge: (H, n_coords)
-        # def theta_jac_of_h(h):
-        #     def theta_of_x(x_flat):
-        #         pa = x_flat.reshape(pos_arr.shape)
-        #         return Strctr._get_theta(pa, h)
-        #     return jax.jacrev(theta_of_x)(x_full[:Strctr.n_coords])  # (n_coords,)
-        # theta_jacs = jax.vmap(theta_jac_of_h)(jnp.arange(Strctr.hinges))  # (H, n_coords)
-
-        # 4) Map torques to DOF forces
-        # F_theta_full = (theta_jacs.T @ tau_hinges).reshape(-1) / Strctr.L  # (n_coords,)
+        # Map torques to DOF forces
         F_theta_full = (theta_jacs.T @ tau_hinges).reshape(-1)  # (n_coords,)
-        # 5) Edge stretch forces
+        
+        # ------ Edge stretch forces ------
         F_stretch_full = self.stretch_forces(Strctr, Variabs, pos_arr)  # (n_coords,)
-        # Combine internal forces (reaction)
+        
+        # ------ Combine internal forces (reaction) ------
         F_internal_full = F_theta_full + F_stretch_full  # (n_coords,)
 
         # jax.debug.print('F_theta_full {}', F_theta_full)
@@ -511,73 +458,21 @@ class EquilibriumClass(eqx.Module):
         jax.Array, shape: (n_coords,)
             Internal reaction force on **all position DOFs**.
         """
-        # 1) ------ pos_arr from x_full ------
+        # ------ pos_arr from x_full ------
         # already built x_full: (n_coords,) flattened positions ONLY (no velocities)
         pos_arr = helpers_builders._reshape_state_2_pos_arr(x_full, self.init_pos)
 
-        # 2) ------ hinge torques per hinge (H,) ------
+        # ------ hinge torques per hinge (H,) ------
         thetas = jax.vmap(lambda h: Strctr._get_theta(pos_arr, h))(jnp.arange(Strctr.hinges))  # (H,)
         B = self.buckle_arr  # (H,S)
         theta_eff = B * thetas[:, None]  # (H,S)
         tau_shims = -Variabs.torque(theta_eff)  # (H,S)
         tau_hinges = jnp.sum(B * tau_shims, axis=1)  # (H,)
 
-        # 3) ------ Jacobian of theta for each hinge: (H, n_coords) ------
-        # --- efficient local-6DOF Jacobians for hinge angles ---
-        def theta_of_x(x_flat, h):
-            """θ_h(x_flat): scalar hinge angle for hinge h."""
-            pa = helpers_builders._reshape_state_2_pos_arr(x_flat, self.init_pos)
-            return Strctr._get_theta(pa, h)
+        # Jacobian of theta for each hinge: (H, n_coords)
+        theta_jacs = self._theta_jacs_local(Strctr, x_full)  # (H, n_coords)
 
-        def hinge_local_dof_indices(h: int) -> jax.Array:
-            """
-            For hinge h in a chain, the angle depends on nodes (h, h+1, h+2),
-            each with x,y → 6 position DOFs total.
-            Returns a 1D array of length 6 with the global DOF indices.
-            """
-            # nodes: [h, h+1, h+2]
-            nodes = jnp.array([h, h + 1, h + 2], dtype=jnp.int32)
-            # DOFs: [2*node, 2*node+1] for each node
-            dofs = jnp.stack([2 * nodes, 2 * nodes + 1], axis=1)  # (3, 2)
-            return dofs.reshape(-1)  # (6,)
-
-        def hinge_grad_global(x_flat, h: int) -> jax.Array:
-            """
-            Compute ∂θ_h/∂x_flat as a length-n_coords vector, but only using
-            JVPs on the 6 local DOFs for hinge h.
-            """
-            local_idx = hinge_local_dof_indices(h)  # (6,)
-
-            def f(x):
-                return theta_of_x(x, h)
-
-            def jvp_single(idx):
-                v = jnp.zeros_like(x_flat)
-                v = v.at[idx].set(1.0)
-                _, g = jax.jvp(f, (x_flat,), (v,))
-                return g  # scalar derivative dθ_h/dx_idx
-
-            # derivatives with respect to the 6 local DOFs: (6,)
-            g_local = jax.vmap(jvp_single)(local_idx)
-
-            # scatter into global gradient vector (n_coords,)
-            grad_global = jnp.zeros_like(x_flat)
-            grad_global = grad_global.at[local_idx].set(g_local)
-            return grad_global
-
-        # theta_jacs: shape (H, n_coords)
-        theta_jacs = jax.vmap(
-            hinge_grad_global,
-            in_axes=(None, 0),   # x_full shared, h varies
-        )(x_full, jnp.arange(Strctr.hinges))
-
-        # 3) ------ dense Jacobian (simple, OK for plotting; for scale use local-8DOF approach) ------
-        # def theta_jac_of_h(h):
-        #     def theta_of_x(x_flat):
-        #         pa = helpers_builders._reshape_state_2_pos_arr(x_flat, self.init_pos)
-        #         return Strctr._get_theta(pa, h)
-        #     return jax.jacrev(theta_of_x)(x_full)  # (n_coords,)
-        # theta_jacs = jax.vmap(theta_jac_of_h)(jnp.arange(Strctr.hinges))  # (H, n_coords)
+        # Map torques to DOF forces
         F_theta_full = (theta_jacs.T @ tau_hinges).reshape(-1)  # (n_coords,)
 
         # --- stretch forces ---
@@ -675,6 +570,51 @@ class EquilibriumClass(eqx.Module):
         F = F.at[edges[:, 0], :].add(+fvec)
         F = F.at[edges[:, 1], :].add(-fvec)
         return F.reshape(-1)                  # (n_coords,)
+
+    def _theta_jacs_local(self, Strctr: "StructureClass", x_flat: jax.Array) -> jax.Array:
+        """
+        Efficiently compute ∂θ_h/∂x for all hinges h, using a 6-DOF local parametrization.
+
+        Returns
+        -------
+        theta_jacs : jax.Array, shape (H, n_coords)
+            Row h contains the gradient of hinge angle θ_h w.r.t. all position DOFs.
+            Only the 6 DOFs of nodes (h, h+1, h+2) are non-zero.
+        """
+        n_coords = x_flat.shape[0]
+        H = Strctr.hinges
+
+        def hinge_local_dof_indices(h: int) -> jax.Array:
+            """
+            For hinge h in a chain, the angle depends on nodes (h, h+1, h+2),
+            each with (x,y) → 6 position DOFs total.
+            Returns a length-6 array of global DOF indices.
+            """
+            nodes = jnp.array([h, h + 1, h + 2], dtype=jnp.int32)
+            dofs = jnp.stack([2 * nodes, 2 * nodes + 1], axis=1)  # (3, 2)
+            return dofs.reshape(-1)  # (6,)
+
+        def grad_for_h(h: int) -> jax.Array:
+            local_idx = hinge_local_dof_indices(h)        # (6,)
+            x_local0 = x_flat[local_idx]                 # (6,)
+
+            def theta_of_local(x_local: jax.Array) -> jax.Array:
+                # Rebuild a full x vector using the local 6-DOF values
+                x_full = x_flat.at[local_idx].set(x_local)
+                pa = helpers_builders._reshape_state_2_pos_arr(x_full, self.init_pos)
+                return Strctr._get_theta(pa, h)
+
+            # dθ_h/dx_local (6,) via one reverse-mode pass
+            g_local = jax.jacrev(theta_of_local)(x_local0)
+
+            # Scatter back into a length-n_coords global gradient
+            grad_global = jnp.zeros_like(x_flat)
+            grad_global = grad_global.at[local_idx].set(g_local)
+            return grad_global  # (n_coords,)
+
+        # vmap over hinges → (H, n_coords)
+        theta_jacs = jax.vmap(grad_for_h)(jnp.arange(H, dtype=jnp.int32))
+        return theta_jacs
 
     # -------- external forces (optional) ----------
     def force_function_free(self, t: float, force_function: Callable[[float], jax.Array], *, 

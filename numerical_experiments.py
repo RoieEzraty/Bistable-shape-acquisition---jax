@@ -189,8 +189,9 @@ def compress_to_tip_pos(Strctr: "StructureClass", Variabs: "VariablesClass", Spr
 
 
 def one_shot(Strctr: "StructureClass", Variabs: "VariablesClass", Sprvsr: "SupervisorClass", CFG: ExperimentConfig,
-             buckle: NDArray, tip_pos: NDArray, tip_angle: float, init_pos: NDArray | None = None) -> Tuple["StateClass",
-                                                                                                            NDArray, NDArray]:
+             buckle: NDArray, tip_pos: NDArray, tip_angle: float, init_pos: Optional[np.ndarray] = None) -> Tuple["StateClass",
+                                                                                                                  NDArray,
+                                                                                                                  NDArray]:
     """
     Perform a single equilibrium computation and state update for the system.
 
