@@ -277,38 +277,48 @@ def _get_tip_angle(pos_arr: np.array) -> np.array:
     return theta_from_negx
 
 
-def _get_total_angle(tip_pos: np.array, L: float) -> np.array:
+def _get_total_angle(tip_pos: np.array, prev_total_angle, L: float) -> np.array:
     """
     angle between tip and last fixed node, CCW
     pos_arr: array of shape (H, 2)
     Returns: angle (radians) in [-pi, pi], measured from -x axis
+    
+    Parameters
+    ----------
+    tip_pos          - (2,) array, Current tip position.
+    prev_total_angle - float, The accumulated unwrapped angle up to the previous timestep.
+    L                - float, Edge length (used to define reference point at (L,0)).
+
+    Returns
+    -------
+    new_total_angle : float, The unwrapped angle (can exceed ±pi, ±2pi, ±3pi, ...).
     """
+    # ------ total angle [-pi/2, pi/2] ------
     dx, dy = np.array([L, 0]) - tip_pos  # displacement vector
 
     # shift so that 0 is along -x
-    theta_from_negx = np.arctan2(dy, dx) - np.pi
+    total_angle = np.arctan2(dy, dx) - np.pi
     # normalize back to [-pi, pi]
-    theta_from_negx = (theta_from_negx + np.pi) % (2*np.pi) - np.pi
+    total_angle = (total_angle + np.pi) % (2*np.pi) - np.pi
 
-    return theta_from_negx
+    # ------ correct for wrapping around center ------
+    prev_theta_wrapped = ((prev_total_angle + np.pi) % (2*np.pi)) - np.pi
+    delta = total_angle - prev_theta_wrapped
+
+    # correct jumpt across -x axis - adding or subtracting 2π
+    if delta > np.pi:
+        delta -= 2*np.pi
+    elif delta < -np.pi:
+        delta += 2*np.pi
+
+    # Update cumulative angle
+    total_angle = prev_total_angle + delta
+
+    return total_angle
 
 
-# def _correct_big_stretch(tip_pos, tip_angle, L, edges):
-#     before_lst_node = np.array([tip_pos[0] - L*np.cos(tip_angle), tip_pos - L*np.sin(tip_angle)])
-#     scnd_node = np.array([L, 0])
-#     actual_stretch = np.sqrt(np.sum((before_lst_node - scnd_node)**2))
-#     maximal_stretch = ((edges-2)*L)
-#     cond = actual_stretch > maximal_stretch
-#     ratio = maximal_stretch / actual_stretch
-#     if cond:
-#         corrected = (before_lst_node - scnd_node) * ratio + (scnd_node + tip_pos - before_lst_node)
-#         print('corrected tip_pos_update_in_t[t, :]=', corrected)
-#     else:
-#         corrected = tip_pos
-#     return corrected
-
-# ------contact etc. ------
-def _correct_big_stretch(tip_pos: NDArray[np.float_], tip_angle: float, L: float, edges: int,) -> NDArray[np.float_]:
+def _correct_big_stretch(tip_pos: NDArray[np.float_], tip_angle: float, total_angle: float, L: float,
+                         edges: int) -> NDArray[np.float_]:
     """
     Physical upper bound on total chain stretch by correcting tip position to not exceed  maximal possible length.
 
@@ -345,14 +355,22 @@ def _correct_big_stretch(tip_pos: NDArray[np.float_], tip_angle: float, L: float
 
     # Maximum physically possible stretch (remaining edges)
     epsilon = 0.1*L  # add some breathing room
-    if np.abs(tip_angle) < np.pi:
-        max_stretch = (edges - 2) * L - epsilon
-    elif np.abs(tip_angle) < 2*np.pi:
-        max_stretch = (edges - 3) * L - epsilon
-    elif np.abs(tip_angle) < 3*np.pi:
-        max_stretch = (edges - 4) * L - epsilon
-    elif np.abs(tip_angle) < 4*np.pi:
-        max_stretch = (edges - 5) * L - epsilon
+
+    wrap_tip = np.floor(np.abs(tip_angle) / np.pi)
+    wrap_total = np.floor(np.abs(total_angle) / np.pi)
+    n_wrap = wrap_tip + wrap_total + 2
+
+    max_stretch = edges * L - n_wrap * L - epsilon
+    max_stretch = max(max_stretch, 0.0)
+
+    # if np.abs(tip_angle) < np.pi:
+    #     max_stretch = (edges - 2) * L - epsilon
+    # elif np.abs(tip_angle) < 2*np.pi:
+    #     max_stretch = (edges - 3) * L - epsilon
+    # elif np.abs(tip_angle) < 3*np.pi:
+    #     max_stretch = (edges - 4) * L - epsilon
+    # elif np.abs(tip_angle) < 4*np.pi:
+    #     max_stretch = (edges - 5) * L - epsilon
 
     # If unphysical → scale back
     if actual_stretch > max_stretch:

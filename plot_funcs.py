@@ -1,25 +1,16 @@
 import jax.numpy as jnp
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.ticker import MaxNLocator
 import pandas as pd
 
 from matplotlib import patches
 from matplotlib.animation import FuncAnimation, PillowWriter  # for GIF export
 from scipy.signal import savgol_filter
 
-from typing import List
+from typing import List, Union
 
 import colors, helpers_builders
-
-
-from typing import Union
-
-import numpy as np
-import matplotlib.pyplot as plt
-from matplotlib import patches
-
-import colors
-import helpers_builders
 
 
 def plot_arm(pos_vec: np.ndarray, buckle: np.ndarray, thetas: Union[np.ndarray, list, tuple], L: float, modality: str,
@@ -283,7 +274,7 @@ def loss_and_buckle_in_t(loss_in_t, buckle_in_t, start=0, end=None):
     if end is None:
         end = np.shape(loss_in_t)[1]
 
-    t = np.linspace(start, end, end-start+1)
+    t = np.arange(start-1, end)   # integer indices
 
     # -------- instantiate plot --------
     fig, axes = plt.subplots(2, 1, figsize=(6, 6), sharex=False)
@@ -291,9 +282,8 @@ def loss_and_buckle_in_t(loss_in_t, buckle_in_t, start=0, end=None):
     # -------- subplot 1: loss --------
     axes[0].plot(t, np.sum(np.sqrt(loss_in_t[start-1:end, :]**2), axis=1))
     axes[0].set_ylabel("Loss")
-    # axes[0].set_title("Training Loss")
-    # integer ticks:
-    axes[0].set_xticks(t)
+    # integer ticks only, auto-spaced
+    axes[0].xaxis.set_major_locator(MaxNLocator(integer=True))
 
     # -------- subplot 2: buckle states --------
     for i in range(5):
@@ -304,8 +294,7 @@ def loss_and_buckle_in_t(loss_in_t, buckle_in_t, start=0, end=None):
     axes[1].set_xlabel("training step")
     axes[1].legend()
 
-    # integer ticks again:
-    axes[1].set_xticks(t)
+    axes[1].xaxis.set_major_locator(MaxNLocator(integer=True))
 
     plt.tight_layout()
     plt.show()

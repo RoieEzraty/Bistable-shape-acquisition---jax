@@ -77,6 +77,8 @@ class SupervisorClass:
     tip_pos_update_in_t: NDArray[np.float32] = eqx.field(init=False, static=True)  # (T, 2)
     tip_angle_update_in_t: Optional[NDArray[np.float32]] = eqx.field(default=None, init=False, 
                                                                      static=True)  # (T,)
+    total_angle_update_in_t: Optional[NDArray[np.float32]] = eqx.field(default=None, init=False, 
+                                                                       static=True)  # (T,)
 
     # ------ for equilibrium calculation, jax arrays ------    
     imposed_mask: jax.ndarray[bool] = eqx.field(static=True)                       # (2*nodes,)
@@ -137,6 +139,7 @@ class SupervisorClass:
         self.tip_pos_update_in_t = np.zeros((self.T, 2), dtype=np.float32)
         if self.control_tip_angle:
             self.tip_angle_update_in_t = np.zeros((self.T,), dtype=np.float32)
+            self.total_angle_update_in_t = np.zeros((self.T,), dtype=np.float32)
 
     def _build_imposed_mask(self, Strctr: "StructureClass", control_tip_pos: bool = True, control_tip_angle: bool = True):
         n_coords = Strctr.n_coords
@@ -288,10 +291,14 @@ class SupervisorClass:
                 # delta_tip_y = - self.alpha * self.loss[1] / Variabs.norm_force * Strctr.hinges * Strctr.L
                 # delta_angle = + self.alpha * self.loss[2] / Variabs.norm_torque * np.pi/64 if (self.control_tip_angle and 
                 #                                                                                self.loss.size == 3) else 0.0
-                delta_tip_y = - self.alpha * self.loss[0] * Strctr.hinges * Variabs.norm_pos
-                delta_tip_x = - copy.copy(np.abs(delta_tip_y))
-                correct_sign = np.sign(self.tip_pos_update_in_t[t-1, 0])
-                delta_tip_y = delta_tip_y * correct_sign
+                sgnx = np.sign(self.tip_pos_update_in_t[t-1, 0])
+                sgny = np.sign(self.tip_pos_update_in_t[t-1, 0])
+                if sgnx == 0.0:  # sign can't be 0
+                    sgnx = 1
+                if sgny == 0.0:
+                    sgny = 1
+                delta_tip_y = - self.alpha * self.loss[0] * Strctr.hinges * Variabs.norm_pos * sgnx
+                delta_tip_x = self.alpha * self.loss[0] * Strctr.hinges * Variabs.norm_pos * sgny
                 delta_angle = - self.alpha * self.loss[1] * Variabs.norm_angle * np.pi
             elif self.loss_type == 'Fx_and_tip_torque':
                 # norm_y = Variabs.norm_force * Strctr.hinges * Strctr.L
@@ -337,11 +344,13 @@ class SupervisorClass:
             self.tip_angle_update_in_t[t] = prev_tip_update_angle + float(delta_angle)
 
         if correct_for_total_angle:
-            total_angle = helpers_builders._get_total_angle(self.tip_pos_update_in_t[t, :], Strctr.L)
             if t == 1:
                 prev_total_angle = 0.0
             else:
-                prev_total_angle = helpers_builders._get_total_angle(self.tip_pos_update_in_t[t-1, :], Strctr.L)
+                prev_total_angle = self.total_angle_update_in_t[t-1]
+            print('prev_total_angle', prev_total_angle)
+            total_angle = helpers_builders._get_total_angle(self.tip_pos_update_in_t[t, :], prev_total_angle, Strctr.L)
+            self.total_angle_update_in_t[t] = total_angle
             delta_total_angle = total_angle - prev_total_angle
             print('total_angle', total_angle)
             print('delta_total_angle', delta_total_angle)
@@ -353,5 +362,5 @@ class SupervisorClass:
 
         # correct for to big a stretch
         self.tip_pos_update_in_t[t, :] = helpers_builders._correct_big_stretch(self.tip_pos_update_in_t[t],
-                                                                               self.tip_angle_update_in_t[t], Strctr.L,
-                                                                               Strctr.edges)
+                                                                               self.tip_angle_update_in_t[t], total_angle,
+                                                                               Strctr.L, Strctr.edges)
