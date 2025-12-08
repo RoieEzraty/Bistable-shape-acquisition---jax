@@ -97,16 +97,8 @@ def plot_arm(pos_vec: np.ndarray, buckle: np.ndarray, thetas: Union[np.ndarray, 
         theta1_deg = float(np.rad2deg(theta1))
         theta2_deg = float(np.rad2deg(theta2))
 
-        arc = patches.Arc(
-            xy=(p[0], p[1]),
-            width=2 * r,
-            height=2 * r,
-            angle=0.0,
-            theta1=theta1_deg,
-            theta2=theta2_deg,
-            linewidth=2,
-            zorder=2,
-        )
+        arc = patches.Arc(xy=(p[0], p[1]), width=2 * r, height=2 * r, angle=0.0, theta1=theta1_deg, theta2=theta2_deg,
+                          linewidth=2, zorder=2)
         ax.add_patch(arc)
         ax.add_patch(arc)
 
@@ -220,16 +212,8 @@ def animate_arm_w_arcs(traj_pos, L, frames=10, interval_ms=30, save_path=None, f
                 theta1_deg = float(np.rad2deg(theta1))
                 theta2_deg = float(np.rad2deg(theta2))
 
-                arc = patches.Arc(
-                    xy=(p[0], p[1]),
-                    width=2 * r,
-                    height=2 * r,
-                    angle=0.0,
-                    theta1=theta1_deg,
-                    theta2=theta2_deg,
-                    linewidth=2,
-                    zorder=2,
-                )
+                arc = patches.Arc(xy=(p[0], p[1]), width=2 * r, height=2 * r, angle=0.0, theta1=theta1_deg, theta2=theta2_deg,
+                                  linewidth=2, zorder=2)
                 ax.add_patch(arc)
                 arc_patches.append(arc)
 

@@ -13,8 +13,6 @@ from numpy import array, zeros
 from numpy.typing import NDArray
 from typing import TYPE_CHECKING, Callable, Union, Optional
 
-import dynamics
-
 if TYPE_CHECKING:
     from StructureClass import StructureClass
     from EquilibriumClass import EquilibriumClass

@@ -14,7 +14,7 @@ from numpy.typing import NDArray
 from typing import TYPE_CHECKING, Callable, Union, Optional
 from config import ExperimentConfig
 
-import dynamics, helpers_builders
+import helpers_builders
 
 if TYPE_CHECKING:
     from StructureClass import StructureClass

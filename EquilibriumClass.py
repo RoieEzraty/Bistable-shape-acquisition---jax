@@ -14,7 +14,7 @@ from numpy import array, zeros
 from numpy.typing import NDArray
 from typing import TYPE_CHECKING, Callable, Union, Optional
 
-import dynamics, helpers_builders
+import helpers_builders
 
 if TYPE_CHECKING:
     from StructureClass import StructureClass
@@ -182,12 +182,16 @@ class EquilibriumClass(eqx.Module):
 
         Notes
         -----
-        - The fixed and imposed DOFs are enforced directly inside `dynamics.solve_dynamics`.
+        - The fixed and imposed DOFs are enforced directly inside `self.solve_dynamics`.
         - When `tip_angle` is imposed, the node before the tip is constrained so that
           the last segment has length `Strctr.L` and orientation `tip_angle`.
         - Positional noise is applied **after** flattening `init_pos` and **before**
           concatenating with the velocity vector.
         """
+        if init_pos is None:
+            # use whatever geometry was passed at construction as baseline
+            init_pos = helpers_builders.jax2numpy(self.init_pos)
+
         init_pos = helpers_builders.numpy2jax(init_pos)
 
         # ------ fixed values (vector, not function) ------

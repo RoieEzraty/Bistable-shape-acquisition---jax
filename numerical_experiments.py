@@ -118,9 +118,9 @@ def train(Strctr: StructureClass, Variabs: VariablesClass, Sprvsr: SupervisorCla
     return pos_in_t_meas, pos_in_t_udpate
 
 
-def compress_to_tip_pos(Strctr: "StructureClass", Variabs: "VariablesClass", Sprvsr: "SupervisorClass", rand_key: int,
-                        tip_pos_i, tip_angle_i, tip_pos_f, tip_angle_f, Eq_iterations, T_eq: int, damping: float, mass: float,
-                        tolerance: float, buckle: NDArray) -> Tuple["StateClass", NDArray, NDArray]:
+def compress_to_tip_pos(Strctr: "StructureClass", Variabs: "VariablesClass", Sprvsr: "SupervisorClass", CFG: ExperimentConfig,
+                        buckle: NDArray, tip_pos_i: NDArray, tip_angle_i: float, tip_pos_f: NDArray, tip_angle_f: float,
+                        Eq_iterations: int) -> Tuple["StateClass", list[NDArray], list[NDArray]]:
     """
         Incrementally compress origami to final tip position and angle, ensuring stable convergence, in Eq_iterations steps.
 
@@ -132,42 +132,22 @@ def compress_to_tip_pos(Strctr: "StructureClass", Variabs: "VariablesClass", Spr
 
         Parameters
         ----------
-        Strctr : StructureClass
-            Structural definition containing geometry (hinges, edges, node layout, etc.).
-        Variabs : VariablesClass
-            Material and stiffness parameters for hinges, edges, and stretch elements.
-        Sprvsr : SupervisorClass
-            Supervisory object controlling simulation and visualization parameters.
-        tip_pos_i : array-like of shape (2,)
-            Initial position of the structure’s tip node.
-        tip_angle_i : float
-            Initial angular orientation of the tip node (radians).
-        tip_pos_f : array-like of shape (2,)
-            Target final position of the structure’s tip node.
-        tip_angle_f : float
-            Target final tip orientation (radians).
-        Eq_iterations : int
-            Number of incremental equilibrium steps between the initial and final configurations.
-        T_eq : float
-            Total simulation time for each equilibrium calculation.
-        damping : float
-            Damping coefficient for the dynamic equilibrium solver.
-        mass : float
-            Mass parameter controlling inertial terms in the equilibrium solver.
-        tolerance : float
-            Tolerance for adaptive integration accuracy in the dynamics solver.
-        buckle : NDArray
-            Initial buckle state of all hinges (typically ±1).
+        Strctr      - StructureClass, Structural definition containing geometry (hinges, edges, node layout, etc.).
+        Variabs     - VariablesClass, Material and stiffness parameters for hinges, edges, and stretch elements.
+        Sprvsr      - SupervisorClass, Supervisory object controlling simulation and visualization parameters.
+        CFG         - user variables from config file
+        buckle      - NDArray, Initial buckle state of all hinges (typically ±1).
+        tip_pos_i   - array-like of shape (2,), Initial position of the structure’s tip node.
+        tip_angle_i - float, Initial angular orientation of the tip node (radians).
+        tip_pos_f   - array-like of shape (2,), Target final position of the structure’s tip node.
+        tip_angle_f - float, Target final tip orientation (radians).        
 
         Returns
         -------
-        State : StateClass
-            Final equilibrium state of the structure after all compression steps.
-        pos_in_t : list[NDArray]
-            List of position histories over all equilibrium phases.
-            Each entry corresponds to the node positions over time during one equilibrium phase.
-        force_in_t : list[NDArray]
-            List of potential force histories corresponding to each equilibrium phase.
+        State      - StateClass, Final equilibrium state of the structure after all compression steps.
+        pos_in_t   - list[NDArray], List of position histories over all equilibrium phases.
+                                    Each entry corresponds to the node positions over time during one equilibrium phase.
+        force_in_t - list[NDArray], List of potential force histories corresponding to each equilibrium phase.
 
         Notes
         -----
@@ -196,25 +176,21 @@ def compress_to_tip_pos(Strctr: "StructureClass", Variabs: "VariablesClass", Spr
             pos_init = pos_in_t[-1][-1]
 
         # calculate equilibrium of new tip pos and angle
-        State, pos_in_t_i, force_in_t_0 = one_shot(Strctr, Variabs, Sprvsr, T_eq, damping, mass, tolerance, buckle, tip_pos,
-                                                   tip_angle, init_pos=pos_init)
+        State, pos_in_t_i, force_in_t_0 = one_shot(Strctr, Variabs, Sprvsr, CFG, buckle, tip_pos, tip_angle, init_pos=pos_init)
         pos_in_t.append(pos_in_t_i)
         force_in_t.append(force_in_t_0)
 
-    # final one is just some more time
+    # final one is just some more time at same tip pos
     pos_init = pos_in_t[-1][-1]
-    T_eq = 1 * T_eq  # increase time for equilibrium
-    damping = 3 * damping  # increase damping
-    State, pos_in_t_i, force_in_t_0 = one_shot(Strctr, Variabs, Sprvsr, T_eq, damping, mass, tolerance, rand_key, buckle,
-                                               tip_pos, tip_angle, init_pos=pos_init)
+    State, pos_in_t_i, force_in_t_0 = one_shot(Strctr, Variabs, Sprvsr, CFG, buckle, tip_pos, tip_angle, init_pos=pos_init)
     pos_in_t.append(pos_in_t_i)
     force_in_t.append(force_in_t_0)
     return State, pos_in_t, force_in_t
 
 
-def one_shot(Strctr: "StructureClass", Variabs: "VariablesClass", Sprvsr: "SupervisorClass",
-             T_eq: int, damping: float, mass: float, tolerance: float, rand_key: int, buckle: NDArray,
-             tip_pos: NDArray, tip_angle: NDArray, init_pos: NDArray = None) -> Tuple["StateClass", NDArray, NDArray]:
+def one_shot(Strctr: "StructureClass", Variabs: "VariablesClass", Sprvsr: "SupervisorClass", CFG: ExperimentConfig,
+             buckle: NDArray, tip_pos: NDArray, tip_angle: float, init_pos: NDArray | None = None) -> Tuple["StateClass",
+                                                                                                            NDArray, NDArray]:
     """
     Perform a single equilibrium computation and state update for the system.
 
@@ -223,31 +199,14 @@ def one_shot(Strctr: "StructureClass", Variabs: "VariablesClass", Sprvsr: "Super
 
     Parameters
     ----------
-    Strctr : StructureClass
-        Object defining the geometric and topological properties of the structure 
-        (e.g., edges, rest lengths, etc.).
-    Variabs : VariablesClass
-        Object containing simulation parameters such as stiffness coefficients, 
-        torque functions, and other physical properties.
-    Sprvsr : SupervisorClass
-        Supervisor object managing high-level simulation settings and control 
-        flags such as tip control behavior.
-    T_eq : int
-        Total equilibrium time or number of iterations for the equilibrium computation.
-    n_steps : int
-        Number of discrete steps used in the equilibrium calculation.
-    damping : float
-        Damping coefficient applied during the dynamic relaxation or equilibrium process.
-    mass : float
-        Mass parameter affecting the inertia in the dynamic equilibrium simulation.
-    calc_through_energy : bool
-        Whether to compute equilibrium via energy minimization instead of force balance.
-    buckle : NDArray
-        Array indicating the initial buckle configuration of the system (typically ±1).
-    tip_pos : NDArray
-        Prescribed position of the tip node(s) during the equilibrium calculation.
-    tip_angle : NDArray
-        Prescribed angular orientation of the tip node(s).
+    Strctr    - StructureClass, Structural definition containing geometry (hinges, edges, node layout, etc.).
+    Variabs   - VariablesClass, Material and stiffness parameters for hinges, edges, and stretch elements.
+    Sprvsr    - SupervisorClass, Supervisory object controlling simulation and visualization parameters.
+    CFG       - user variables in config file
+    buckle    - NDArray, Array indicating the initial buckle configuration of the system (typically ±1).
+    tip_pos   - NDArray, Prescribed position of the tip node(s) during the equilibrium calculation.
+    tip_angle - NDArray, Prescribed angular orientation of the tip node(s).
+    init_pos  - NDArray, initial position from which to compress and calculate state
 
     Returns
     -------
@@ -265,28 +224,26 @@ def one_shot(Strctr: "StructureClass", Variabs: "VariablesClass", Sprvsr: "Super
       stretch energy, torque energy, and net forces.
     - A plot of the arm configuration is displayed at the end of execution.
     """
+    # ------ initialize, no tip movement yet ------
     State = StateClass(Variabs, Strctr, Sprvsr, buckle_arr=buckle, pos_arr=init_pos)  # buckle defaults to +1
+    Eq = EquilibriumClass(Strctr, CFG, buckle_arr=buckle, pos_arr=State.pos_arr)
 
-    # --- initialize, no tip movement yet
-    Eq = EquilibriumClass(Strctr, T_eq, damping, mass, tolerance, buckle_arr=buckle, pos_arr=State.pos_arr)
-    final_pos, pos_in_t, vel_in_t, potential_force_in_t = Eq.calculate_state(Variabs, Strctr, Sprvsr, rand_key,
+    # ------ claculate equilibrium from ode dynamics ------
+    final_pos, pos_in_t, vel_in_t, potential_force_in_t = Eq.calculate_state(Variabs, Strctr, Sprvsr, init_pos=State.pos_arr,
                                                                              tip_pos=tip_pos, tip_angle=tip_angle)
-    State._save_data(0, Strctr, final_pos, State.buckle_arr, potential_force_in_t, compute_thetas_if_missing=True,
-                     control_tip_angle=Sprvsr.control_tip_angle)
+
+    # ------ save, plot, print ------
+    State._save_data(0, Strctr, final_pos, State.buckle_arr, potential_force_in_t, control_tip_angle=Sprvsr.control_tip_angle)
     print('pos_arr', final_pos)
     print('edge len', Strctr.all_edge_lengths(State.pos_arr))
     print('total edge error', np.sum((Strctr.all_edge_lengths(State.pos_arr)-Strctr.L)**2)/(Strctr.edges*Strctr.L**2))
-    # print('stretch energy', State.stretch_energy(Variabs, Strctr))
-    # print('torque energy', State.bending_energy(Variabs, Strctr))
-    print('Fx', State.Fx)
     plot_funcs.plot_arm(State.pos_arr, State.buckle_arr, State.theta_arr, Strctr.L, modality="measurement")
     plt.show()
     return State, pos_in_t, potential_force_in_t
 
 
 def ADMET_stress_strain(Strctr: StructureClass, Variabs: VariablesClass, Sprvsr: SupervisorClass, State: StateClass, 
-                        T_eq: float, damping: float, mass: float, tolerance: float, tip_angle: float, rand_key, *,
-                        pos_noise: Optional[float] = None, vel_noise: Optional[float] = None, plot_every: int = 1
+                        CFG: ExperimentConfig, tip_angle: float, *, plot_every: int = 1
                         ) -> Tuple[NDArray[np.float_],   # Fx_afo_pos
                                    NDArray[np.float_],   # pos_frames  (T, nodes, 2)
                                    NDArray[np.int_],     # buckle_frames (T, hinges, shims)
@@ -304,14 +261,13 @@ def ADMET_stress_strain(Strctr: StructureClass, Variabs: VariablesClass, Sprvsr:
 
     Parameters
     ----------
-    T_eq : float
-        Equilibrium simulation time horizon for each step (passed to `EquilibriumClass`).
-    damping : float
-        Damping coefficient used in the dynamics solver.
-    mass : float
-        Mass parameter for the dynamics solver.
-    tolerance : float
-        Tolerance for adaptive integration in the dynamics solver.
+    Strctr    - StructureClass, Structural definition containing geometry (hinges, edges, node layout, etc.).
+    Variabs   - VariablesClass, Material and stiffness parameters for hinges, edges, and stretch elements.
+    Sprvsr    - SupervisorClass, Supervisory object controlling simulation and visualization parameters.
+    CFG       - user variables in config file
+    buckle    - NDArray, Array indicating the initial buckle configuration of the system (typically ±1).
+    tip_pos   - NDArray, Prescribed position of the tip node(s) during the equilibrium calculation.
+    tip_angle - NDArray, Prescribed angular orientation of the tip node(s).
     pos_noise : float, optional
         Amplitude of initial position noise per DOF (see `EquilibriumClass.calculate_state`).
     vel_noise : float, optional
@@ -354,20 +310,17 @@ def ADMET_stress_strain(Strctr: StructureClass, Variabs: VariablesClass, Sprvsr:
         print(f"tip_pos[{i}] = {tip_pos}")
 
         # Equilibrium; use previous equilibrium as init_pos
-        if i == 0:
-            Eq = EquilibriumClass(Strctr, T_eq, damping, mass, tolerance, buckle_arr=State.buckle_arr)
-        else:
-            Eq = EquilibriumClass(Strctr, T_eq, damping, mass, tolerance, buckle_arr=State.buckle_arr, pos_arr=final_pos)
-        final_pos, pos_in_t, vel_in_t, potential_force_in_t = Eq.calculate_state(Variabs, Strctr, Sprvsr, rand_key,
-                                                                                 tip_pos=tip_pos, tip_angle=tip_angle,
-                                                                                 pos_noise=pos_noise, vel_noise=vel_noise)
+        Eq = EquilibriumClass(Strctr, CFG, buckle_arr=State.buckle_arr,
+                              pos_arr=final_pos if final_pos is not None else State.pos_arr)
+        final_pos, pos_in_t, vel_in_t, potential_force_in_t = Eq.calculate_state(Variabs, Strctr, Sprvsr, init_pos=Eq.init_pos,
+                                                                                 tip_pos=tip_pos, tip_angle=tip_angle)
 
         # Buckle
         State.buckle(Variabs, Strctr, i, State)
 
         # Save, plot, store
         State._save_data(t=i, Strctr=Strctr, pos_arr=final_pos, buckle_arr=State.buckle_arr, Forces=potential_force_in_t,
-                         compute_thetas_if_missing=True, control_tip_angle=Sprvsr.control_tip_angle)
+                         control_tip_angle=Sprvsr.control_tip_angle)
         print("State tip forces ", [State.Fx, State.Fy])
         print("edge lengths ", State.edge_lengths)
         if plot_every > 0 and (i % plot_every == 0):
