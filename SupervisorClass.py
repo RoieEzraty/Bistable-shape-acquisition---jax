@@ -142,8 +142,8 @@ class SupervisorClass:
             self.total_angle_update_in_t = np.zeros((self.T,), dtype=np.float32)
 
     def _build_imposed_mask(self, Strctr: "StructureClass", control_tip_pos: bool = True, control_tip_angle: bool = True):
-        n_coords = Strctr.n_coords
-        N = Strctr.hinges + 2                          # number of nodes
+        n_coords = Strctr.n_coords  # 2 * nodes
+        N = Strctr.nodes  # number of nodes
         last = N - 1
 
         # --- fixed and imposed DOFs initialize --- 

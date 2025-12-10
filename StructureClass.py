@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import equinox as eqx
 import jax
 import jax.numpy as jnp
@@ -20,17 +21,60 @@ import learning_funcs, helpers_builders
 
 
 class StructureClass(eqx.Module):
-    """Bistable buckle structure (1D chain in the plane)."""  
-    
+    """
+    Geometric and topological Bistable buckle structure (1D chain in the plane).
+
+    The structure is a chain of straight edges of rest length ``L`` connecting
+    point-masses (nodes) in 2D. Neighboring edges meet at hinges, and those
+    hinge angles are where the rotational springs live.
+
+    High-level picture
+    ------------------
+    - Nodes are indexed 0..(nodes-1).
+    - Edges are straight segments between consecutive nodes: (0,1), (1,2), ...
+    - Hinges live at internal nodes and are defined by the *pair* of edges
+      that meet there. For a simple chain:
+        * hinge 0  is between edges (0,1)
+        * hinge 1  is between edges (1,2)
+        * ...
+    - Degrees of freedom: each node has (x, y), so there are ``2*nodes`` DOFs.
+
+    This class only knows geometry/topology and which DOFs are fixed. All
+    energies and forces are handled elsewhere (EquilibriumClass, VariablesClass).
+
+    Attributes
+    ----------
+    hinges       - int. Number of hinges (internal joints) along the chain.
+    shims        - int. Number of shims per hinge (used by the learning / control layers).
+    L            - float. Rest length of each edge. numerical = 1.0 (dimensionless), experimental = 45 mm.
+    nodes        - int. Total number of nodes (= hinges + 2).
+    edges        - int. Total number of edges (= hinges + 1).
+    edges_arr    - ndarray of int, shape (edges, 2). For each edge e, ``edges_arr[e] = (i, j)`` gives the node indices.
+    hinges_arr   - ndarray of int, shape (hinges, 2).
+                   For each hinge h, ``hinges_arr[h] = (e0, e1)`` gives the edge indices of the two edges that meet at that hinge.
+    n_coords     - int. Total number of scalar DOFs = ``2 * nodes``.
+    rest_lengths - jax.Array, shape (edges,). Rest length of each edge; by default all equal to ``L``.
+    fixed_mask   - jax.Array of bool, shape (2*nodes,). Boolean mask on DOFs: True for DOFs held fixed during all training.
+                   node 0 (and optionally node 1) are fixed at the origin.
+
+    DM, NE, NN, output_nodes_arr - optional learning graph objects.
+                                   These are populated only if ``update_scheme == "BEASTAL"`` and
+                                   DM : incidence matrix connecting inputs (imposed positions) to outputs (measured forces).
+                                        shape (NE, NN)
+                                   NE : inputs x outputs
+                                   NN : input + outputs
+                                   output_nodes_arr : indices of outputs
+    """   
     # ------ user-provided (static) ------
     hinges: int = eqx.field(static=True)     # number of hinges in the chain
     shims: int = eqx.field(static=True)      # shims per hinge
     L: float = eqx.field(static=True)        # rest length of rods
 
     # ------ computed in __init__ (static topology/geometry) ------
-    nodes: int = eqx.field(init=False, static=True)                        # N nodes
-    edges: int = eqx.field(init=False, static=True)                        # N edges (nodes - 1) 
+    nodes: int = eqx.field(init=False, static=True)                        # N nodes, (hinges + 2)
+    edges: int = eqx.field(init=False, static=True)                        # N edges (hinges + 1) 
     edges_arr: NDArray[int] = eqx.field(init=False, static=True)           # array (hinges+1, 2) int32, nodes to edges
+                                                                           # Used inside State.stretch_forces
     n_coords: int = eqx.field(init=False, static=True)                     # N coordinates, x and y for each node, so 2*nodes
     hinges_arr: NDArray[int] = eqx.field(init=False, static=True)          # array (hinges, 2) int32, edges to hinges
     rest_lengths: NDArray[np.float_] = eqx.field(init=False, static=True)  # (hinges+1,) float32
@@ -46,29 +90,55 @@ class StructureClass(eqx.Module):
 
     def __init__(self, CFG: ExperimentConfig, rest_lengths:  Optional[NDArray[np.float_]] = None,
                  update_scheme: str = 'one_to_one', Nin: Optional[int] = None, Nout: Optional[int] = None,
-                 control_first_edge: Optional[bool] = True, control_tip_pos: Optional[bool] = True,
-                 control_tip_angle: Optional[bool] = True):
+                 control_first_edge: Optional[bool] = True):
+        """
+        Build chain geometry from config file.
+
+        Parameters
+        ----------
+        CFG                - ExperimentConfig. User configuration. uses:
+                             CFG.Strctr.H   : number of hinges
+                             CFG.Strctr.S   : shims per hinge
+                             CFG.Variabs.k_type : "Numerical" or "Experimental"
+        rest_lengths       - ndarray, optional. Optional rest lengths for each edge, shape (edges,).
+                             If None, all edges have rest length ``L``.
+        update_scheme      - {"one_to_one", "BEASTAL"}
+                             If "BEASTAL", build the learning incidence structure (DM, NE, NN, ...).
+                             If "one_to_one", each force effects only its corresponding position index
+        Nin, Nout          - int, optional. N Input / output, 
+                             for `learning_funcs.build_incidence` when the "BEASTAL" update scheme is used.
+        control_first_edge - bool, default True
+                             True = first two nodes are fixed (nodes 0 and 1).
+                             False =  only node 0 is fixed. This feeds into `fixed_mask`.
+        """
         self.hinges = int(CFG.Strctr.H)
         self.shims = int(CFG.Strctr.S)
         if CFG.Variabs.k_type == 'Experimental':
-            self.L = 0.045  # ~45mm
+            self.L = 0.045  # Leon's shims are ~45mm
         else:
             self.L = 1.0
 
-        self.edges_arr = self._build_edges()            # (E=hinges+1, 2)
+        self.edges_arr = self._build_edges()
         self.edges = int(self.edges_arr.shape[0])
         self.nodes = self.edges + 1
-        self.n_coords = self.nodes * 2 
-        self.hinges_arr = self._build_hinges()           # (H=hinges, 2)
-        self.rest_lengths = self._build_rest_lengths(rest_lengths=rest_lengths)  # rest lengths (float32)
+        self.n_coords = self.nodes * 2
+        self.hinges_arr = self._build_hinges()
+        self.rest_lengths = self._build_rest_lengths(rest_lengths=rest_lengths)
         if update_scheme == 'BEASTAL':
             self.DM, self.NE, self.NN, self.output_nodes_arr = self._build_learning_parameters(Nin, Nout)
         self.fixed_mask = self._build_fixed_mask(control_first_edge)
 
         # learning fields left as None until _build_learning_parameters is called
        
-    # --- builders ---
-    def _build_edges(self) -> np.array[int]:
+    # ------ builders ------
+    def _build_edges(self) -> NDArray[np.int_]:
+        """
+        Build the edge list for a simple chain.
+
+        Returns
+        -------
+        edges_arr - ndarray of int, shape (edges, 2). `edges_arr[e] = (i, j)` with i,j node indices.
+        """
         starts = np.arange(self.hinges + 1, dtype=np.int32)
         return np.stack([starts, starts + 1], axis=1)
 

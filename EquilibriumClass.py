@@ -216,8 +216,8 @@ class EquilibriumClass(eqx.Module):
         # self.init_pos = pos_in_t[-1]
 
         # # split to components if you want:
-        # F_stretch = self.stretch_forces(Strctr, Variabs, final_pos)     # (n_coords,)
-        # F_theta = potential_F_in_t[-1] - F_stretch           # (n_coords,)
+        # F_stretch = self.stretch_forces(Strctr, Variabs, final_pos)     # (n_coords,) which is (2*nodes,)
+        # F_theta = potential_F_in_t[-1] - F_stretch           # (n_coords,) which is (2*nodes,)
 
         # # reshape for per-node view
         # F_stretch_2d = F_stretch.reshape(-1, 2)
@@ -240,7 +240,7 @@ class EquilibriumClass(eqx.Module):
     # def _set_imposed_vals(self, Strctr: "StructureClass", Sprvsr: "SupervisorClass", imposed_mask, tip_pos, tip_angle,
     #                       fixed_vals):
     #     # USED
-    #     # # Must return a length-n_coords vector (flattened order) for any time t
+    #     # # Must return a length-n_coords vector (flattened order, which is (2*nodes,)) for any time t
     #     base_vec = fixed_vals  # start from initial positions
     #     imposed_arr = base_vec
 
@@ -273,7 +273,7 @@ class EquilibriumClass(eqx.Module):
         """
         # ------ instantiate sizes ------
         # Full starting geometry (previous equilibrium), flattened
-        start_vec = init_pos.reshape(-1)  # (n_coords,)
+        start_vec = init_pos.reshape(-1)  # (n_coords,) which is (2*nodes,)
 
         # If there's nothing to impose, keep the previous equilibrium for all t
         if tip_pos is None:
@@ -372,7 +372,7 @@ class EquilibriumClass(eqx.Module):
         This path does **not** differentiate energy. It is implemented explicitly:
           - Hinge torque per hinge is accumulated over shims and mapped to DOFs via J^T.
           - Edge stretch force is k(ℓ−ℓ₀) along the unit edge direction.
-          - Returns the full reaction force (size = n_coords), from which the caller
+          - Returns the full reaction force (size = n_coords, which is (2*nodes,)), from which the caller
             typically takes `[free_mask]` for the ODE RHS.
         - The torque is mapped to DOFs with **+ J^T τ** (restoring).
 
@@ -415,17 +415,17 @@ class EquilibriumClass(eqx.Module):
         # signed + summed per hinge
         tau_hinges = jnp.sum(B * tau_shims, axis=1)
 
-        # Jacobian of theta for each hinge: (H, n_coords)
+        # Jacobian of theta for each hinge: (H, n_coords) which is (H, 2*nodes)
         theta_jacs = self._theta_jacs_local(Strctr, x_full)  # (H, n_coords)
 
         # Map torques to DOF forces
-        F_theta_full = (theta_jacs.T @ tau_hinges).reshape(-1)  # (n_coords,)
+        F_theta_full = (theta_jacs.T @ tau_hinges).reshape(-1)  # (n_coords,) which is (2*nodes,)
         
         # ------ Edge stretch forces ------
-        F_stretch_full = self.stretch_forces(Strctr, Variabs, pos_arr)  # (n_coords,)
+        F_stretch_full = self.stretch_forces(Strctr, Variabs, pos_arr)  # (n_coords,) which is (2*nodes,)
         
         # ------ Combine internal forces (reaction) ------
-        F_internal_full = F_theta_full + F_stretch_full  # (n_coords,)
+        F_internal_full = F_theta_full + F_stretch_full  # (n_coords,) which is (2*nodes,)
 
         # jax.debug.print('F_theta_full {}', F_theta_full)
         # jax.debug.print('F_stretch_full {}', F_stretch_full)
@@ -450,12 +450,12 @@ class EquilibriumClass(eqx.Module):
             Mechanical parameters and `torque(theta_eff)`.
         Strctr : StructureClass
             Geometry/topology provider.
-        x_full : jax.Array, shape: (n_coords,)
+        x_full : jax.Array, shape: (n_coords,) which is (2*nodes,)
             Full position vector (no velocities).
 
         Returns
         -------
-        jax.Array, shape: (n_coords,)
+        jax.Array, shape: (n_coords,) which is (2*nodes,)
             Internal reaction force on **all position DOFs**.
         """
         # ------ pos_arr from x_full ------
@@ -469,20 +469,20 @@ class EquilibriumClass(eqx.Module):
         tau_shims = -Variabs.torque(theta_eff)  # (H,S)
         tau_hinges = jnp.sum(B * tau_shims, axis=1)  # (H,)
 
-        # Jacobian of theta for each hinge: (H, n_coords)
+        # Jacobian of theta for each hinge: (H, n_coords) which is (H, 2*nodes)
         theta_jacs = self._theta_jacs_local(Strctr, x_full)  # (H, n_coords)
 
         # Map torques to DOF forces
-        F_theta_full = (theta_jacs.T @ tau_hinges).reshape(-1)  # (n_coords,)
+        F_theta_full = (theta_jacs.T @ tau_hinges).reshape(-1)  # (n_coords,) which is (2*nodes,)
 
         # --- stretch forces ---
-        F_stretch_full = self.stretch_forces(Strctr, Variabs, pos_arr)      # (n_coords,)
+        F_stretch_full = self.stretch_forces(Strctr, Variabs, pos_arr)      # (n_coords,) which is (2*nodes,)
 
         # jax.debug.print('F_theta_full {}', F_theta_full)
         # jax.debug.print('F_stretch_full {}', F_stretch_full)
 
         # reaction/internal force on DOFs (same sign you use in rhs)
-        return F_theta_full + F_stretch_full                                # (n_coords,)
+        return F_theta_full + F_stretch_full                                # (n_coords,) which is (2*nodes,)
 
     def potential_force_free(self, Variabs: "VariablesClass", Strctr: "StructureClass", t: float,
                              x_free: jax.Array, *,
@@ -503,7 +503,7 @@ class EquilibriumClass(eqx.Module):
         Strctr : StructureClass
         t : float
         x_free : jax.Array, shape: (sum(free_mask),)
-        free_mask, fixed_mask, imposed_mask : jax.Array[bool], shape: (n_coords,)
+        free_mask, fixed_mask, imposed_mask : jax.Array[bool], shape: (n_coords,) which is (2*nodes,)
         fixed_vals : Union[jax.Array, Callable[[float], jax.Array]]
         imposed_vals : Callable[[float], jax.Array]
 
@@ -542,7 +542,7 @@ class EquilibriumClass(eqx.Module):
 
         Returns
         -------
-        jax.Array, shape: (n_coords,)
+        jax.Array, shape: (n_coords,) which is (2*nodes,)
             Flattened reaction force on all position DOFs.
         """
         # pos_arr: (N, 2)
@@ -569,7 +569,7 @@ class EquilibriumClass(eqx.Module):
         F = jnp.zeros_like(pos_arr)           # (N,2)
         F = F.at[edges[:, 0], :].add(+fvec)
         F = F.at[edges[:, 1], :].add(-fvec)
-        return F.reshape(-1)                  # (n_coords,)
+        return F.reshape(-1)                  # (n_coords,) which is (2*nodes,)
 
     def _theta_jacs_local(self, Strctr: "StructureClass", x_flat: jax.Array) -> jax.Array:
         """
@@ -577,7 +577,7 @@ class EquilibriumClass(eqx.Module):
 
         Returns
         -------
-        theta_jacs : jax.Array, shape (H, n_coords)
+        theta_jacs : jax.Array, shape (H, n_coords) which is (H, 2*nodes)
             Row h contains the gradient of hinge angle θ_h w.r.t. all position DOFs.
             Only the 6 DOFs of nodes (h, h+1, h+2) are non-zero.
         """
@@ -610,9 +610,9 @@ class EquilibriumClass(eqx.Module):
             # Scatter back into a length-n_coords global gradient
             grad_global = jnp.zeros_like(x_flat)
             grad_global = grad_global.at[local_idx].set(g_local)
-            return grad_global  # (n_coords,)
+            return grad_global  # (n_coords,) which is (2*nodes,)
 
-        # vmap over hinges → (H, n_coords)
+        # vmap over hinges → (H, n_coords) which is (H, 2*nodes)
         theta_jacs = jax.vmap(grad_for_h)(jnp.arange(H, dtype=jnp.int32))
         return theta_jacs
 
