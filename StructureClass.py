@@ -28,11 +28,11 @@ class StructureClass(eqx.Module):
     L: float = eqx.field(static=True)        # rest length of rods
 
     # ------ computed in __init__ (static topology/geometry) ------
-    edges_arr: NDArray[int] = eqx.field(init=False, static=True)          # (hinges+1, 2) int32
-    edges: int = eqx.field(init=False, static=True)
-    nodes: int = eqx.field(init=False, static=True)
-    n_coords: int = eqx.field(init=False, static=True)
-    hinges_arr: NDArray[int] = eqx.field(init=False, static=True)          # (hinges, 2) int32
+    nodes: int = eqx.field(init=False, static=True)                        # N nodes
+    edges: int = eqx.field(init=False, static=True)                        # N edges (nodes - 1) 
+    edges_arr: NDArray[int] = eqx.field(init=False, static=True)           # array (hinges+1, 2) int32, nodes to edges
+    n_coords: int = eqx.field(init=False, static=True)                     # N coordinates, x and y for each node, so 2*nodes
+    hinges_arr: NDArray[int] = eqx.field(init=False, static=True)          # array (hinges, 2) int32, edges to hinges
     rest_lengths: NDArray[np.float_] = eqx.field(init=False, static=True)  # (hinges+1,) float32
 
     # ------ for equilibrium calculation, jax arrays ------
@@ -145,16 +145,6 @@ class StructureClass(eqx.Module):
         u = pos_arr[i1] - pos_arr[i0]
         v = pos_arr[j1] - pos_arr[j0]
         return self._angle_from_uv(u, v)
-        # edges = jnp.asarray(self.edges_arr)
-        # hinges = jnp.asarray(self.hinges_arr)
-        # e0, e1 = hinges[hinge]
-        # i0, i1 = edges[e0]
-        # j0, j1 = edges[e1]
-        # u = pos_arr[i1] - pos_arr[i0]
-        # v = pos_arr[j1] - pos_arr[j0]
-        # dot = jnp.dot(u, v)
-        # cross = u[0] * v[1] - u[1] * v[0]
-        # return jnp.arctan2(cross, dot)            # shape: ()
 
     def _get_edge_length(self, pos_arr: jax.Array, edge: int) -> jax.Array:
         """Length of one edge given current positions pos: (Npoints,2) float."""

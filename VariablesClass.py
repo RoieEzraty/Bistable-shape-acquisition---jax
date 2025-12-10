@@ -1,6 +1,6 @@
 from __future__ import annotations
+
 import equinox as eqx
-import jax
 import jax.numpy as jnp
 import numpy as np
 
@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Callable, Optional
 
 if TYPE_CHECKING:
     from StructureClass import StructureClass
+    from config import ExperimentConfig
 
 import file_funcs
 
@@ -20,6 +21,38 @@ import file_funcs
 
 
 class VariablesClass(eqx.Module):
+    """
+    Material / stiffness parameters and normalization scales for the bistable chain.
+
+    The class supports two operation modes:
+
+    - ``k_type == "Numerical"``:
+        * Piecewise-linear Hookean torque model.
+        * Uniform soft / stiff rotational spring constants per hinge and shim.
+    - ``k_type == "Experimental"``:
+        * Torque and stiffness are obtained from Leon Kamp's experimental τ(θ) curve
+          using `file_funcs.build_torque_and_k_from_file`.
+
+    Attributes
+    ----------
+    k_type          - Which torque/stiffness model to use. Taken from ``CFG.Variabs.k_type``.
+    k_soft, k_stiff - ndarray or None, shape (H, S). Soft and stiff rotational spring constants per hinge and shim
+                      (used only in the "Numerical" mode).
+    k               - callable or None. Function: hinge angles θ_eff → rotational stiffness k(θ_eff).
+                      Only set in the "Experimental" mode.
+    torque          - callable or None. Function: hinge angle θ → torque τ(θ). Only set in the "Experimental" mode.
+    k_max           - float. Maximum rotational stiffness over all hinges/shims (or from experimental k-grid).
+                      Used for normalization and for computing stretch stiffness.
+    thetas_ss       - ndarray, shape (H, S). Switching angle(s) θ_ss for each hinge and shim. For "Numerical"
+    thresh          - ndarray, shape (H, S). Threshold angles to buckle shims, broadcast from config. for "Numerical"
+    k_stretch       - array-like (scalar or (E,)). Stretch stiffness for edges, used by the equilibrium solver.
+                      It is a large multiple of ``k_max`` so that edges are nearly inextensible.
+    norm_pos        - float. Position normalization scale (used by the supervisor), set to ``Strctr.L``.
+    norm_angle      - float. Angle normalization scale, set to π/2.
+    norm_torque     - float. Torque normalization scale, k_max * norm_angle for numerical or mean torque for experimental
+    norm_force      - float. Force normalization scale, norm_torque / norm_pos.   
+    """
+
     # --- configuration / mode ---
     k_type: str = eqx.field(static=True)  # "Numerical" | "Experimental"
 
@@ -48,46 +81,51 @@ class VariablesClass(eqx.Module):
     norm_torque: float = eqx.field(init=False, static=True)
 
     def __init__(self, Strctr: "StructureClass", CFG):
+        """
+        Parameters
+        ----------
+        Strctr : StructureClass.
+        CFG : ExperimentConfig.
+        """
         H, S, L = Strctr.hinges, Strctr.shims, Strctr.L
+        
         # normalizations for update values
         self.norm_pos = float(L)
         self.norm_angle = float(np.pi/2)
 
         self.k_type = CFG.Variabs.k_type  # static
 
-        if CFG.Variabs.k_type == "Numerical":  # numerical model - Hookean torque
+        if self.k_type == "Numerical":  # numerical model - Hookean torque
             self.k_soft = CFG.Variabs.k_soft_uniform * np.array((H, S), dtype=jnp.float32)
             self.k_stiff = CFG.Variabs.k_stiff_uniform * np.array((H, S), dtype=jnp.float32)
             self.k = None
             self.k_max = float(np.max(self.k_stiff))
             self.k_stretch = np.asarray(CFG.Eq.k_stretch_ratio * self.k_max, np.float32)
-            thetas_ss = CFG.Variabs.thetas_ss_uniform
-            thresh = CFG.Variabs.thresh_uniform
+            thetas_ss_scalar = CFG.Variabs.thetas_ss_uniform
+            thresh_scalar = CFG.Variabs.thresh_uniform
             self.norm_torque = float(self.k_max*self.norm_angle)
-            self.norm_force = float(self.k_max*self.norm_angle/self.norm_pos)
-
-        elif CFG.Variabs.k_type == "Experimental":  # Leon's shim
+        elif self.k_type == "Experimental":  # Leon's shim
             self.k_soft = None
             self.k_stiff = None
-            thetas, torques, ks, \
-                torque_of_theta, k_of_theta = file_funcs.build_torque_and_k_from_file(CFG.Variabs.tau_file,
-                                                                                      savgol_window=9,
-                                                                                      contact=True,
-                                                                                      contact_scale=CFG.Variabs.contact_scale)
+            # Load τ(θ) and k(θ) from experimental file
+            thetas, torques, ks, torque_of_theta, \
+                k_of_theta = file_funcs.build_torque_and_k_from_file(CFG.Variabs.tau_file, savgol_window=9, contact=True,
+                                                                     contact_scale=CFG.Variabs.contact_scale)
             self.k_max = float(np.max(ks))
             self.k = k_of_theta 
             self.torque = torque_of_theta
             self.k_stretch = np.asarray(CFG.Eq.k_stretch_ratio * np.max(ks), np.float32)
-            thetas_ss = CFG.Variabs.thetas_ss_exp
-            thresh = CFG.Variabs.thresh_exp
+            thetas_ss_scalar = CFG.Variabs.thetas_ss_exp
+            thresh_scalar = CFG.Variabs.thresh_exp
 
-            self.norm_torque = np.mean([np.abs(self.torque(self.norm_angle)), np.abs(self.torque(-self.norm_angle))])
-            self.norm_force = self.norm_torque / self.norm_pos
-
+            tau_plus = float(np.abs(self.torque(self.norm_angle)))
+            tau_minus = float(np.abs(self.torque(-self.norm_angle)))
+            self.norm_torque = np.mean([tau_plus, tau_minus])
         else:
             raise ValueError(f"Unknown k_type: {CFG.Variabs.k_type}")
 
-        self.thetas_ss = thetas_ss * np.ones((H, S), np.float32)
-        self.thresh = thresh * np.ones((H, S), np.float32)
-    
-        
+        self.norm_force = self.norm_torque / self.norm_pos
+
+        # Broadcast scalar thresholds to full (H, S) arrays
+        self.thetas_ss = thetas_ss_scalar * np.ones((H, S), np.float32)
+        self.thresh = thresh_scalar * np.ones((H, S), np.float32)

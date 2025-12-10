@@ -108,7 +108,7 @@ class EquilibriumClass(eqx.Module):
                  pos_arr: jax.Array = None):
         self.damping_coeff = CFG.Eq.damping
         self.mass = CFG.Eq.mass        
-        self.time_points = jnp.linspace(0, CFG.Eq.T_eq, int(1e3))
+        self.time_points = jnp.linspace(0, CFG.Eq.T_eq, int(5e2))
         self.tolerance = CFG.Eq.tolerance
 
         # default buckle: all +1
