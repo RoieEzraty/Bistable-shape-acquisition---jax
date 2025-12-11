@@ -238,14 +238,35 @@ class StateClass:
         State_measured.buckle_in_t[:, :, t] = State_measured.buckle_arr
         return buckle_bool
 
-    def stretch_energy(self, Variabs: "VariablesClass", Strctr: "StructureClass") -> NDArray:
+    # ---------------------------------------------------------------
+    # Energy helpers (NumPy-side diagnostics)
+    # ---------------------------------------------------------------
+    def stretch_energy(self, Variabs: "VariablesClass", Strctr: "StructureClass") -> NDArray[np.float_]:
         """
         stretch energy per edge
-        """
-        return Variabs.k_stretch*(Strctr.all_edge_lengths(self.pos_arr) - Strctr.rest_lengths)**2
 
-    def bending_energy(self, Variabs: "VariablesClass", Strctr: "StructureClass") -> NDArray:
+        Returns
+        -------
+        energy : (edges,) ndarray, ``0.5 * k_stretch * (ℓ - ℓ₀)^2`` per edge (up to prefactor).
+        """
+        lengths = Strctr.all_edge_lengths(self.pos_arr)  # NumPy, (E,)
+        rest_lengths = helpers_builders.jax2numpy(Strctr.rest_lengths)  # JAX -> NumPy
+        return Variabs.k_stretch * (lengths - rest_lengths) ** 2
+
+    def bending_energy(self, Variabs: "VariablesClass", Strctr: "StructureClass") -> NDArray[np.float_]:
         """
         bending energy per hinge
+
+        Uses the experimental torque curve if available:
+        E_bend(θ) ≈ τ(θ) * (θ - buckle * θ_ss)
+
+        Notes
+        -----
+        - Only meaningful for ``k_type == "Experimental"``, where ``Variabs.torque`` is defined. If torque is None, raise error.
         """
-        return Variabs.torque(self.theta_arr)*(self.theta_arr - self.buckle_arr * Variabs.thetas_ss)
+        if Variabs.torque is None:
+            raise ValueError("bending_energy requires Variabs.torque (experimental mode).")
+        theta_arr = self.theta_arr  # NumPy (H,)
+        taus = helpers_builders.jax2numpy(Variabs.torque(theta_arr))  # tau in NumPy 
+        effective_thetas_ss = self.buckle_arr * Variabs.thetas_ss
+        return taus * (theta_arr - effective_thetas_ss)
