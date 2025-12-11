@@ -549,7 +549,7 @@ class EquilibriumClass(eqx.Module):
         # Strctr.edge_list: (E, 2) with node indices (ia, ib)
         # Strctr.rest_lengths: (E,)
         # Variabs.k_stretch: scalar or (E,)
-        edges = Strctr.edges_arr             # (E,2)
+        edges = Strctr.edges_arr             # (E,2) jax Array
         pa = pos_arr[edges[:, 0], :]          # (E,2)
         pb = pos_arr[edges[:, 1], :]          # (E,2)
         d = pb - pa                          # (E,2)

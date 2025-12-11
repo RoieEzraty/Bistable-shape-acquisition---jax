@@ -71,16 +71,16 @@ class StructureClass(eqx.Module):
     L: float = eqx.field(static=True)        # rest length of rods
 
     # ------ computed in __init__ (static topology/geometry) ------
-    nodes: int = eqx.field(init=False, static=True)                        # N nodes, (hinges + 2)
-    edges: int = eqx.field(init=False, static=True)                        # N edges (hinges + 1) 
-    edges_arr: NDArray[int] = eqx.field(init=False, static=True)           # array (hinges+1, 2) int32, nodes to edges
-                                                                           # Used inside State.stretch_forces
-    n_coords: int = eqx.field(init=False, static=True)                     # N coordinates, x and y for each node, so 2*nodes
-    hinges_arr: NDArray[int] = eqx.field(init=False, static=True)          # array (hinges, 2) int32, edges to hinges
-    rest_lengths: NDArray[np.float_] = eqx.field(init=False, static=True)  # (hinges+1,) float32
+    nodes: int = eqx.field(init=False, static=True)               # N nodes, (hinges + 2)
+    edges: int = eqx.field(init=False, static=True)               # N edges (hinges + 1) 
+    edges_arr: jax.Array = eqx.field(init=False, static=True)     # array (hinges+1, 2) int32, nodes to edges
+                                                                  # Used inside State.stretch_forces
+    hinges_arr: jax.Array = eqx.field(init=False, static=True)    # array (hinges, 2) int32, edges to hinges
+    rest_lengths: jax.Array = eqx.field(init=False, static=True)  # (E,) float32   
+    n_coords: int = eqx.field(init=False, static=True)            # N coordinates, x and y for each node, so 2*nodes
 
     # ------ for equilibrium calculation, jax arrays ------
-    fixed_mask: jax.Array[bool] = eqx.field(static=True)                   # (2*nodes,) float32
+    fixed_mask: jax.Array = eqx.field(init=False, static=True)  # (2*nodes,) bool
 
     # ------ optional learning graph (only if you call _build_learning_parameters) ------
     DM: Optional[NDArray[int]] = eqx.field(default=None, init=False, static=True)
@@ -130,69 +130,104 @@ class StructureClass(eqx.Module):
 
         # learning fields left as None until _build_learning_parameters is called
        
-    # ------ builders ------
-    def _build_edges(self) -> NDArray[np.int_]:
+    # ------------------------------------------------------------------
+    # Builders
+    # ------------------------------------------------------------------
+    # --- jax builders ---
+    def _build_edges(self) -> jax.Array[int]:
         """
         Build the edge list for a simple chain.
 
         Returns
         -------
-        edges_arr - ndarray of int, shape (edges, 2). `edges_arr[e] = (i, j)` with i,j node indices.
+        edges_arr - (edges, 2) jax array of int. `edges_arr[e] = (i, j)` with i,j node indices.
         """
-        starts = np.arange(self.hinges + 1, dtype=np.int32)
-        return np.stack([starts, starts + 1], axis=1)
+        starts = jnp.arange(self.hinges + 1, dtype=int)
+        return jnp.stack([starts, starts + 1], axis=1)
 
-    def _build_hinges(self) -> np.array[int]:
+    def _build_hinges(self) -> jax.Array[int]:
+        """
+        Build the hinge-to-edge connectivity.
+
+        Returns
+        -------
+        hinges_arr : (hinges, 2) jax array of int, `hinges_arr[h] = (e0, e1)` where e0 and e1 are consecutive edges.
+        """
         if self.hinges <= 0:
-            return np.empty((0, 2), dtype=np.int32)
-        starts = np.arange(self.hinges, dtype=np.int32)
-        return np.stack([starts, starts + 1], axis=1)
+            return jnp.empty((0, 2), dtype=int)
+        starts = jnp.arange(self.hinges, dtype=int)
+        return jnp.stack([starts, starts + 1], axis=1)
 
-    def _build_rest_lengths(self, rest_lengths: Optional[np.array[np.float_]]) -> np.array[np.float_]:
+    def _build_rest_lengths(self, rest_lengths: Optional[jax.Array[jnp.float_]]) -> jax.Array[jnp.float_]:
+        """
+        Build the rest-length array for edges.
+
+        Parameters
+        ----------
+        rest_lengths : jax array, optional, Explicit rest lengths, shape (edges,). 
+
+        Returns
+        -------
+        (edges,) jax.Array, Rest length of each edge.
+        """
         if rest_lengths is not None:
-            rl = np.asarray(rest_lengths, np.float32)
+            rl = jnp.asarray(rest_lengths, jnp.float32)
             assert rl.shape == (self.edges,), f"rest_lengths shape {rl.shape} != ({self.edges},)"
             return rl
-        return jnp.full((self.edges,), self.L, dtype=np.float32)
+        return jnp.full((self.edges,), self.L, dtype=jnp.float32)
 
-    def _build_learning_parameters(self, Nin: int, Nout: int) -> None:
-        _, _, _, DM, NE, NN, output_nodes_arr = learning_funcs.build_incidence(Nin, Nout)
-        return DM, NE, NN, output_nodes_arr
+    def _build_fixed_mask(self, control_first_edge: bool = True) -> jax.Array:
+        """
+        Build boolean mask marking fixed DOFs.
 
-    def _build_fixed_mask(self, control_first_edge: bool = True) -> None:
-        # --- fixed and imposed DOFs initialize --- 
+        Parameters
+        ----------
+        control_first_edge - bool, default True
+                             True = both node 0 and node 1 are fixed (x and y DOFs).
+                             False = only node 0 is fixed.
+
+        Returns
+        -------
+        fixed_mask - (2*nodes,) jax.Array of bool,  True at fixed DOFs, False elsewhere.
+        """
+        # ------ fixed and imposed DOFs initialize ------ 
         fixed_mask = jnp.zeros((self.n_coords,), dtype=bool)
 
-        # --- fixed: node 0, potentially also node 1 ---
+        # ------ fixed: node 0, potentially also node 1 ------
         if control_first_edge:
             nodes = [0, 1]  # two nodes are at 0
         else:
             nodes = [0]     # first node at 0, 0
 
+        # ------ set fixed nodes as True in the mask vector ------
         for node in nodes:
             fixed_mask = fixed_mask.at[helpers_builders.dof_idx(node, 0)].set(True)
             fixed_mask = fixed_mask.at[helpers_builders.dof_idx(node, 1)].set(True)
         return fixed_mask
 
-    # --- numpy geometry --- 
-    def all_edge_lengths(self, pos_arr: NDArray[np.float_]) -> NDArray[np.float_]:
-        vecs = pos_arr[self.edges_arr[:, 1]] - pos_arr[self.edges_arr[:, 0]]
-        return np.linalg.norm(vecs, axis=1)  # shape: (self.edges,)
-        # return jax.vmap(lambda e: self._get_edge_length(pos, e))(jnp.arange(self.edges))
+    # --- numpy builders ---
+    def _build_learning_parameters(self, Nin: int, Nout: int) -> Tuple[NDArray[np.int_], int, int, NDArray[np.int_]]:
+        """
+        Build learning-graph incidence matrix and associated sizes.
 
-    def all_hinge_angles(self, pos_arr: NDArray[np.float_]) -> NDArray[np.float_]:
-        edge_nodes = self.edges_arr[self.hinges_arr]                          # (H, 2, 2)
-        pts = pos_arr[edge_nodes]                                  # (H, 2, 2, 2)
+        Parameters
+        ----------
+        Nin, Nout - ints. Number of inputs and outputs for the learning graph. 
+                    how many positions / forces are accounted for as inputs and how many as outputs
 
-        vecs = pts[..., 1, :] - pts[..., 0, :]                    # (H, 2, 2)
-        u, v = vecs[:, 0, :], vecs[:, 1, :]                       # (H, 2), (H, 2)
+        Returns
+        -------
+        DM               - (Nin*Nout, Nin+Nout) ndarray of int, Incidence matrix between inputs and outputs.
+        NE               - int, Number of edges in the learning graph, which is Nin*Nout.
+        NN               - int, Number of nodes in the learning graph, which is Nin+Nout.
+        output_nodes_arr - (Nout,) ndarray of int, Indices of output nodes.
+        """
+        _, _, _, DM, NE, NN, output_nodes_arr = learning_funcs.build_incidence(Nin, Nout)
+        return DM, NE, NN, output_nodes_arr
 
-        dot = np.sum(u * v, axis=-1)                              # (H,)
-        cross_z = u[..., 0] * v[..., 1] - u[..., 1] * v[..., 0]   # (H,)
-        return np.arctan2(cross_z, dot).astype(np.float32)
-        # return jax.vmap(lambda h: self._get_theta(pos, h))(jnp.arange(self.hinges))
-     
-    # --- jax geometry ---         
+    # ------------------------------------------------------------------
+    # JAX-based geometry (used in EquilibriumClass)
+    # ------------------------------------------------------------------        
     def _normalize(self, v, eps=1e-9):
         n = jnp.linalg.norm(v)
         n_safe = jnp.maximum(n, eps)
@@ -207,8 +242,8 @@ class StructureClass(eqx.Module):
 
     def _get_theta(self, pos_arr: jax.Array, hinge: int) -> jax.Array:
         """Angle at a hinge (radians), CCW positive."""
-        edges = jnp.asarray(self.edges_arr)
-        hinges = jnp.asarray(self.hinges_arr)
+        edges = self.edges_arr
+        hinges = self.hinges_arr
         e0, e1 = hinges[hinge]
         i0, i1 = edges[e0]
         j0, j1 = edges[e1]
@@ -218,9 +253,46 @@ class StructureClass(eqx.Module):
 
     def _get_edge_length(self, pos_arr: jax.Array, edge: int) -> jax.Array:
         """Length of one edge given current positions pos: (Npoints,2) float."""
-        edges = jnp.asarray(self.edges_arr)
+        edges = self.edges_arr
         i, j = edges[edge]
         return jnp.linalg.norm(pos_arr[j] - pos_arr[i])
-        # twopoints = pos_arr[self.edges_arr[edge]]  # (2,)
-        # vec = twopoints[1, :] - twopoints[0, :]  # (2,)
-        # return np.linalg.norm(vec)
+
+    # ------------------------------------------------------------------
+    # Numpy-based geometry (for convenience / plotting)
+    # ------------------------------------------------------------------
+    def all_edge_lengths(self, pos_arr: NDArray[np.float_]) -> NDArray[np.float_]:
+        """
+        Compute the length of all edges for a given configuration.
+
+        Parameters
+        ----------
+        pos_arr - (nodes, 2) ndarray of node positions.
+
+        Returns
+        -------
+        lengths - (edges,) ndarray of Euclidean lengths of each edge. All should be ~Strctr.L
+        """
+        vecs = pos_arr[self.edges_arr[:, 1]] - pos_arr[self.edges_arr[:, 0]]
+        return np.linalg.norm(vecs, axis=1)
+
+    def all_hinge_angles(self, pos_arr: NDArray[np.float_]) -> NDArray[np.float_]:
+        """
+        Compute all hinge angles (numpy version). Between two incident edges, positive is counter-clockwise rotation.
+
+        Parameters
+        ----------
+        pos_arr - (nodes, 2) ndarray of float of node positions.
+
+        Returns
+        -------
+        angles - (hinges,) ndarray of float32, hinge angles in radians.
+        """
+        edge_nodes = self.edges_arr[self.hinges_arr]             # (H, 2, 2)
+        pts = pos_arr[edge_nodes]                                # (H, 2, 2, 2)
+
+        vecs = pts[..., 1, :] - pts[..., 0, :]                   # (H, 2, 2)
+        u, v = vecs[:, 0, :], vecs[:, 1, :]                      # (H, 2), (H, 2)
+
+        dot = np.sum(u * v, axis=-1)                             # (H,)
+        cross_z = u[..., 0] * v[..., 1] - u[..., 1] * v[..., 0]  # (H,)
+        return np.arctan2(cross_z, dot).astype(np.float32)
