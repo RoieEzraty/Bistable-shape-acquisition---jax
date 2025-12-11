@@ -227,21 +227,35 @@ class StructureClass(eqx.Module):
 
     # ------------------------------------------------------------------
     # JAX-based geometry (used in EquilibriumClass)
-    # ------------------------------------------------------------------        
-    def _normalize(self, v, eps=1e-9):
+    # ------------------------------------------------------------------  
+    @staticmethod
+    def _normalize(v: jax.Array, eps: float = 1e-9) -> jax.Array:
+        """Normalize a 2D vector with a small epsilon for numerical safety."""
         n = jnp.linalg.norm(v)
         n_safe = jnp.maximum(n, eps)
-        return v / n_safe
+        return v / n_safe      
 
-    def _angle_from_uv(self, u, v):
+    def _angle_from_uv(self, u: jax.Array, v: jax.Array) -> jax.Array:
+        """
+        Signed angle between two 2D vectors u and v (JAX).
+
+        Returns
+        -------
+        angle - jax.Array (scalar). Angle in radians, positive for counter-clockwise rotation from u to v.
+        """
         un = self._normalize(u)
         vn = self._normalize(v)
         dot = jnp.clip(jnp.dot(un, vn), -1.0, 1.0)  # not strictly needed for atan2, but helps near ±1
-        cross = un[0]*vn[1] - un[1]*vn[0]
+        cross = un[0] * vn[1] - un[1] * vn[0]
         return jnp.arctan2(cross, dot)
 
     def _get_theta(self, pos_arr: jax.Array, hinge: int) -> jax.Array:
-        """Angle at a hinge (radians), CCW positive."""
+        """Angle at a hinge (radians), CCW positive.
+
+        Returns
+        -------
+        angle - jax.Array (scalar). Hinge angle in radians.
+        """
         edges = self.edges_arr
         hinges = self.hinges_arr
         e0, e1 = hinges[hinge]
@@ -252,7 +266,13 @@ class StructureClass(eqx.Module):
         return self._angle_from_uv(u, v)
 
     def _get_edge_length(self, pos_arr: jax.Array, edge: int) -> jax.Array:
-        """Length of one edge given current positions pos: (Npoints,2) float."""
+        """
+        Length of one edge given current positions pos: (Npoints,2) float.
+        
+        Returns
+        -------
+        length - jax.Array (scalar). Euclidean length of the edge.
+        """
         edges = self.edges_arr
         i, j = edges[edge]
         return jnp.linalg.norm(pos_arr[j] - pos_arr[i])

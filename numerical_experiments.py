@@ -226,7 +226,7 @@ def one_shot(Strctr: "StructureClass", Variabs: "VariablesClass", Sprvsr: "Super
     - A plot of the arm configuration is displayed at the end of execution.
     """
     # ------ initialize, no tip movement yet ------
-    State = StateClass(Variabs, Strctr, Sprvsr, buckle_arr=buckle, pos_arr=init_pos)  # buckle defaults to +1
+    State = StateClass(Strctr, Sprvsr, buckle_arr=buckle, pos_arr=init_pos)  # buckle defaults to +1
     Eq = EquilibriumClass(Strctr, CFG, buckle_arr=buckle, pos_arr=State.pos_arr)
 
     # ------ claculate equilibrium from ode dynamics ------

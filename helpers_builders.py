@@ -61,7 +61,7 @@ def _reshape_pos_arr_2_state(pos_arr: jnp.Array[jnp.float_]) -> jnp.Array[jnp.fl
     return jnp.concatenate([first_half, second_half])
 
 
-def _reshape_state_2_pos_arr(state: jnp.Array[jnp.float_], pos_arr) -> jnp.Array[jnp.float_]:
+def _reshape_state_2_pos_arr(state: jnp.Array[jnp.float_], pos_arr: jnp.Array[jnp.float_]) -> jnp.Array[jnp.float_]:
     """
     Reshape a flattened state vector back into node positions.
 

@@ -99,10 +99,10 @@ class EquilibriumClass(eqx.Module):
     vel_noise: float           # noise amplitude on initial velocities
 
     # ---- state / derived ----
-    rest_lengths: jax.Array                      # (H+1,) edge rest lengths (from initial pos)
-    init_pos: jax.Array = eqx.field(init=False)  # (hinges+2, 2) integer coordinates
-    buckle_arr: jax.Array                        # (H,) ∈ {+1,-1} per hinge/shim (direction of stiff side)
-    time_points: jax.Array                       # (T_eq, ) time steps for simulating equilibrium configuration
+    rest_lengths: jax.Array                          # (H+1,) edge rest lengths (from initial pos)
+    jnp_init_pos: jax.Array = eqx.field(init=False)  # (hinges+2, 2) integer coordinates
+    buckle_arr: jax.Array                            # (H,) ∈ {+1,-1} per hinge/shim (direction of stiff side)
+    time_points: jax.Array                           # (T_eq, ) time steps for simulating equilibrium configuration
     
     def __init__(self, Strctr: "StructureClass", CFG: ExperimentConfig, ramp_pos: bool = True, buckle_arr: jax.Array = None,
                  pos_arr: jax.Array = None):
@@ -119,9 +119,9 @@ class EquilibriumClass(eqx.Module):
             assert self.buckle_arr.shape == (Strctr.hinges, Strctr.shims)
             
         if pos_arr is None:
-            self.init_pos = helpers_builders._initiate_pos(Strctr.edges+1, Strctr.L)  # (N=hinges+2, 2)
+            self.jnp_init_pos = helpers_builders._initiate_pos(Strctr.edges+1, Strctr.L)  # (N=hinges+2, 2)
         else:
-            self.init_pos = jnp.asarray(pos_arr)
+            self.jnp_init_pos = jnp.asarray(pos_arr)
             
         # each edge's rest length is L, it's fixed and very stiff 
         self.rest_lengths = jnp.full((Strctr.hinges + 1,), Strctr.L, dtype=jnp.float32)
@@ -190,21 +190,21 @@ class EquilibriumClass(eqx.Module):
         """
         if init_pos is None:
             # use whatever geometry was passed at construction as baseline
-            init_pos = helpers_builders.jax2numpy(self.init_pos)
+            init_pos = helpers_builders.jax2numpy(self.jnp_init_pos)
 
-        init_pos = helpers_builders.numpy2jax(init_pos)
+        jnp_init_pos = helpers_builders.numpy2jax(init_pos)
 
         # ------ fixed values (vector, not function) ------
         fixed_vals = self._set_fixed_vals(Strctr.fixed_mask)
 
         # ------ imposed tip position and possibly angle ------
         # Build a callable (always), even if mask is all False.
-        imposed_vals = self._set_imposed_vals(Strctr, Sprvsr, Sprvsr.imposed_mask, tip_pos, tip_angle, fixed_vals, init_pos)
+        imposed_vals = self._set_imposed_vals(Strctr, Sprvsr, Sprvsr.imposed_mask, tip_pos, tip_angle, fixed_vals, jnp_init_pos)
 
         # -------- initial state (positions & velocities) ----------
         pos_noise = Strctr.L * self.pos_noise  # scale relative to length
         vel_noise = 1.5 * self.vel_noise  # from equating 1/2mv^2 = mean(Torque)*L
-        state_0 = helpers_builders._extend_pos_to_x0_v0(init_pos, pos_noise, vel_noise, self.rand_key)
+        state_0 = helpers_builders._extend_pos_to_x0_v0(jnp_init_pos, pos_noise, vel_noise, self.rand_key)
 
         # -------- run dynamics ----------
         final_pos, pos_in_t, vel_in_t, potential_F_in_t = self.solve_dynamics(state_0, Variabs, Strctr,
@@ -213,7 +213,7 @@ class EquilibriumClass(eqx.Module):
                                                                               imposed_mask=Sprvsr.imposed_mask,
                                                                               imposed_vals=imposed_vals)
 
-        # self.init_pos = pos_in_t[-1]
+        # self.jnp_init_pos = pos_in_t[-1]
 
         # # split to components if you want:
         # F_stretch = self.stretch_forces(Strctr, Variabs, final_pos)     # (n_coords,) which is (2*nodes,)
@@ -235,7 +235,7 @@ class EquilibriumClass(eqx.Module):
     def _set_fixed_vals(self, fixed_mask):
         # USED
         fixed_vals = jnp.zeros((len(fixed_mask),), dtype=float)
-        return fixed_vals.at[fixed_mask].set(self.init_pos.reshape((-1,))[fixed_mask])
+        return fixed_vals.at[fixed_mask].set(self.jnp_init_pos.reshape((-1,))[fixed_mask])
 
     # def _set_imposed_vals(self, Strctr: "StructureClass", Sprvsr: "SupervisorClass", imposed_mask, tip_pos, tip_angle,
     #                       fixed_vals):
@@ -248,15 +248,16 @@ class EquilibriumClass(eqx.Module):
     #     if tip_pos is None:
     #         return (lambda t, v=base_vec: v)
     #     else:
-    #         tip_xy = jnp.asarray(tip_pos, dtype=self.init_pos.dtype).reshape((2,))
+    #         tip_xy = jnp.asarray(tip_pos, dtype=self.jnp_init_pos.dtype).reshape((2,))
     #         if tip_angle is None:
     #             imposed_arr = imposed_arr.at[imposed_mask].set(tip_xy)
     #         else:
     #             before_tip_xy = helpers_builders._get_before_tip(tip_pos=tip_xy,
-    #                                                              tip_angle=jnp.asarray(tip_angle, dtype=self.init_pos.dtype),
-    #                                                              L=Strctr.L, dtype=self.init_pos.dtype)
+    #                                                              tip_angle=jnp.asarray(tip_angle, 
+    #                                                                                    dtype=self.jnp_init_pos.dtype),
+    #                                                              L=Strctr.L, dtype=self.jnp_init_pos.dtype)
     #             imposed_arr = imposed_arr.at[Sprvsr.imposed_mask].set(jnp.concatenate([before_tip_xy, tip_xy]))
-    #     #     vals = jnp.zeros((self.init_pos.size,), dtype=self.init_pos.dtype)
+    #     #     vals = jnp.zeros((self.jnp_init_pos.size,), dtype=self.jnp_init_pos.dtype)
     #     #     # First node pinned at (0,0) → both DOFs are zero; nothing else imposed.
     #     #     # If you ever want a moving base, set these two entries to your function of t.
     #     #     return vals
@@ -267,7 +268,7 @@ class EquilibriumClass(eqx.Module):
         """
         Build a time-dependent imposed displacement function.
 
-        - At t = 0: imposed DOFs equal the previous equilibrium positions (self.init_pos).
+        - At t = 0: imposed DOFs equal the previous equilibrium positions (self.jnp_init_pos).
         - For 0 < t < T_ramp: linearly ramp to the new tip pose.
         - For t >= T_ramp: imposed DOFs stay at the new pose.
         """
@@ -345,7 +346,7 @@ class EquilibriumClass(eqx.Module):
     @eqx.filter_jit
     def total_potential_energy(self, Variabs: "VariablesClass", Strctr: "StructureClass",
                                x_full: jax.Array) -> jax.Array[jnp.float_]:
-        pos_arr = helpers_builders._reshape_state_2_pos_arr(x_full, self.init_pos)
+        pos_arr = helpers_builders._reshape_state_2_pos_arr(x_full, self.jnp_init_pos)
         return self.energy(Variabs, Strctr, pos_arr)[0]
 
     # EquilibriumClass.py
@@ -404,10 +405,10 @@ class EquilibriumClass(eqx.Module):
         imposed_vals_t = imposed_vals(t)  # callable by construction above
         x_full = helpers_builders._assemble_full_from_free(free_mask, fixed_mask, imposed_mask, x_free, fixed_vals_t,
                                                            imposed_vals_t)  # full node positions, shape (2*nodes)
-        pos_arr = helpers_builders._reshape_state_2_pos_arr(x_full, self.init_pos)
+        jnp_pos_arr = helpers_builders._reshape_state_2_pos_arr(x_full, self.jnp_init_pos)
 
         # ------ Hinge torques: tau_hinges (H,) ------
-        thetas = jax.vmap(lambda h: Strctr._get_theta(pos_arr, h))(jnp.arange(Strctr.hinges))  # (H,)
+        thetas = jax.vmap(lambda h: Strctr._get_theta(jnp_pos_arr, h))(jnp.arange(Strctr.hinges))  # (H,)
         B = self.buckle_arr  # (H,S)
         theta_eff = B * thetas[:, None]   # (H,S)
         # torque per shim
@@ -422,7 +423,7 @@ class EquilibriumClass(eqx.Module):
         F_theta_full = (theta_jacs.T @ tau_hinges).reshape(-1)  # (n_coords,) which is (2*nodes,)
         
         # ------ Edge stretch forces ------
-        F_stretch_full = self.stretch_forces(Strctr, Variabs, pos_arr)  # (n_coords,) which is (2*nodes,)
+        F_stretch_full = self.stretch_forces(Strctr, Variabs, jnp_pos_arr)  # (n_coords,) which is (2*nodes,)
         
         # ------ Combine internal forces (reaction) ------
         F_internal_full = F_theta_full + F_stretch_full  # (n_coords,) which is (2*nodes,)
@@ -460,10 +461,10 @@ class EquilibriumClass(eqx.Module):
         """
         # ------ pos_arr from x_full ------
         # already built x_full: (n_coords,) flattened positions ONLY (no velocities)
-        pos_arr = helpers_builders._reshape_state_2_pos_arr(x_full, self.init_pos)
+        jnp_pos_arr = helpers_builders._reshape_state_2_pos_arr(x_full, self.jnp_init_pos)
 
         # ------ hinge torques per hinge (H,) ------
-        thetas = jax.vmap(lambda h: Strctr._get_theta(pos_arr, h))(jnp.arange(Strctr.hinges))  # (H,)
+        thetas = jax.vmap(lambda h: Strctr._get_theta(jnp_pos_arr, h))(jnp.arange(Strctr.hinges))  # (H,)
         B = self.buckle_arr  # (H,S)
         theta_eff = B * thetas[:, None]  # (H,S)
         tau_shims = -Variabs.torque(theta_eff)  # (H,S)
@@ -476,7 +477,7 @@ class EquilibriumClass(eqx.Module):
         F_theta_full = (theta_jacs.T @ tau_hinges).reshape(-1)  # (n_coords,) which is (2*nodes,)
 
         # --- stretch forces ---
-        F_stretch_full = self.stretch_forces(Strctr, Variabs, pos_arr)      # (n_coords,) which is (2*nodes,)
+        F_stretch_full = self.stretch_forces(Strctr, Variabs, jnp_pos_arr)      # (n_coords,) which is (2*nodes,)
 
         # jax.debug.print('F_theta_full {}', F_theta_full)
         # jax.debug.print('F_stretch_full {}', F_stretch_full)
@@ -523,7 +524,7 @@ class EquilibriumClass(eqx.Module):
                                               fixed_vals=fixed_vals, imposed_vals=imposed_vals)[free_mask]
             
     def stretch_forces(self, Strctr: "StructureClass", Variabs: "VariablesClass",
-                       pos_arr: NDArray[float]) -> jax.Array:
+                       jnp_pos_arr: jax.Array[float]) -> jax.Array:
         """
         Linear **edge stretch** forces on all DOFs given node positions.
 
@@ -550,8 +551,8 @@ class EquilibriumClass(eqx.Module):
         # Strctr.rest_lengths: (E,)
         # Variabs.k_stretch: scalar or (E,)
         edges = Strctr.edges_arr             # (E,2) jax Array
-        pa = pos_arr[edges[:, 0], :]          # (E,2)
-        pb = pos_arr[edges[:, 1], :]          # (E,2)
+        pa = jnp_pos_arr[edges[:, 0], :]          # (E,2)
+        pb = jnp_pos_arr[edges[:, 1], :]          # (E,2)
         d = pb - pa                          # (E,2)
         l = jnp.linalg.norm(d, axis=1)       # (E,)
         # Avoid divide-by-zero in early steps
@@ -566,7 +567,7 @@ class EquilibriumClass(eqx.Module):
         fvec = (fmag[:, None]) * d             # (E,2)
 
         # accumulate to node forces
-        F = jnp.zeros_like(pos_arr)           # (N,2)
+        F = jnp.zeros_like(jnp_pos_arr)           # (N,2)
         F = F.at[edges[:, 0], :].add(+fvec)
         F = F.at[edges[:, 1], :].add(-fvec)
         return F.reshape(-1)                  # (n_coords,) which is (2*nodes,)
@@ -601,7 +602,7 @@ class EquilibriumClass(eqx.Module):
             def theta_of_local(x_local: jax.Array) -> jax.Array:
                 # Rebuild a full x vector using the local 6-DOF values
                 x_full = x_flat.at[local_idx].set(x_local)
-                pa = helpers_builders._reshape_state_2_pos_arr(x_full, self.init_pos)
+                pa = helpers_builders._reshape_state_2_pos_arr(x_full, self.jnp_init_pos)
                 return Strctr._get_theta(pa, h)
 
             # dθ_h/dx_local (6,) via one reverse-mode pass
@@ -627,36 +628,36 @@ class EquilibriumClass(eqx.Module):
                        imposed_mask: jax.Array[bool] = None, imposed_vals: jax.Array[jnp.float_] = None, rtol: float = 1e-2,
                        maxsteps: int = 100):
         # ------ ensure correct sizes ---
-        force_function = lambda t: jnp.zeros_like(self.init_pos).flatten()
+        force_function = lambda t: jnp.zeros_like(self.jnp_init_pos).flatten()
 
         if fixed_mask is None:
-            fixed_mask = jnp.zeros_like(self.init_pos).flatten().astype(bool)
+            fixed_mask = jnp.zeros_like(self.jnp_init_pos).flatten().astype(bool)
         else:
             fixed_mask = jnp.array(fixed_mask).flatten().astype(bool)
 
         if fixed_vals is None:
-            fixed_vals = jnp.asarray(self.init_pos, dtype=self.init_pos.dtype).reshape((self.init_pos.size,))
+            fixed_vals = jnp.asarray(self.jnp_init_pos, dtype=self.jnp_init_pos.dtype).reshape((self.jnp_init_pos.size,))
         elif callable(fixed_vals):
             # leave as-is
             pass
         else:
             # fixed_vals = jnp.asarray(fixed_vals, dtype=Eq.init_pos.dtype).reshape((Eq.init_pos.size,))
-            ivec = jnp.asarray(fixed_vals, dtype=self.init_pos.dtype).reshape((self.init_pos.size,))
+            ivec = jnp.asarray(fixed_vals, dtype=self.jnp_init_pos.dtype).reshape((self.jnp_init_pos.size,))
             fixed_vals = lambda t, ivec=ivec: ivec
 
         if imposed_mask is None:
-            imposed_mask = jnp.zeros((self.init_pos.size,), dtype=bool)
+            imposed_mask = jnp.zeros((self.jnp_init_pos.size,), dtype=bool)
         else:
-            imposed_mask = jnp.asarray(imposed_mask, dtype=bool).reshape((self.init_pos.size,))
+            imposed_mask = jnp.asarray(imposed_mask, dtype=bool).reshape((self.jnp_init_pos.size,))
 
         # imposed displacement values: callable or constant vector
         if imposed_vals is None:
-            base = jnp.asarray(self.init_pos, dtype=self.init_pos.dtype).reshape((self.init_pos.size,))
+            base = jnp.asarray(self.jnp_init_pos, dtype=self.jnp_init_pos.dtype).reshape((self.jnp_init_pos.size,))
             imposed_vals = lambda t, base=base: base
         elif callable(imposed_vals):  # leave as-is
             pass
         else:
-            ivec = jnp.asarray(imposed_vals, dtype=self.init_pos.dtype).reshape((self.init_pos.size,))
+            ivec = jnp.asarray(imposed_vals, dtype=self.jnp_init_pos.dtype).reshape((self.jnp_init_pos.size,))
             imposed_vals = lambda t, ivec=ivec: ivec
 
         # # the speed at each DOF is just the derivative of the displacement, 
@@ -726,16 +727,16 @@ class EquilibriumClass(eqx.Module):
         # res.block_until_ready()
         print(f"Integration done in {time.time() - t1:.2f} s")
 
-        final_disp = res[-1, :Strctr.n_coords].reshape(self.init_pos.shape)
+        final_disp = res[-1, :Strctr.n_coords].reshape(self.jnp_init_pos.shape)
 
-        displacements = res[:, :Strctr.n_coords].reshape((len(res), self.init_pos.shape[0], self.init_pos.shape[1]))
+        displacements = res[:, :Strctr.n_coords].reshape((len(res), self.jnp_init_pos.shape[0], self.jnp_init_pos.shape[1]))
         # .block_until_ready()
 
         # Get velocities from the last part of the state vector
-        velocities = res[:, Strctr.n_coords:].reshape((len(res), self.init_pos.shape[0], self.init_pos.shape[1]))
+        velocities = res[:, Strctr.n_coords:].reshape((len(res), self.jnp_init_pos.shape[0], self.jnp_init_pos.shape[1]))
 
         # we put the - to have the force as a reaction force
-        potential_F_evolution = vmap(lambda x: force_full_fn(x[:Strctr.n_coords].reshape(self.init_pos.shape).flatten()))(res)
+        potential_F_evolution = vmap(lambda x: force_full_fn(x[:Strctr.n_coords].reshape(self.jnp_init_pos.shape).flatten()))(res)
         # potential_force_evolution.block_until_ready()
 
         return (final_disp, displacements, velocities, potential_F_evolution)

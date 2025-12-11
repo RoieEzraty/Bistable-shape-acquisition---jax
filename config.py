@@ -62,7 +62,7 @@ class EquilibriumConfig:
 # -----------------------------
 @dataclass(frozen=True)
 class TrainingConfig:
-    T: int = 2  # total training set time (not time to reach equilibrium during every step)
+    T: int = 20  # total training set time (not time to reach equilibrium during every step)
     alpha: float = 0.2  # learning rate
 
     # desired_buckle_type: str = 'random'
