@@ -38,11 +38,7 @@ class VariablesClass(eqx.Module):
     k_type          - Which torque/stiffness model to use. Taken from ``CFG.Variabs.k_type``.
     k_soft, k_stiff - ndarray or None, shape (H, S). Soft and stiff rotational spring constants per hinge and shim
                       (used only in the "Numerical" mode).
-    k               - callable or None. Function: hinge angles θ_eff → rotational stiffness k(θ_eff).
-                      Only set in the "Experimental" mode.
     torque          - callable or None. Function: hinge angle θ → torque τ(θ). Only set in the "Experimental" mode.
-    k_max           - float. Maximum rotational stiffness over all hinges/shims (or from experimental k-grid).
-                      Used for normalization and for computing stretch stiffness.
     thetas_ss       - ndarray, shape (H, S). Switching angle(s) θ_ss for each hinge and shim. For "Numerical"
     thresh          - ndarray, shape (H, S). Threshold angles to buckle shims, broadcast from config. for "Numerical"
     k_stretch       - array-like (scalar or (E,)). Stretch stiffness for edges, used by the equilibrium solver.
@@ -94,7 +90,8 @@ class VariablesClass(eqx.Module):
         if self.k_type == "Numerical":  # numerical model - Hookean torque
             self.k_soft = CFG.Variabs.k_soft_uniform * np.array((H, S), dtype=jnp.float32)
             self.k_stiff = CFG.Variabs.k_stiff_uniform * np.array((H, S), dtype=jnp.float32)
-            k_max = float(np.max(self.k_stiff))
+            k_max = float(np.max(self.k_stiff))  # Maximum stiffness over all hinges/shims (or from experimental k-grid).
+                                                 # Used for normalization and for computing stretch stiffness.
             self.k_stretch = np.asarray(CFG.Eq.k_stretch_ratio * k_max, np.float32)
             thetas_ss_scalar = CFG.Variabs.thetas_ss_uniform  # if Experimental, not used
             # Broadcast scalar thresholds to full (H, S) arrays
