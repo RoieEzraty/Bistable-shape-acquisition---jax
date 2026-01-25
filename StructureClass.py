@@ -113,7 +113,7 @@ class StructureClass(eqx.Module):
         """
         self.hinges = int(CFG.Strctr.H)
         self.shims = int(CFG.Strctr.S)
-        if CFG.Variabs.k_type == 'Experimental':
+        if CFG.Variabs.k_type in {"Experimental_plastic", "Experimental_metal"}:
             self.L = 0.045  # Leon's shims are ~45mm
         else:
             self.L = 1.0

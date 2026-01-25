@@ -7,7 +7,8 @@ from dataclasses import dataclass
 # -----------------------------
 @dataclass(frozen=True)
 class StructureConfig:
-    H: int = 5  # Hinges
+    # H: int = 5  # Hinges
+    H: int = 4  # Hinges
     S: int = 1  # Shims per hinge
     Nin: int = 3  # tip position in (x, y) and its angle
     Nout: int = 3  # Fx, Fy, torque, all on tip
@@ -18,7 +19,7 @@ class StructureConfig:
 # -----------------------------
 @dataclass(frozen=True)
 class VariablesConfig:
-    k_type = 'Experimental'  # Leon's shim
+    k_type = 'Experimental_metal'  # Leon's shim
     # k_type = 'Numerical'  # numerical model - Hookean torque
 
     if k_type == 'Numercial':  # For numerical torque model, not experimental Leon stuff
@@ -26,11 +27,14 @@ class VariablesConfig:
         k_stiff_uniform = 1.5
         thetas_ss_uniform = 1/2
         thresh_uniform = 1
-    elif k_type == 'Experimental':  # For experimental torque model
-        # tau_file: str | None = "Roee_offset3mm_dl75.txt"  # relative path
-        tau_file: str | None = "Roee_metal_offset3mm_dl75.txt"  # relative path
+    elif k_type == 'Experimental_plastic':  # For experimental torque model
+        tau_file: str | None = "Roee_offset3mm_dl75.txt"  # relative path
         thetas_ss_exp: float = 1.03312
         thresh_exp: float = 1.96257
+    elif k_type == 'Experimental_metal':  # For experimental torque model
+        tau_file: str | None = "Roee_metal_offset3mm_dl75.txt"  # relative path
+        thetas_ss_exp: float = 1.227
+        thresh_exp: float = 1.693
 
     # ADMET stress-strain tests from 2025Oct by Roie
     exp_start: float = 280*1e-3  # tip position start, not accounting for 2 first edges [m]
@@ -74,7 +78,8 @@ class TrainingConfig:
     if desired_buckle_type == 'random':
         desired_buckle_rand_key: int = 169  # key for seed of random sampling of buckle pattern
     elif desired_buckle_type == 'specified':
-        desired_buckle_pattern: tuple = (1, -1, -1, -1, -1)  # which shims should be buckled up, initially
+        # desired_buckle_pattern: tuple = (1, -1, -1, -1, -1)  # which shims should be buckled up, initially
+        desired_buckle_pattern: tuple = (-1, -1, -1, -1)  # which shims should be buckled up, initially
 
     dataset_sampling: str = 'uniform'  # random uniform vals for x, y, angle
     # dataset_sampling: str = 'specified'  # random uniform vals for x, y, angle
@@ -92,7 +97,8 @@ class TrainingConfig:
     control_tip_pos: bool = True  # imposed tip position in measurement and update. If False, tip is free
     control_tip_angle: bool = True  # impose tip angle in measurement and update. If False, imposed tip pos but free to ratoate
     control_first_edge: bool = True  # if True, fix nodes (0, 1) to zero. if Flase, just the first
-    init_buckle_pattern: tuple = (-1, -1, -1, -1, 1)  # which shims should be buckled up, initially
+    # init_buckle_pattern: tuple = (-1, -1, -1, -1, 1)  # which shims should be buckled up, initially
+    init_buckle_pattern: tuple = (-1, -1, -1, 1)  # which shims should be buckled up, initially
 
     rand_key_dataset: int = 7  # for random sampling of dataset, if dataset_sampling is True
 
