@@ -355,7 +355,7 @@ def plot_tau_afo_theta(torque_func) -> None:
     plt.plot(thetas, taus)
     plt.ylabel(r'$\tau$')
     plt.xlabel(r'$\theta\,\left[rad\right]$')
-    plt.ylim([-10, 10])
+    plt.ylim([-15, 15])
     plt.show()
 
 

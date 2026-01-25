@@ -382,6 +382,15 @@ def _correct_big_stretch(tip_pos: NDArray[np.float_], tip_angle: float, total_an
     return tip_pos
 
 
+def _get_first_in_file(r, keys, *, name="", allow_missing=False):
+    for k in keys:
+        if k in r and r[k] not in ("", None):
+            return float(r[k])
+    if allow_missing:
+        return None
+    raise KeyError(f"None of {keys} found for {name}")
+
+
 def torque(tip_angle: float, Fx: float, Fy: float) -> float:
     return np.cos(tip_angle)*Fy-np.sin(tip_angle)*Fx
 

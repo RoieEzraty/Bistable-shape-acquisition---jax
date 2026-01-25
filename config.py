@@ -27,7 +27,8 @@ class VariablesConfig:
         thetas_ss_uniform = 1/2
         thresh_uniform = 1
     elif k_type == 'Experimental':  # For experimental torque model
-        tau_file: str | None = "Roee_offset3mm_dl75.txt"  # relative path
+        # tau_file: str | None = "Roee_offset3mm_dl75.txt"  # relative path
+        tau_file: str | None = "Roee_metal_offset3mm_dl75.txt"  # relative path
         thetas_ss_exp: float = 1.03312
         thresh_exp: float = 1.96257
 

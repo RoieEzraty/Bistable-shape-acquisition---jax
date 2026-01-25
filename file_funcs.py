@@ -6,11 +6,14 @@ import matplotlib.pyplot as plt
 import jax.numpy as jnp
 from pathlib import Path
 from scipy.signal import savgol_filter
+import csv
 
 from typing import Tuple, List
 from numpy import array, zeros
 from numpy.typing import NDArray
-from typing import TYPE_CHECKING, Callable, Union, Optional
+from typing import TYPE_CHECKING, Callable, Union, Optional, Literal, Dict, Any
+
+import helpers_builders
 
 if TYPE_CHECKING:
     from SupervisorClass import SupervisorClass
@@ -23,8 +26,8 @@ if TYPE_CHECKING:
 # ===================================================
 
 
-def export_stress_strain_sim(Sprvsr: "SupervisorClass", Fx_afo_pos: NDArray[np.float_], L: float, buckle_arr: NDArray[np.int],
-                             filename: str = None) -> None:
+def export_stress_strain_sim(Sprvsr: "SupervisorClass", Fx_afo_pos: NDArray[np.float_], Fy_afo_pos: NDArray[np.float_], 
+                             L: float, buckle_arr: NDArray[np.int], filename: str = None) -> None:
 
     # --- build pandas dataframe ---
     df = pd.DataFrame({
@@ -32,6 +35,7 @@ def export_stress_strain_sim(Sprvsr: "SupervisorClass", Fx_afo_pos: NDArray[np.f
         "y_tip": Sprvsr.tip_pos_in_t[:, 1],
         "tip_angle_rad": Sprvsr.tip_angle_in_t,
         "Fx": Fx_afo_pos,
+        "Fy": Fy_afo_pos,
     })
     if filename is not None:
         pass 
@@ -61,6 +65,76 @@ def import_stress_strain_exp_and_plot(path: str, plot: bool = True) -> None:
     return exp_df
 
 
+def load_pos_force(path: str, mod: Literal["dict", "arrays"] = "dict", stretch_factor: Optional[float] = None):
+
+    if mod == "dict":
+        rows: List[Dict[str, Any]] = []
+        with open(path, newline="", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            for r in reader:
+                rows.append({
+                    "t_unix": float(r["t_unix"]),
+                    "pos": (
+                        float(r["pos_x"]),
+                        float(r["pos_y"]),
+                        float(r["pos_z"]),
+                    ),
+                    "force": (
+                        float(r["force_x"]),
+                        float(r["force_y"]),
+                    ),
+                })
+        return rows
+
+    # elif mod == "arrays":
+    #     T, P, F = [], [], []
+    #     with open(path, newline="", encoding="utf-8") as f:
+    #         reader = csv.DictReader(f)
+    #         for r in reader:
+    #             T.append([float(r["t_unix"])])
+    #             if stretch_factor:
+    #                 P.append([stretch_factor * float(r["pos_x"]), stretch_factor * float(r["pos_y"]),
+    #                           np.deg2rad(float(r["pos_z"]))])
+    #             else:
+    #                 P.append([float(r["pos_x"]), float(r["pos_y"]), np.deg2rad(float(r["pos_z"]))])
+    #             F.append([float(r["force_x"]), float(r["force_y"])])
+
+    #     return (np.asarray(T, dtype=float), np.asarray(P, dtype=float), np.asarray(F, dtype=float))
+    elif mod == "arrays":
+        T, P, F = [], [], []
+
+        with open(path, newline="", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+
+            for r in reader:
+                # ---- time ----
+                t_val = helpers_builders._get_first_in_file(r, ["t_unix", "time", "t"], name="time", allow_missing=True)
+                if t_val is not None:
+                    T.append(t_val)
+
+                # ---- position / tip pose ----
+                x = helpers_builders._get_first_in_file(r, ["pos_x", "x_tip", "Px"], name="x")
+                y = helpers_builders._get_first_in_file(r, ["pos_y", "y_tip", "Py"], name="y")
+                theta = helpers_builders._get_first_in_file(r, ["pos_z", "theta", "tip_angle_rad"], name="theta")
+
+                if stretch_factor is not None:
+                    x *= stretch_factor
+                    y *= stretch_factor
+
+                P.append([x, y, np.deg2rad(theta)])
+
+                # ---- forces ----
+                Fx = helpers_builders._get_first_in_file(r, ["force_x", "F_x", "Fx"], name="Fx")
+                Fy = helpers_builders._get_first_in_file(r, ["force_y", "F_y", "Fy"], name="Fy")
+
+                F.append([Fx, Fy])
+
+        return (np.asarray(T, dtype=float), np.asarray(P, dtype=float), np.asarray(F, dtype=float))
+
+    else:
+        raise ValueError(f"Unknown mode: {mod}")
+
+
 def build_torque_and_k_from_file(path: str, *, contact: bool = True, angles_in_degrees: bool = True, savgol_window: int = None,
                                  contact_scale: float = 1e2) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray,
                                                                       callable, callable]:
@@ -82,7 +156,10 @@ def build_torque_and_k_from_file(path: str, *, contact: bool = True, angles_in_d
         JAX function theta -> stiffness (linear interpolation, clamped at ends).
     """
     # --- load ---
-    data = np.loadtxt(path)                # shape (N, 2)
+    try:
+        data = np.loadtxt(path)                # shape (N, 2)
+    except ValueError:
+        data = np.loadtxt(path, delimiter=',')
     theta = data[:, 0]
     tau = data[:, 1]
 

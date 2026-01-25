@@ -207,6 +207,7 @@ class EquilibriumClass(eqx.Module):
         state_0 = helpers_builders._extend_pos_to_x0_v0(jnp_init_pos, pos_noise, vel_noise, self.rand_key)
 
         # -------- run dynamics ----------
+        jax.debug.print('state_0 = {}', state_0)
         final_pos, pos_in_t, vel_in_t, potential_F_in_t = self.solve_dynamics(state_0, Variabs, Strctr,
                                                                               fixed_mask=Strctr.fixed_mask, 
                                                                               fixed_vals=fixed_vals,

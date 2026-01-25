@@ -5,7 +5,7 @@ import time
 from numpy.typing import NDArray
 from typing import TYPE_CHECKING, Tuple, Optional
 
-import plot_funcs
+import plot_funcs, file_funcs
 
 from StructureClass import StructureClass
 from VariablesClass import VariablesClass
@@ -40,11 +40,11 @@ def train(Strctr: StructureClass, Variabs: VariablesClass, Sprvsr: SupervisorCla
         Eq_meas = EquilibriumClass(Strctr, CFG, buckle_arr=State_meas.buckle_arr, pos_arr=State_meas.pos_arr)  # meausrement
         Eq_des = EquilibriumClass(Strctr, CFG, buckle_arr=Sprvsr.desired_buckle_arr, pos_arr=State_des.pos_arr)  # desired
         final_pos, pos_in_t, _, F_theta = Eq_meas.calculate_state(Variabs, Strctr, Sprvsr,
-                                                                  init_pos=State_meas.pos_arr_in_t[:, :, t-1], tip_pos=tip_pos,
-                                                                  tip_angle=tip_angle)
+                                                                  init_pos=State_meas.pos_arr_in_t[:, :, t-1],
+                                                                  tip_pos=tip_pos, tip_angle=tip_angle)
         final_pos_des, pos_in_t_des, _, F_theta_des = Eq_des.calculate_state(Variabs, Strctr, Sprvsr, 
-                                                                  init_pos=State_meas.pos_arr_in_t[:, :, t-1], tip_pos=tip_pos,
-                                                                  tip_angle=tip_angle)
+                                                                  init_pos=State_meas.pos_arr_in_t[:, :, t-1], 
+                                                                  tip_pos=tip_pos, tip_angle=tip_angle)
     #     edge_lengths = vmap(lambda e: Strctr._get_edge_length(final_pos, e))(jnp.arange(Strctr.edges))
     #     print('edge lengths', helpers_builders.numpify(edge_lengths))
 
@@ -162,7 +162,7 @@ def compress_to_tip_pos(Strctr: "StructureClass", Variabs: "VariablesClass", Spr
     # initialize positions and forces
     pos_in_t = []
     force_in_t = []
-
+    State = StateClass(Strctr, Sprvsr, buckle_arr=buckle)
     for i in range(Eq_iterations):
         
         # incrementally move positiong and angle
@@ -176,22 +176,54 @@ def compress_to_tip_pos(Strctr: "StructureClass", Variabs: "VariablesClass", Spr
             pos_init = pos_in_t[-1][-1]
 
         # calculate equilibrium of new tip pos and angle
-        State, pos_in_t_i, force_in_t_0 = one_shot(Strctr, Variabs, Sprvsr, CFG, buckle, tip_pos, tip_angle, init_pos=pos_init)
+        pos_in_t_i, force_in_t_0 = one_shot(Strctr, Variabs, Sprvsr, State, CFG, buckle, tip_pos, tip_angle,
+                                            init_pos=pos_init, t=i)
         pos_in_t.append(pos_in_t_i)
         force_in_t.append(force_in_t_0)
 
     # final one is just some more time at same tip pos
     pos_init = pos_in_t[-1][-1]
-    State, pos_in_t_i, force_in_t_0 = one_shot(Strctr, Variabs, Sprvsr, CFG, buckle, tip_pos, tip_angle, init_pos=pos_init)
+    pos_in_t_i, force_in_t_0 = one_shot(Strctr, Variabs, Sprvsr, State, CFG, buckle, tip_pos, tip_angle, init_pos=pos_init, t=i)
     pos_in_t.append(pos_in_t_i)
     force_in_t.append(force_in_t_0)
     return State, pos_in_t, force_in_t
 
 
-def one_shot(Strctr: "StructureClass", Variabs: "VariablesClass", Sprvsr: "SupervisorClass", CFG: ExperimentConfig,
-             buckle: NDArray, tip_pos: NDArray, tip_angle: float, init_pos: Optional[np.ndarray] = None) -> Tuple["StateClass",
-                                                                                                                  NDArray,
-                                                                                                                  NDArray]:
+def measure_determined_pos_from_file(Strctr: "StructureClass", Variabs: "VariablesClass", Sprvsr: "SupervisorClass",
+                                     CFG: ExperimentConfig, path: str, buckle: NDArray,
+                                     stretch_factor: Optional[float] = None) -> Tuple[NDArray, NDArray, NDArray]:
+    T, P, F = file_funcs.load_pos_force(path, mod="arrays", stretch_factor = stretch_factor)
+    Sprvsr.tip_pos_in_t = P[:, :2]
+    Sprvsr.tip_angle_in_t = P[:, 2]
+    F_x_vec_exp = F[:, 0]
+    F_y_vec_exp = F[:, 1]
+    print('P', P)
+    F_x_vec = np.zeros(np.size(T))
+    F_y_vec = np.zeros(np.size(T))
+    State = StateClass(Strctr, Sprvsr, buckle_arr=buckle)
+    for i, pos in enumerate(P):
+        if i == 0:
+            # init_pos = np.array([[0., 0.],
+            #                      [0.045, 0.],
+            #                      [0.08891349, -0.11953123],
+            #                      [0.12679164, -0.11454715],
+            #                      [0.11983377, -0.15893409],
+            #                      [0.1101802, -0.10281981],
+            #                      [0.142, -0.071]])
+            init_pos = None
+        else:
+            init_pos = pos_in_t[-1]
+        tip_pos = pos[:2]
+        tip_angle = pos[2]
+        pos_in_t, final_F = one_shot(Strctr, Variabs, Sprvsr, State, CFG, buckle, tip_pos, tip_angle, init_pos=init_pos, t=i)
+        F_x_vec[i], F_y_vec[i] = State.Fx, State.Fy
+    file_funcs.export_stress_strain_sim(Sprvsr, F_x_vec, F_y_vec,  Strctr.L, buckle)
+    return State, P, F_x_vec, F_y_vec, F_x_vec_exp, F_y_vec_exp
+
+
+def one_shot(Strctr: "StructureClass", Variabs: "VariablesClass", Sprvsr: "SupervisorClass", State: "StateClass",
+             CFG: ExperimentConfig, buckle: NDArray, tip_pos: NDArray, tip_angle: float,
+             init_pos: Optional[np.ndarray] = None, t: int = 0) -> Tuple["StateClass", NDArray, NDArray]:
     """
     Perform a single equilibrium computation and state update for the system.
 
@@ -226,21 +258,25 @@ def one_shot(Strctr: "StructureClass", Variabs: "VariablesClass", Sprvsr: "Super
     - A plot of the arm configuration is displayed at the end of execution.
     """
     # ------ initialize, no tip movement yet ------
-    State = StateClass(Strctr, Sprvsr, buckle_arr=buckle, pos_arr=init_pos)  # buckle defaults to +1
+
     Eq = EquilibriumClass(Strctr, CFG, buckle_arr=buckle, pos_arr=State.pos_arr)
 
     # ------ claculate equilibrium from ode dynamics ------
-    final_pos, pos_in_t, vel_in_t, potential_force_in_t = Eq.calculate_state(Variabs, Strctr, Sprvsr, init_pos=State.pos_arr,
-                                                                             tip_pos=tip_pos, tip_angle=tip_angle)
-
+    if init_pos is None:
+        final_pos, pos_in_t, vel_in_t, final_F = Eq.calculate_state(Variabs, Strctr, Sprvsr, init_pos=State.pos_arr,
+                                                                    tip_pos=tip_pos, tip_angle=tip_angle)
+    else:
+        print('init_pose=', init_pos)
+        final_pos, pos_in_t, vel_in_t, final_F = Eq.calculate_state(Variabs, Strctr, Sprvsr, init_pos=init_pos,
+                                                                    tip_pos=tip_pos, tip_angle=tip_angle)
     # ------ save, plot, print ------
-    State._save_data(0, Strctr, final_pos, State.buckle_arr, potential_force_in_t, control_tip_angle=Sprvsr.control_tip_angle)
+    State._save_data(t, Strctr, final_pos, State.buckle_arr, final_F, control_tip_angle=Sprvsr.control_tip_angle)
     print('pos_arr', final_pos)
     print('edge len', Strctr.all_edge_lengths(State.pos_arr))
     print('total edge error', np.sum((Strctr.all_edge_lengths(State.pos_arr)-Strctr.L)**2)/(Strctr.edges*Strctr.L**2))
     plot_funcs.plot_arm(State.pos_arr, State.buckle_arr, State.theta_arr, Strctr.L, modality="measurement")
     plt.show()
-    return State, pos_in_t, potential_force_in_t
+    return pos_in_t, final_F
 
 
 def ADMET_stress_strain(Strctr: StructureClass, Variabs: VariablesClass, Sprvsr: SupervisorClass, State: StateClass, 
