@@ -1,5 +1,14 @@
 from __future__ import annotations
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+
+
+# -----------------------------
+# Structure and initial params
+# -----------------------------
+
+# MATERIAL = "numerical"
+# MATERIAL = "plastic"
+MATERIAL = "metal"
 
 
 # -----------------------------
@@ -17,24 +26,73 @@ class StructureConfig:
 # -----------------------------
 # Material / variables
 # -----------------------------
+# @dataclass(frozen=True)
+# class VariablesConfig:
+#     k_type = 'Experimental_metal'  # Leon's shim
+#     # k_type = 'Numerical'  # numerical model - Hookean torque
+
+#     if k_type == 'Numercial':  # For numerical torque model, not experimental Leon stuff
+#         k_soft_uniform = 1.0
+#         k_stiff_uniform = 1.5
+#         thetas_ss_uniform = 1/2
+#         thresh_uniform = 1
+#     elif k_type == 'Experimental_plastic':  # For experimental torque model
+#         tau_file: str | None = "Roee_offset3mm_dl75.txt"  # relative path
+#         thetas_ss_exp: float = 1.03312
+#         thresh_exp: float = 1.96257
+#     elif k_type == 'Experimental_metal':  # For experimental torque model
+#         tau_file: str | None = "Roee_metal_offset3mm_dl75.txt"  # relative path
+#         thetas_ss_exp: float = 1.227
+#         thresh_exp: float = 1.693
+
+#     # ADMET stress-strain tests from 2025Oct by Roie
+#     exp_start: float = 280*1e-3  # tip position start, not accounting for 2 first edges [m]
+#     exp_start = exp_start*0.99  # make sure to not stretch too much in simulation
+#     distance: float = 140*1e-3  # how much the arms compressed, [m]
+
+#     # numerical stability
+#     contact_scale: float = 100  # max experimental torque and torque upon edge contact ratio, for numerical stability
+
+
 @dataclass(frozen=True)
 class VariablesConfig:
-    k_type = 'Experimental_metal'  # Leon's shim
-    # k_type = 'Numerical'  # numerical model - Hookean torque
+    material: str = MATERIAL  # "plastic" | "metal" | "numerical"
 
-    if k_type == 'Numercial':  # For numerical torque model, not experimental Leon stuff
-        k_soft_uniform = 1.0
-        k_stiff_uniform = 1.5
-        thetas_ss_uniform = 1/2
-        thresh_uniform = 1
-    elif k_type == 'Experimental_plastic':  # For experimental torque model
-        tau_file: str | None = "Roee_offset3mm_dl75.txt"  # relative path
-        thetas_ss_exp: float = 1.03312
-        thresh_exp: float = 1.96257
-    elif k_type == 'Experimental_metal':  # For experimental torque model
-        tau_file: str | None = "Roee_metal_offset3mm_dl75.txt"  # relative path
-        thetas_ss_exp: float = 1.227
-        thresh_exp: float = 1.693
+    # common
+    contact_scale: float = 100
+
+    # chosen per material
+    k_type: str = field(init=False)
+    tau_file: str | None = field(init=False)
+    thetas_ss: float = field(init=False)
+    thresh: float = field(init=False)
+    k_soft: str | None = field(init=False)
+    k_stiff: str | None = field(init=False)
+
+    def __post_init__(self):
+        if self.material == "plastic":
+            object.__setattr__(self, "k_type", "Experimental_plastic")
+            object.__setattr__(self, "tau_file", "Roee_offset3mm_dl75.txt")
+            object.__setattr__(self, "thetas_ss", 1.03312)
+            object.__setattr__(self, "thresh", 1.96257)
+            object.__setattr__(self, "k_soft", None)
+            object.__setattr__(self, "k_stiff", None)
+        elif self.material == "metal":
+            object.__setattr__(self, "k_type", "Experimental_metal")
+            object.__setattr__(self, "tau_file", "Roee_metal_offset3mm_dl75.txt")
+            object.__setattr__(self, "thetas_ss", 1.227)
+            object.__setattr__(self, "thresh", 1.693)
+            object.__setattr__(self, "k_soft", None)
+            object.__setattr__(self, "k_stiff", None)
+        elif self.material == "numerical":
+            object.__setattr__(self, "k_type", "Numerical")
+            object.__setattr__(self, "tau_file", None)
+            object.__setattr__(self, "thetas_ss", 1/2)
+            object.__setattr__(self, "thresh", 1)
+            object.__setattr__(self, "k_soft", 1.0)
+            object.__setattr__(self, "k_stiff", 1.5)
+        else:
+            raise ValueError(f"Unknown material: {self.material}")
 
     # ADMET stress-strain tests from 2025Oct by Roie
     exp_start: float = 280*1e-3  # tip position start, not accounting for 2 first edges [m]
@@ -48,18 +106,59 @@ class VariablesConfig:
 # -----------------------------
 # Equilibrium solver
 # -----------------------------
+# @dataclass(frozen=True)
+# class EquilibriumConfig:
+#     if k_type in {"Experimental_plastic", "numerical"}:
+#         k_stretch_ratio: float = 2e4  # Stretch force to Torque force ratio, to make edges stiff but not inifinitely stiff.
+#         T_eq: float = 0.04  # total time for equilibrium calculation, [s]
+#         damping = 4.0  # damping coefficient for right-hand-side of ODE. Should be something*sqrt(k*m)
+#         mass: float = 5e-3  # divides right-hand-side of ODE, [kg]
+#         tolerance: float = 1e-8  # for ODE
+#     elif k_type == "Experimental_metal":
+#         k_stretch_ratio: float = 2e4  # Stretch force to Torque force ratio, to make edges stiff but not inifinitely stiff.
+#         T_eq: float = 0.04  # total time for equilibrium calculation, [s]
+#         damping = 4.0  # damping coefficient for right-hand-side of ODE. Should be something*sqrt(k*m)
+#         mass: float = 5e-3  # divides right-hand-side of ODE, [kg]
+#         tolerance: float = 1e-8  # for ODE
+#     calc_through_energy: bool = False  # If False, calculate through torque and stretch forces
+#     rand_key_Eq = 2  # random key for noise on initial positions and velocities
+#     pos_noise = 0.1  # noise on initial positions
+#     vel_noise = 1.0  # noise on initial velocities
+#     ramp_pos = True  # ramp up tip position from previous to next, during equilibrium calculation
+
 @dataclass(frozen=True)
 class EquilibriumConfig:
-    k_stretch_ratio: float = 2e4  # Stretch force to Torque force ratio, to make edges stiff but not inifinitely stiff.
-    T_eq: float = 0.04  # total time for equilibrium calculation, [s]
-    damping = 4.0  # damping coefficient for right-hand-side of ODE. Should be something*sqrt(k*m)
-    mass: float = 5e-3  # divides right-hand-side of ODE, [kg]
-    tolerance: float = 1e-8  # for ODE
-    calc_through_energy: bool = False  # If False, calculate through torque and stretch forces
-    rand_key_Eq = 2  # random key for noise on initial positions and velocities
-    pos_noise = 0.1  # noise on initial positions
-    vel_noise = 1.0  # noise on initial velocities
-    ramp_pos = True  # ramp up tip position from previous to next, during equilibrium calculation
+    material: str = MATERIAL
+
+    # chosen per material
+    k_stretch_ratio: float = field(init=False)
+    T_eq: float = field(init=False)
+    damping: float = field(init=False)
+    mass: float = field(init=False)
+    tolerance: float = field(init=False)
+
+    # independent knobs
+    calc_through_energy: bool = False
+    rand_key_Eq: int = 3
+    pos_noise: float = 0.1
+    vel_noise: float = 1.0
+    ramp_pos: bool = True
+
+    def __post_init__(self):
+        if self.material in {"plastic", "numerical"}:
+            object.__setattr__(self, "k_stretch_ratio", 2e4)
+            object.__setattr__(self, "T_eq", 0.04)
+            object.__setattr__(self, "damping", 4.0)
+            object.__setattr__(self, "mass", 5e-3)
+            object.__setattr__(self, "tolerance", 1e-8)
+        elif self.material == "metal":
+            object.__setattr__(self, "k_stretch_ratio", 2e4)
+            object.__setattr__(self, "T_eq", 0.04)
+            object.__setattr__(self, "damping", 4.0)
+            object.__setattr__(self, "mass", 12e-3)
+            object.__setattr__(self, "tolerance", 1e-8)
+        else:
+            raise ValueError(f"Unknown material: {self.material}")
 
 
 # -----------------------------

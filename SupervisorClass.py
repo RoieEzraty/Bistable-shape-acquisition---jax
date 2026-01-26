@@ -293,6 +293,7 @@ class SupervisorClass:
                 #                                                                                self.loss.size == 3) else 0.0
                 sgnx = np.sign(self.tip_pos_update_in_t[t-1, 0])
                 sgny = np.sign(self.tip_pos_update_in_t[t-1, 0])
+                # sgny = np.sign(self.tip_pos_update_in_t[t-1, 1])
                 if sgnx == 0.0:  # sign can't be 0
                     sgnx = 1
                 if sgny == 0.0:

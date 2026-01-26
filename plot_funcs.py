@@ -270,7 +270,8 @@ def loss_and_buckle_in_t(loss_in_t, buckle_in_t, start=0, end=None):
     axes[0].xaxis.set_major_locator(MaxNLocator(integer=True))
 
     # -------- subplot 2: buckle states --------
-    for i in range(5):
+    H = np.shape(buckle_in_t)[0]
+    for i in range(H):
         axes[1].plot(t, buckle_in_t[i, 0, start-1:end], label=f"hinge {i+1}")
 
     # -------- beautify --------

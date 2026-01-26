@@ -88,15 +88,15 @@ class VariablesClass(eqx.Module):
         self.k_type = CFG.Variabs.k_type  # static
 
         if self.k_type == "Numerical":  # numerical model - Hookean torque
-            self.k_soft = CFG.Variabs.k_soft_uniform * np.array((H, S), dtype=jnp.float32)
-            self.k_stiff = CFG.Variabs.k_stiff_uniform * np.array((H, S), dtype=jnp.float32)
+            self.k_soft = CFG.Variabs.k_soft * np.array((H, S), dtype=jnp.float32)
+            self.k_stiff = CFG.Variabs.k_stiff * np.array((H, S), dtype=jnp.float32)
             k_max = float(np.max(self.k_stiff))  # Maximum stiffness over all hinges/shims (or from experimental k-grid).
                                                  # Used for normalization and for computing stretch stiffness.
             self.k_stretch = np.asarray(CFG.Eq.k_stretch_ratio * k_max, np.float32)
-            thetas_ss_scalar = CFG.Variabs.thetas_ss_uniform  # if Experimental, not used
+            thetas_ss_scalar = CFG.Variabs.thetas_ss  # if Experimental, not used
             # Broadcast scalar thresholds to full (H, S) arrays
             self.thetas_ss = thetas_ss_scalar * np.ones((H, S), np.float32)
-            thresh_scalar = CFG.Variabs.thresh_uniform
+            thresh_scalar = CFG.Variabs.thresh
             self.norm_torque = float(self.k_max*self.norm_angle)
         elif self.k_type in {"Experimental_plastic", "Experimental_metal"}:  # Leon's shim
             self.k_soft = None
@@ -107,7 +107,7 @@ class VariablesClass(eqx.Module):
                                                                                 contact_scale=CFG.Variabs.contact_scale)
             self.torque = tau_of_theta
             self.k_stretch = np.asarray(CFG.Eq.k_stretch_ratio * np.max(ks), np.float32)
-            thresh_scalar = CFG.Variabs.thresh_exp
+            thresh_scalar = CFG.Variabs.thresh
             tau_plus = float(np.abs(self.torque(self.norm_angle)))
             tau_minus = float(np.abs(self.torque(-self.norm_angle)))
             self.norm_torque = np.mean([tau_plus, tau_minus])
