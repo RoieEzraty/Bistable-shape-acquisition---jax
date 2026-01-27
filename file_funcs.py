@@ -221,3 +221,85 @@ def build_torque_and_k_from_file(path: str, *, contact: bool = True, angles_in_d
         return jnp.interp(th, theta_grid, k_grid)
 
     return theta_grid, torque_grid, k_grid, torque_of_theta, k_of_theta
+
+
+def export_training_csv(path_csv: str, Strctr, Sprvsr, T=None, State_meas=None, State_update=None, State_des=None):
+    """
+    Save one row per training step t.
+    """
+    path_csv = Path(path_csv)
+    path_csv.parent.mkdir(parents=True, exist_ok=True)
+
+    if T is None:
+        T = int(Sprvsr.T)
+    H = int(Strctr.hinges)
+    S = int(Strctr.shims)
+
+    has_angle = (getattr(Sprvsr, "tip_angle_in_t", None) is not None) and (Sprvsr.tip_angle_in_t is not None)
+    has_upd_angle = (getattr(Sprvsr, "tip_angle_update_in_t", None) is not None) and (Sprvsr.tip_angle_update_in_t is not None)
+
+    # ---- header ----
+    header = ["t",
+              "tip_x", "tip_y"]
+    if has_angle:
+        header += ["tip_angle"]
+
+    header += ["upd_tip_x", "upd_tip_y"]
+    if has_upd_angle:
+        header += ["upd_tip_angle"]
+
+    # loss columns (Sprvsr.loss_in_t is (T, loss_size))
+    loss_size = Sprvsr.loss_in_t.shape[1]
+    header += [f"loss_{i}" for i in range(loss_size)]
+
+    # measured
+    if State_meas is not None:
+        header += ["Fx_meas", "Fy_meas"]
+
+    # desired
+    header += ["Fx_des", "Fy_des"]
+
+    # buckle (from update state ideally)
+    if State_update is not None:
+        for h in range(H):
+            for s in range(S):
+                header.append(f"buckle_h{h}_s{s}")
+
+    # ---- write ----
+    with open(path_csv, "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(header)
+
+        for t in range(T):
+            row = [t,
+                   float(Sprvsr.tip_pos_in_t[t, 0]), float(Sprvsr.tip_pos_in_t[t, 1])]
+            if has_angle:
+                row += [float(Sprvsr.tip_angle_in_t[t])]
+
+            row += [float(Sprvsr.tip_pos_update_in_t[t, 0]), float(Sprvsr.tip_pos_update_in_t[t, 1])]
+            if has_upd_angle:
+                row += [float(Sprvsr.tip_angle_update_in_t[t])]
+
+            row += [float(x) for x in Sprvsr.loss_in_t[t, :]]
+
+            if State_meas is not None:
+                row += [float(State_meas.Fx_in_t[t]),
+                        float(State_meas.Fy_in_t[t])]
+
+            row += [float(Sprvsr.desired_Fx_in_t[t]),
+                    float(Sprvsr.desired_Fy_in_t[t])]
+
+            if State_update is not None:
+                B = State_update.buckle_in_t[:, :, t]  # (H,S)
+                row += [int(B[h, s]) for h in range(H) for s in range(S)]
+
+            w.writerow(row)
+
+
+def export_training_npz(path_npz: str, **arrays):
+    """
+    Save big arrays (pos/angles/buckles) in one compressed file.
+    """
+    path_npz = Path(path_npz)
+    path_npz.parent.mkdir(parents=True, exist_ok=True)
+    np.savez_compressed(path_npz, **arrays)

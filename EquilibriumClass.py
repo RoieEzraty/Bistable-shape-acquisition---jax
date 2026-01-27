@@ -92,6 +92,7 @@ class EquilibriumClass(eqx.Module):
     damping_coeff: float       # damping coefficient for right hand side of eqn of motion
     mass: float                # Newtonian mass for right hand side of eqn of motion
     tolerance: float           # tolerance for dynamics simulation step size
+    scale_to_N: float          # scale forces to Newtons upon release to State and Sprvsr
     calc_through_energy: bool  # whether to calculate state through grad of energy or derictly w/forces
     ramp_pos: bool             # if True, ramp imposed vals during equilibrium simulation from initials vals to final imposed
     rand_key: int              # random key for noise on DOFs during equilibrium calculation
@@ -110,6 +111,7 @@ class EquilibriumClass(eqx.Module):
         self.mass = CFG.Eq.mass        
         self.time_points = jnp.linspace(0, CFG.Eq.T_eq, int(5e2))
         self.tolerance = CFG.Eq.tolerance
+        self.scale_to_N = CFG.Eq.scale_to_N
 
         # default buckle: all +1
         if buckle_arr is None:
@@ -207,7 +209,6 @@ class EquilibriumClass(eqx.Module):
         state_0 = helpers_builders._extend_pos_to_x0_v0(jnp_init_pos, pos_noise, vel_noise, self.rand_key)
 
         # -------- run dynamics ----------
-        jax.debug.print('state_0 = {}', state_0)
         final_pos, pos_in_t, vel_in_t, potential_F_in_t = self.solve_dynamics(state_0, Variabs, Strctr,
                                                                               fixed_mask=Strctr.fixed_mask, 
                                                                               fixed_vals=fixed_vals,
@@ -231,7 +232,9 @@ class EquilibriumClass(eqx.Module):
         # print("\n=== total forces")
         # print(jnp.sum(F_compare, axis=1))
 
-        return final_pos, pos_in_t, vel_in_t, potential_F_in_t[-1]
+        forces = potential_F_in_t[-1] * self.scale_to_N
+
+        return final_pos, pos_in_t, vel_in_t, forces
 
     def _set_fixed_vals(self, fixed_mask):
         # USED

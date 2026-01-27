@@ -268,7 +268,10 @@ def _get_tip_angle(pos_arr: np.array) -> np.array:
     dx, dy = p1 - p0                    # displacement vector
 
     # shift so that 0 is along -x
-    theta_from_negx = np.arctan2(dy, dx) - np.pi
+    # theta_from_negx = np.arctan2(dy, dx) - np.pi
+
+    # shift so that 0 is along +x
+    theta_from_negx = np.arctan2(dy, dx)
     # normalize back to [-pi, pi]
     theta_from_negx = (theta_from_negx + np.pi) % (2*np.pi) - np.pi
 

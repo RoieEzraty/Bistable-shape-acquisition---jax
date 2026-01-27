@@ -125,7 +125,7 @@ class SupervisorClass:
 
         # Logs / updates
         if self.control_tip_angle and CFG.Train.loss_type == 'cartesian':
-            loss_size = 3
+            loss_size = 2
         elif not self.control_tip_angle and CFG.Train.loss_type == 'Fx_and_tip_torque':
             loss_size = 1
         else:
@@ -163,8 +163,8 @@ class SupervisorClass:
 
         return imposed_mask
 
-    def create_dataset(self, Strctr: "StructureClass", CFG, sampling: str, dist_noise: float = 0.0,
-                       angle_noise: float = 0.0) -> None:
+    def create_dataset(self, Strctr: "StructureClass", CFG, sampling: str, tip_pos: Optional[NDArray] = None, tip_angle = Optional[float],
+                       dist_noise: float = 0.0, angle_noise: float = 0.0) -> None:
         # save as variable
         self.dataset_sampling = sampling
 
@@ -198,6 +198,9 @@ class SupervisorClass:
             noise_angle = 0
             if self.control_tip_angle and self.tip_angle_in_t is not None:
                 self.tip_angle_in_t[:] = noise_angle
+        elif sampling == 'specified':
+            self.tip_pos_in_t[:] = np.tile(tip_pos, (self.T, 1))
+            self.tip_angle_in_t[:] = tip_angle
         elif sampling == 'stress strain':
             start = 2*Strctr.L + CFG.Variabs.exp_start
             end = start - CFG.Variabs.distance
@@ -224,15 +227,15 @@ class SupervisorClass:
     def calc_loss(self, Variabs: "VariablesClass", t: int, Fx: float, Fy: float, tau: Optional[float] = None) -> None:
         """Compute loss vector (Fx,Fy[,tau]) at step t and log it."""
         if self.loss_type == 'cartesian':
-            if self.control_tip_angle and tau is not None and self.desired_tau_in_t is not None:
-                self.loss = np.array([self.desired_Fx_in_t[t] - Fx, self.desired_Fy_in_t[t] - Fy,
-                                      self.desired_tau_in_t[t] - tau], dtype=np.float32)
-                self.loss = self.loss / np.array([Variabs.norm_force, Variabs.norm_force, 
-                                                  Variabs.norm_torque], dtype=np.float32)
-            else:
-                self.loss = np.array([self.desired_Fx_in_t[t] - Fx,
-                                      self.desired_Fy_in_t[t] - Fy], dtype=np.float32)
-                self.loss = self.loss / np.array([Variabs.norm_force, Variabs.norm_torque], dtype=np.float32)
+            # if self.control_tip_angle and tau is not None and self.desired_tau_in_t is not None:
+            #     self.loss = np.array([self.desired_Fx_in_t[t] - Fx, self.desired_Fy_in_t[t] - Fy,
+            #                           self.desired_tau_in_t[t] - tau], dtype=np.float32)
+            #     self.loss = self.loss / np.array([Variabs.norm_force, Variabs.norm_force, 
+            #                                       Variabs.norm_torque], dtype=np.float32)
+            # else:
+            self.loss = np.array([self.desired_Fx_in_t[t] - Fx,
+                                  self.desired_Fy_in_t[t] - Fy], dtype=np.float32)
+            self.loss = self.loss / Variabs.norm_force
         elif self.loss_type == 'Fx_and_tip_torque':
             if self.control_tip_angle and tau is not None and self.desired_tau_in_t is not None:
                 self.loss = np.array([self.desired_Fx_in_t[t] - Fx, self.desired_tau_in_t[t] - tau], dtype=np.float32)

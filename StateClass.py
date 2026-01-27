@@ -176,6 +176,7 @@ class StateClass:
         # ------- thetas -------
         thetas = Strctr.all_hinge_angles(self.pos_arr)  # (H,) np ndarray
         self.theta_arr = helpers_builders.jax2numpy(thetas).reshape(-1)
+        self.theta_arr_in_t[:, t] = self.theta_arr
         
         # ------- torque -------
         tip_angle = float(helpers_builders._get_tip_angle(self.pos_arr))  # measured from -x

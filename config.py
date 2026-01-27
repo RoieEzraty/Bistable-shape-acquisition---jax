@@ -144,6 +144,9 @@ class EquilibriumConfig:
     vel_noise: float = 1.0
     ramp_pos: bool = True
 
+    # scale from mN to N
+    scale_to_N: float = 1.00
+
     def __post_init__(self):
         if self.material in {"plastic", "numerical"}:
             object.__setattr__(self, "k_stretch_ratio", 2e4)
@@ -166,8 +169,8 @@ class EquilibriumConfig:
 # -----------------------------
 @dataclass(frozen=True)
 class TrainingConfig:
-    T: int = 20  # total training set time (not time to reach equilibrium during every step)
-    alpha: float = 0.2  # learning rate
+    T: int = 14  # total training set time (not time to reach equilibrium during every step)
+    alpha: float = 0.1  # learning rate
 
     # desired_buckle_type: str = 'random'
     # desired_buckle_type: str = 'opposite'
@@ -178,10 +181,10 @@ class TrainingConfig:
         desired_buckle_rand_key: int = 169  # key for seed of random sampling of buckle pattern
     elif desired_buckle_type == 'specified':
         # desired_buckle_pattern: tuple = (1, -1, -1, -1, -1)  # which shims should be buckled up, initially
-        desired_buckle_pattern: tuple = (-1, -1, -1, -1)  # which shims should be buckled up, initially
+        desired_buckle_pattern: tuple = (1, -1, -1, -1)  # which shims should be buckled up, initially
 
-    dataset_sampling: str = 'uniform'  # random uniform vals for x, y, angle
-    # dataset_sampling: str = 'specified'  # random uniform vals for x, y, angle
+    # dataset_sampling: str = 'uniform'  # random uniform vals for x, y, angle
+    dataset_sampling: str = 'specified'  # constant
     # dataset_sampling = 'almost flat'  # flat piece, single measurement
     # dataset_sampling = 'stress strain'
 
