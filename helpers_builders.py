@@ -385,6 +385,17 @@ def _correct_big_stretch(tip_pos: NDArray[np.float_], tip_angle: float, total_an
     return tip_pos
 
 
+def _point_segment_closest(p, a, b, eps=1e-12):
+    ab = b - a
+    ap = p - a
+    denom = jnp.dot(ab, ab) + eps
+    t = jnp.clip(jnp.dot(ap, ab) / denom, 0.0, 1.0)
+    c = a + t * ab
+    d = p - c
+    d2 = jnp.dot(d, d)
+    return d, d2, t  # d = (p-c)
+
+
 def _get_first_in_file(r, keys, *, name="", allow_missing=False):
     for k in keys:
         if k in r and r[k] not in ("", None):

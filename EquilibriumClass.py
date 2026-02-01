@@ -6,7 +6,7 @@ import time
 import jax
 import jax.numpy as jnp
 import equinox as eqx
-from jax import grad, jit, vmap
+from jax import grad, jit, vmap, lax
 from jax.experimental.ode import odeint
 
 from typing import Tuple, List
@@ -98,6 +98,8 @@ class EquilibriumClass(eqx.Module):
     rand_key: int              # random key for noise on DOFs during equilibrium calculation
     pos_noise: float           # noise amplitude on initial positions
     vel_noise: float           # noise amplitude on initial velocities
+    r_intersect_factor: float  # radius from which chain intersecting with itself produces repulsion, fraction of edge length
+    k_intersect_factor: float  # force factor of repulsion due to chain intersecting with itself, later multiplied by k_stretch
 
     # ---- state / derived ----
     rest_lengths: jax.Array                          # (H+1,) edge rest lengths (from initial pos)
@@ -132,6 +134,8 @@ class EquilibriumClass(eqx.Module):
         self.rand_key = CFG.Eq.rand_key_Eq
         self.pos_noise = CFG.Eq.pos_noise
         self.vel_noise = CFG.Eq.vel_noise
+        self.r_intersect_factor = CFG.Eq.r_intersect_factor
+        self.k_intersect_factor = CFG.Eq.k_intersect_factor
 
     def calculate_state(self, Variabs: "VariablesClass", Strctr: "StructureClass", Sprvsr: "SupervisorClass",
                         init_pos: NDArray[float], control_first_edge: bool = True,  tip_pos: jax.Array | None = None,
@@ -447,12 +451,31 @@ class EquilibriumClass(eqx.Module):
         
         # ------ Edge stretch forces ------
         F_stretch_full = self.stretch_forces(Strctr, Variabs, jnp_pos_arr)  # (n_coords,) which is (2*nodes,)
-        
-        # ------ Combine internal forces (reaction) ------
-        F_internal_full = F_theta_full + F_stretch_full  # (n_coords,) which is (2*nodes,)
+
+        # ------ Intersection of nodes and edges prohibited ------
+        # build full positions X (N,2) from x_free + fixed/imposed values
+        # (you already do something like this in potential_force_free)
+        F_contact_full = self.contact_forces_node_edge(Strctr, Variabs, jnp_pos_arr, Strctr.edges_arr, p=2.0, fmax=None,
+                                                       skip_band=0)
 
         # jax.debug.print('F_theta_full {}', F_theta_full)
         # jax.debug.print('F_stretch_full {}', F_stretch_full)
+        # jax.debug.print('F_contact_full {}', F_contact_full)
+        # mag = lambda F: jnp.linalg.norm(F)
+
+        # max_ext = jnp.max(mag(F_theta_full))
+        # max_pot = jnp.max(mag(F_stretch_full))
+        # max_con = jnp.max(mag(F_contact_full))
+
+        # lax.cond(
+        #     max_con > 0,
+        #     lambda _: jax.debug.print("max |F|: theta={} stretch={} contact={} inside total_potential_force", max_ext, max_pot, max_con),
+        #     lambda _: None,
+        #     operand=None,
+        # )
+        # ------ Combine internal forces (reaction) ------
+        # F_internal_full = F_theta_full + F_stretch_full  # (n_coords,) which is (2*nodes,)
+        F_internal_full = F_theta_full + F_stretch_full + F_contact_full  # (n_coords,) which is (2*nodes,)
 
         return F_internal_full
 
@@ -502,11 +525,28 @@ class EquilibriumClass(eqx.Module):
         # --- stretch forces ---
         F_stretch_full = self.stretch_forces(Strctr, Variabs, jnp_pos_arr)      # (n_coords,) which is (2*nodes,)
 
+        F_contact_full = self.contact_forces_node_edge(Strctr, Variabs, jnp_pos_arr, Strctr.edges_arr, p=2.0, fmax=None,
+                                                       skip_band=0)
+
         # jax.debug.print('F_theta_full {}', F_theta_full)
         # jax.debug.print('F_stretch_full {}', F_stretch_full)
+        # jax.debug.print('F_contact_full {}', F_contact_full)
+        # mag = lambda F: jnp.linalg.norm(F)
+
+        # max_ext = jnp.max(mag(F_theta_full))
+        # max_pot = jnp.max(mag(F_stretch_full))
+        # max_con = jnp.max(mag(F_contact_full))
+
+        # lax.cond(
+        #     max_con > 0,
+        #     lambda _: jax.debug.print("max |F|: theta={} stretch={} contact={}, inside total_potential_force_from_full_x", max_ext, max_pot, max_con),
+        #     lambda _: None,
+        #     operand=None,
+        # )
 
         # reaction/internal force on DOFs (same sign you use in rhs)
-        return F_theta_full + F_stretch_full                                # (n_coords,) which is (2*nodes,)
+        # return F_theta_full + F_stretch_full                                # (n_coords,) which is (2*nodes,)
+        return F_theta_full + F_stretch_full + F_contact_full                 # (n_coords,) which is (2*nodes,)
 
     def potential_force_free(self, Variabs: "VariablesClass", Strctr: "StructureClass", t: float,
                              x_free: jax.Array, *,
@@ -594,6 +634,96 @@ class EquilibriumClass(eqx.Module):
         F = F.at[edges[:, 0], :].add(+fvec)
         F = F.at[edges[:, 1], :].add(-fvec)
         return F.reshape(-1)                  # (n_coords,) which is (2*nodes,)
+
+    def contact_forces_node_edge(self, Strctr: "StructureClass", Variabs: "VariablesClass",
+        jnp_pos_arr: jax.Array,          # (N,2)
+        edges: jax.Array,      # (M,2) int indices (j,k)
+        p: float = 1.0,        # exponent on penetration (1=linear, 2=quadratic)
+        fmax: float | None = None,
+        skip_band: int = 2,    # skip edges within this index distance (chain)
+        eps: float = 1e-12,
+    ):
+        """
+        Returns F_contact on all nodes, shape (N,2).
+        Designed for a simple chain where node i connects to i±1.
+        skip_band=2 skips edges too close: (i with edges touching i, i±1, etc.)
+        """
+        r = self.r_intersect_factor*Strctr.L
+        k = self.k_intersect_factor*Variabs.k_stretch
+
+        N = jnp_pos_arr.shape[0]
+        r2 = r * r
+
+        def pair_force(i, e):
+            j, kidx = e  # segment endpoints
+            # For a plain chain (0-1-2-...): skip nearby edges to avoid fighting elasticity
+            # Condition: |i-j| <= skip_band OR |i-k| <= skip_band
+            near = (jnp.abs(i - j) <= skip_band) | (jnp.abs(i - kidx) <= skip_band)
+
+            pnt = jnp_pos_arr[i]
+            a = jnp_pos_arr[j]
+            b = jnp_pos_arr[kidx]
+
+            dvec, d2, t = helpers_builders._point_segment_closest(pnt, a, b, eps=eps)  # dvec = p-c
+            d = jnp.sqrt(d2 + eps)
+
+            # penetration depth
+            delta = r - d
+            active = (delta > 0.0) & (~near)
+
+            # unit normal (repel direction)
+            n = dvec / (d + eps)
+
+            # force magnitude
+            Fmag = k * (delta ** p)
+            if fmax is not None:
+                Fmag = jnp.minimum(Fmag, fmax)
+
+            F = jnp.where(active, Fmag * n, jnp.zeros_like(n))  # force on node i
+
+            # Distribute equal and opposite on the segment endpoints
+            Fa = -(1.0 - t) * F
+            Fb = -t * F
+
+            active_flag = active.astype(jnp.int32)
+            return F, Fa, Fb, j, kidx, active_flag
+
+        # Accumulate forces via scatter-add
+        Ftot = jnp.zeros_like(jnp_pos_arr)
+
+        ii = jnp.arange(N)
+
+        # vmap over i and edges -> (N,M,...)  (OK for N~small/moderate; optimize later if needed)
+        def for_i(i):
+            return jax.vmap(lambda e: pair_force(i, e))(edges)
+
+        F_i, Fa_i, Fb_i, j_i, k_i, active_flags = jax.vmap(for_i)(ii)
+
+        # after vmaps
+        # active_count = jnp.sum(active_flags)
+
+        # lax.cond(
+        #     active_count > 0,
+        #     lambda c: jax.debug.print("CONTACT ACTIVE COUNT = {}", c),
+        #     lambda c: None,
+        #     active_count,
+        # )
+
+        # Sum contributions:
+        # Node forces: add over edges
+        Ftot = Ftot.at[ii].add(jnp.sum(F_i, axis=1))  # (N,2)
+
+        # Edge endpoint forces: need scatter add with indices j_i,k_i (shape N,M)
+        # Flatten N,M -> NM for scatter
+        j_flat = j_i.reshape(-1)
+        k_flat = k_i.reshape(-1)
+        Fa_flat = Fa_i.reshape(-1, 2)
+        Fb_flat = Fb_i.reshape(-1, 2)
+
+        Ftot = Ftot.at[j_flat].add(Fa_flat)
+        Ftot = Ftot.at[k_flat].add(Fb_flat)
+
+        return Ftot.reshape(-1)
 
     def _theta_jacs_local(self, Strctr: "StructureClass", x_flat: jax.Array) -> jax.Array:
         """
