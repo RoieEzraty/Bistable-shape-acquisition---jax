@@ -84,6 +84,7 @@ class StructureClass(eqx.Module):
 
     # ------ optional learning graph (only if you call _build_learning_parameters) ------
     DM: Optional[NDArray[int]] = eqx.field(default=None, init=False, static=True)
+    DM_dagger: Optional[NDArray[int]] = eqx.field(default=None, init=False, static=True)
     NE: Optional[NDArray[int]] = eqx.field(default=None, init=False, static=True)
     NN: Optional[NDArray[int]] = eqx.field(default=None, init=False, static=True)
     output_nodes_arr: Optional[NDArray[int]] = eqx.field(default=None, init=False, static=True)
@@ -125,7 +126,8 @@ class StructureClass(eqx.Module):
         self.hinges_arr = self._build_hinges()
         self.rest_lengths = self._build_rest_lengths(rest_lengths=rest_lengths)
         if update_scheme == 'BEASTAL':
-            self.DM, self.NE, self.NN, self.output_nodes_arr = self._build_learning_parameters(Nin, Nout)
+            self.DM, self.NE, self.NN, self.output_nodes_arr = self._build_learning_parameters(CFG.Strctr.Nin, CFG.Strctr.Nout)
+            self.DM_dagger = np.linalg.pinv(self.DM)
         self.fixed_mask = self._build_fixed_mask(control_first_edge)
 
         # learning fields left as None until _build_learning_parameters is called

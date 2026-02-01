@@ -19,9 +19,10 @@ class StructureConfig:
     # H: int = 5  # Hinges
     H: int = 4  # Hinges
     S: int = 1  # Shims per hinge
-    Nin: int = 3  # tip position in (x, y) and its angle
-    Nout: int = 3  # Fx, Fy, torque, all on tip
-
+    # Nin: int = 3  # tip position in (x, y) and its angle
+    # Nout: int = 3  # Fx, Fy, torque, all on tip
+    Nin: int = 3  # tip position in (x, y) and its angle at left side
+    Nout: int = 3  # x, y, theta of tip
 
 # -----------------------------
 # Material / variables
@@ -191,8 +192,8 @@ class TrainingConfig:
     # dataset_sampling = 'stress strain'
 
     # # tip values to buckle shims - 'BEASTAL' for the BEASTAL scheme, else 'one_to_one'
-    update_scheme: str = 'one_to_one'  # direct normalized loss, equal to num of outputs
-    # update_scheme: str = 'BEASTAL'  # update using the BEASTAL scheme (with pseudoinverse of the incidence matrix).
+    # update_scheme: str = 'one_to_one'  # direct normalized loss, equal to num of outputs
+    update_scheme: str = 'BEASTAL'  # update using the BEASTAL scheme (with pseudoinverse of the incidence matrix).
     # update_scheme: str = 'BEASTAL_no_pinv'  # update using (y_j)(Loss_j), no psuedo inv of the incidence matrix.
 
     loss_type: str = 'cartesian'
