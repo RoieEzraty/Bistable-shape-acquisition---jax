@@ -23,8 +23,10 @@ class StructureConfig:
     # Nout: int = 3  # Fx, Fy, torque, all on tip
     # Nin: int = 3  # tip position in (x, y) and its angle at left side
     # Nout: int = 3  # x, y, theta of tip
-    Nin: int = 3  # x, y, theta of tip
-    Nout: int = 2  # Fx, Fy
+    # Nin: int = 3  # x, y, theta of tip
+    # Nout: int = 2  # Fx, Fy
+    Nin: int = 2  # total and tip angles
+    Nout: int = 2  # Fx Fy transformed into total and tip angle forces
 
 # -----------------------------
 # Material / variables
@@ -175,7 +177,6 @@ class EquilibriumConfig:
 @dataclass(frozen=True)
 class TrainingConfig:
     T: int = 14  # total training set time (not time to reach equilibrium during every step)
-    alpha: float = 0.4  # learning rate
 
     # desired_buckle_type: str = 'random'
     # desired_buckle_type: str = 'opposite'
@@ -198,6 +199,13 @@ class TrainingConfig:
     update_scheme: str = 'radial_one_to_one'  # evolve tip angle and large radius due to instantaneous loss
     # update_scheme: str = 'BEASTAL'  # update using the BEASTAL scheme (with pseudoinverse of the incidence matrix).
     # update_scheme: str = 'BEASTAL_no_pinv'  # update using (y_j)(Loss_j), no psuedo inv of the incidence matrix.
+    # update_scheme: str = 'radial_BEASTAL'  # update using BEASTAL (pseudoinverse of 2x2 incidence matrix),
+                                           # calculated in total and tip angles
+
+    if update_scheme == 'radial_BEASTAL':
+        alpha: float = 1.0  # learning rate
+    else:
+        alpha: float = 0.2  # learning rate
 
     loss_type: str = 'cartesian'
     # loss_type: str = 'Fx_and_tip_torque'
@@ -206,7 +214,7 @@ class TrainingConfig:
     control_tip_angle: bool = True  # impose tip angle in measurement and update. If False, imposed tip pos but free to ratoate
     control_first_edge: bool = True  # if True, fix nodes (0, 1) to zero. if Flase, just the first
     # init_buckle_pattern: tuple = (-1, -1, -1, -1, 1)  # which shims should be buckled up, initially
-    init_buckle_pattern: tuple = (-1, 1, -1, 1)  # which shims should be buckled up, initially
+    init_buckle_pattern: tuple = (-1, -1, -1, 1)  # which shims should be buckled up, initially
 
     rand_key_dataset: int = 7  # for random sampling of dataset, if dataset_sampling is True
 

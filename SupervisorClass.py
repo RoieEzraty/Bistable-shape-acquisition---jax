@@ -271,6 +271,34 @@ class SupervisorClass:
             delta_tip_x = update_vec[0] * Variabs.norm_pos
             delta_tip_y = update_vec[1] * Variabs.norm_pos
             delta_angle = -update_vec[2] * Variabs.norm_angle if self.control_tip_angle else 0.0
+        elif self.update_scheme == 'radial_BEASTAL':
+            if t == 1:
+                prev_total_angle = 0.0
+                tip_update = current_tip_pos
+            else:
+                prev_total_angle = self.total_angle_update_in_t[t-1]
+                tip_update = self.tip_pos_update_in_t[t-1, :]
+            total_angle_meas = helpers_builders._get_total_angle(current_tip_pos, 0.0, Strctr.L)
+            total_angle_update = helpers_builders._get_total_angle(tip_update, 0.0, Strctr.L)
+            
+            loss_total_angle = helpers_builders._get_scalar_in_orthogonal_dir(self.loss, total_angle_meas)
+            F_total_angle = helpers_builders._get_scalar_in_orthogonal_dir(np.array([State.Fx, State.Fy]), total_angle_meas)
+            loss_tip = helpers_builders._get_scalar_in_orthogonal_dir(self.loss, current_tip_angle)
+            F_tip_angle = helpers_builders._get_scalar_in_orthogonal_dir(np.array([State.Fx, State.Fy]), current_tip_angle)
+
+            inputs_normalized = np.array([total_angle_meas/Variabs.norm_angle, current_tip_angle/Variabs.norm_angle], dtype=np.float32)
+            print(f'inputs_normalized={inputs_normalized:}')
+            outputs_normalized = np.array([F_total_angle/Variabs.norm_force, F_tip_angle/Variabs.norm_force], dtype=np.float32)
+            print(f'outputs_normalized={outputs_normalized:}')
+
+            grad_loss_vec = learning_funcs.grad_loss_FC(Strctr.NE, inputs_normalized, outputs_normalized,
+                                                        Strctr.DM, Strctr.output_nodes_arr, self.loss)
+            print(f'grad_loss_vec={grad_loss_vec:}')
+            update_vec = - self.alpha * np.matmul(Strctr.DM_dagger, grad_loss_vec)
+            print(f'update_vec={update_vec:}')
+            delta_tip_x = update_vec[0] * -tip_update[1]  # move in direction orthogonal to tip update
+            delta_tip_y = update_vec[0] * tip_update[0]  # move in direction orthogonal to tip update
+            delta_angle = update_vec[1] * Variabs.norm_angle * 2
         elif self.update_scheme == 'BEASTAL_no_pinv':
             # large_angle = np.arctan2(self.tip_pos_int_t[t, 1], self.tip_pos_in_t[t, 0])
             # R = np.sqrt(self.tip_pos_int_t[t, 1]**2 + self.tip_pos_int_t[t, 1]**2)

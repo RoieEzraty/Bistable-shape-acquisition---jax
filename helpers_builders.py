@@ -405,6 +405,10 @@ def _get_first_in_file(r, keys, *, name="", allow_missing=False):
     raise KeyError(f"None of {keys} found for {name}")
 
 
+def _get_scalar_in_orthogonal_dir(vec, angle):
+    return -vec[0]*np.sin(angle) + vec[1]*np.cos(angle)
+
+
 def torque(tip_angle: float, Fx: float, Fy: float) -> float:
     return np.cos(tip_angle)*Fy-np.sin(tip_angle)*Fx
 
