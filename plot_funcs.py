@@ -144,8 +144,13 @@ def plot_arm(pos_vec: np.ndarray, buckle: np.ndarray, thetas: Union[np.ndarray, 
     V = V_3d[:, :2]
 
     for p, v in zip(pos_vec[1:-1], V):
+        nv = np.linalg.norm(v)
+        if nv < 1e-12:
+            continue  # nothing to draw
+
         arrow = patches.FancyArrowPatch(
-            p, p + v/np.linalg.norm(v)*0.02,
+            p,
+            p + (v / nv) * 0.02,
             arrowstyle='-|>',
             mutation_scale=25,
             linewidth=3,

@@ -175,7 +175,7 @@ class EquilibriumConfig:
 @dataclass(frozen=True)
 class TrainingConfig:
     T: int = 14  # total training set time (not time to reach equilibrium during every step)
-    alpha: float = 0.1  # learning rate
+    alpha: float = 0.4  # learning rate
 
     # desired_buckle_type: str = 'random'
     # desired_buckle_type: str = 'opposite'
@@ -189,12 +189,13 @@ class TrainingConfig:
         desired_buckle_pattern: tuple = (1, -1, -1, -1)  # which shims should be buckled up, initially
 
     # dataset_sampling: str = 'uniform'  # random uniform vals for x, y, angle
-    dataset_sampling: str = 'specified'  # constant
-    # dataset_sampling = 'almost flat'  # flat piece, single measurement
+    # dataset_sampling: str = 'specified'  # constant
+    dataset_sampling = 'almost flat'  # flat piece, single measurement
     # dataset_sampling = 'stress strain'
 
     # # tip values to buckle shims - 'BEASTAL' for the BEASTAL scheme, else 'one_to_one'
-    update_scheme: str = 'one_to_one'  # direct normalized loss, equal to num of outputs
+    # update_scheme: str = 'one_to_one'  # direct normalized loss, equal to num of outputs
+    update_scheme: str = 'radial_one_to_one'  # evolve tip angle and large radius due to instantaneous loss
     # update_scheme: str = 'BEASTAL'  # update using the BEASTAL scheme (with pseudoinverse of the incidence matrix).
     # update_scheme: str = 'BEASTAL_no_pinv'  # update using (y_j)(Loss_j), no psuedo inv of the incidence matrix.
 
@@ -205,7 +206,7 @@ class TrainingConfig:
     control_tip_angle: bool = True  # impose tip angle in measurement and update. If False, imposed tip pos but free to ratoate
     control_first_edge: bool = True  # if True, fix nodes (0, 1) to zero. if Flase, just the first
     # init_buckle_pattern: tuple = (-1, -1, -1, -1, 1)  # which shims should be buckled up, initially
-    init_buckle_pattern: tuple = (-1, -1, -1, -1)  # which shims should be buckled up, initially
+    init_buckle_pattern: tuple = (-1, 1, -1, 1)  # which shims should be buckled up, initially
 
     rand_key_dataset: int = 7  # for random sampling of dataset, if dataset_sampling is True
 
