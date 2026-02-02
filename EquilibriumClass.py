@@ -878,7 +878,7 @@ class EquilibriumClass(eqx.Module):
         # res = res.at[:, mask_imposed_vel].set(vmap(imposed_disp_speed_values)(self.time_points)[:, imposed_mask])
 
         # res.block_until_ready()
-        print(f"Integration done in {time.time() - t1:.2f} s")
+        # print(f"Integration done in {time.time() - t1:.2f} s")
 
         final_disp = res[-1, :Strctr.n_coords].reshape(self.jnp_init_pos.shape)
 

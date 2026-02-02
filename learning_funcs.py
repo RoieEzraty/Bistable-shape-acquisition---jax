@@ -38,7 +38,7 @@ def build_incidence(Nin: int, Nout: int) -> Tuple[NDArray[np.int_], NDArray[np.i
     input_nodes_arr = np.arange(Nin)
     output_nodes_arr = np.arange(Nout)+Nin
 
-    NN: int = 6
+    NN: int = Nin + Nout
     EIlst: List[int] = []
     EJlst: List[int] = []
 
@@ -119,6 +119,6 @@ def grad_loss_FC(NE: int, inputs_normalized: NDArray[np.float_], outputs_normali
             loss_i = loss[1]
         else:
             loss_i = 0
-        grad_loss_ij = -(y_i-x_j)*loss_i
+        grad_loss_ij = (y_i-x_j)*loss_i
         grad_loss_vec[idx] = grad_loss_ij
     return grad_loss_vec

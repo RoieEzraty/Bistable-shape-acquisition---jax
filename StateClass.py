@@ -219,13 +219,13 @@ class StateClass:
                 # buckle up (flip 1 -> -1) when angle is too negative
                 if self.buckle_arr[i, j] == 1 and theta_i < -thresh_ij:
                     buckle_nxt[i, j] = -1
-                    print("buckled up, theta =", theta_i)
+                    # print("buckled up, theta =", theta_i)
                     buckle_bool = True
 
                 # buckle down (flip -1 -> 1) when angle is too positive
                 elif self.buckle_arr[i, j] == -1 and theta_i > thresh_ij:
                     buckle_nxt[i, j] = 1
-                    print("buckled down, theta =", theta_i)
+                    # print("buckled down, theta =", theta_i)
                     buckle_bool = True
 
                 # no change

@@ -157,7 +157,11 @@ def plot_arm(pos_vec: np.ndarray, buckle: np.ndarray, thetas: Union[np.ndarray, 
             capstyle='round',
             joinstyle='round'
         )
-        ax.add_patch(arrow)
+        try:
+            ax.add_patch(arrow)
+        except:
+            print('bad animation, lets solve this later')
+        
 
     # annotate tip
     ax.annotate(rf"$x={xs[-1]:.2f},\ y={ys[-1]:.2f},\ \theta={tip_angle_deg:.2f}$",
