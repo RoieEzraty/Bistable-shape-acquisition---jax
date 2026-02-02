@@ -101,11 +101,24 @@ def grad_loss_FC(NE: int, inputs_normalized: NDArray[np.float_], outputs_normali
     """
     node_vec = np.concatenate((inputs_normalized, outputs_normalized))
     grad_loss_vec: NDArray[np.float_] = np.zeros([NE])
+    first_output = np.size(inputs_normalized)
+    # for idx in range(NE):
+    #     output_idx = np.where(output_nodes_arr == np.where(DM[idx] == -1)[0][0])[0]  # index of output of edge
+    #     x_j = node_vec[np.where(DM[idx] == 1)]
+    #     y_i = node_vec[np.where(DM[idx] == -1)]
+    #     loss_i = loss[0][output_idx[0]]
+    #     grad_loss_ij = -(y_i-x_j)*loss_i
+    #     grad_loss_vec[idx] = grad_loss_ij
     for idx in range(NE):
-        output_idx = np.where(output_nodes_arr == np.where(DM[idx] == -1)[0][0])[0]  # index of output of edge
+        # output_idx = np.where(output_nodes_arr == np.where(DM[idx] == -1)[0][0])[0]  # index of output of edge
         x_j = node_vec[np.where(DM[idx] == 1)]
         y_i = node_vec[np.where(DM[idx] == -1)]
-        loss_i = loss[0][output_idx[0]]
+        if np.where(DM[idx] == -1)[0][0] == first_output:
+            loss_i = loss[0]
+        elif np.where(DM[idx] == -1)[0][0] == first_output + 1:
+            loss_i = loss[1]
+        else:
+            loss_i = 0
         grad_loss_ij = -(y_i-x_j)*loss_i
         grad_loss_vec[idx] = grad_loss_ij
     return grad_loss_vec

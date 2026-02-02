@@ -255,20 +255,22 @@ class SupervisorClass:
                         correct_for_total_angle: Optional[bool] = False) -> None:
         """Compute next tip position/angle commands from current loss and state (pure NumPy)."""
         # Normalised inputs/outputs (NumPy)
-        inputs_normalized = np.array([self.tip_pos_in_t[t][0]/Variabs.norm_pos, self.tip_pos_in_t[t][1]/Variabs.norm_pos,
-                                      self.tip_angle_in_t[t]/Variabs.norm_angle], dtype=np.float32)
-        outputs_normalized = np.array([State.Fx/Variabs.norm_force, State.Fy/Variabs.norm_force,
-                                       State.tip_torque/Variabs.norm_torque], dtype=np.float32)
 
         # --- BEASTAL or one_to_one ---
         if self.update_scheme == 'BEASTAL':
+            # inputs_normalized = np.array([0, 0, 0], dtype=np.float32)
+            # outputs_normalized = np.array([current_tip_pos[0]/Variabs.norm_pos, current_tip_pos[1]/Variabs.norm_pos,
+            #                               current_tip_angle/Variabs.norm_angle], dtype=np.float32)
+            inputs_normalized = np.array([current_tip_pos[0]/Variabs.norm_pos, current_tip_pos[1]/Variabs.norm_pos,
+                                          current_tip_angle/Variabs.norm_angle], dtype=np.float32)
+            outputs_normalized = np.array([State.Fx/Variabs.norm_force, State.Fy/Variabs.norm_force], dtype=np.float32)
             grad_loss_vec = learning_funcs.grad_loss_FC(Strctr.NE, inputs_normalized, outputs_normalized,
                                                         Strctr.DM, Strctr.output_nodes_arr, self.loss)
-
+            print('grad_loss_vec', grad_loss_vec)
             update_vec = - self.alpha * np.matmul(Strctr.DM_dagger, grad_loss_vec)
-            delta_tip = update_vec[0:2]
-            delta_angle = update_vec[2] if self.control_tip_angle else 0.0
-
+            delta_tip_x = update_vec[0] * Variabs.norm_pos
+            delta_tip_y = update_vec[1] * Variabs.norm_pos
+            delta_angle = -update_vec[2] * Variabs.norm_angle if self.control_tip_angle else 0.0
         elif self.update_scheme == 'BEASTAL_no_pinv':
             # large_angle = np.arctan2(self.tip_pos_int_t[t, 1], self.tip_pos_in_t[t, 0])
             # R = np.sqrt(self.tip_pos_int_t[t, 1]**2 + self.tip_pos_int_t[t, 1]**2)
@@ -278,7 +280,6 @@ class SupervisorClass:
                                                                                                          Strctr.hinges * 
                                                                                                          Strctr.L)
             delta_tip_y = - self.alpha * self.loss[1] / Variabs.norm_force * Strctr.hinges * Strctr.L * current_tip_pos[1]
-            delta_tip = np.array([delta_tip_x, delta_tip_y])
             if self.control_tip_angle and self.loss.size == 3:
                 delta_angle = + self.alpha * self.loss[2] / Variabs.norm_torque * np.pi/64 * current_tip_angle
             else:
@@ -315,7 +316,6 @@ class SupervisorClass:
                 delta_tip_y = - self.alpha * self.loss[0] * Strctr.hinges * Variabs.norm_pos
                 delta_tip_x = copy.copy(delta_tip_y)
                 delta_angle = - self.alpha * self.loss[1] * Variabs.norm_angle * np.pi
-            delta_tip = np.array([delta_tip_x, delta_tip_y])
         # elif self.update_scheme == 'one_to_one_2D':
         #     # large_angle = np.arctan2(self.tip_pos_int_t[t, 1], self.tip_pos_in_t[t, 0])
         #     # R = np.sqrt(self.tip_pos_int_t[t, 1]**2 + self.tip_pos_int_t[t, 1]**2)
@@ -330,7 +330,8 @@ class SupervisorClass:
         #     print('delta_angle=', delta_angle)
         else:
             raise ValueError(f"Unknown update_scheme='{self.update_scheme}'")
-        print('delta_tip_y=', delta_tip_y)
+        delta_tip = np.array([delta_tip_x, delta_tip_y])
+        print('delta_tip=', delta_tip)
         print('delta_angle=', delta_angle)
 
         # insert into tip_pos_update
@@ -368,3 +369,28 @@ class SupervisorClass:
         self.tip_pos_update_in_t[t, :] = helpers_builders._correct_big_stretch(self.tip_pos_update_in_t[t],
                                                                                self.tip_angle_update_in_t[t], total_angle,
                                                                                Strctr.L, Strctr.edges)
+
+    # def clamp_to_circle_xy(self, Strctr: "StructureClass", tip_pos_update, tip_angle, margin=2.0):
+    #     """
+    #     If (x,y) is outside the circle of radius (R-margin), project it to the nearest point on the circle.
+    #     """
+    #     # account for previous total angle to calculate current total angle, in [deg]
+
+    #     # effective radius of chain
+    #     R_eff = helpers_builders.effective_radius(self.R_chain, self.L, self.total_angle, tip_angle)
+    #     print(f'effective Radius inside clamp_to_circle_xy = {R_eff}')
+
+    #     r_chain = np.hypot(tip_pos_update[0], tip_pos_update[1])
+
+    #     x2, y2 = None, None, None, None
+
+    #     if r_chain >= (R_eff - margin):
+    #         scale = (R_eff - margin) / r_chain
+    #         x2 = tip_pos_update[0] * scale
+    #         y2 = tip_pos_update[1] * scale
+    #         print(f'clamped from x={tip_pos_update[0]},y={tip_pos_update[1]} to x={x2},y={y2} due to chain revolusions')
+
+    #     x_clamp = np.nanmin(np.array([tip_pos_update[0], x2], dtype=float))
+    #     y_clamp = np.nanmin(np.array([tip_pos_update[1], y2], dtype=float))
+
+    #     return float(x_clamp), float(y_clamp)

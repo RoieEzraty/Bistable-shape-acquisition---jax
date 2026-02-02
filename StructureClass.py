@@ -127,7 +127,7 @@ class StructureClass(eqx.Module):
         self.rest_lengths = self._build_rest_lengths(rest_lengths=rest_lengths)
         if update_scheme == 'BEASTAL':
             self.DM, self.NE, self.NN, self.output_nodes_arr = self._build_learning_parameters(CFG.Strctr.Nin, CFG.Strctr.Nout)
-            self.DM_dagger = np.linalg.pinv(self.DM)
+            self.DM_dagger = learning_funcs.inverse_incidence(self.DM)
         self.fixed_mask = self._build_fixed_mask(control_first_edge)
 
         # learning fields left as None until _build_learning_parameters is called
