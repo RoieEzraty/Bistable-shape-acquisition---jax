@@ -28,37 +28,10 @@ class StructureConfig:
     Nin: int = 2  # total and tip angles
     Nout: int = 2  # Fx Fy transformed into total and tip angle forces
 
+
 # -----------------------------
 # Material / variables
 # -----------------------------
-# @dataclass(frozen=True)
-# class VariablesConfig:
-#     k_type = 'Experimental_metal'  # Leon's shim
-#     # k_type = 'Numerical'  # numerical model - Hookean torque
-
-#     if k_type == 'Numercial':  # For numerical torque model, not experimental Leon stuff
-#         k_soft_uniform = 1.0
-#         k_stiff_uniform = 1.5
-#         thetas_ss_uniform = 1/2
-#         thresh_uniform = 1
-#     elif k_type == 'Experimental_plastic':  # For experimental torque model
-#         tau_file: str | None = "Roee_offset3mm_dl75.txt"  # relative path
-#         thetas_ss_exp: float = 1.03312
-#         thresh_exp: float = 1.96257
-#     elif k_type == 'Experimental_metal':  # For experimental torque model
-#         tau_file: str | None = "Roee_metal_offset3mm_dl75.txt"  # relative path
-#         thetas_ss_exp: float = 1.227
-#         thresh_exp: float = 1.693
-
-#     # ADMET stress-strain tests from 2025Oct by Roie
-#     exp_start: float = 280*1e-3  # tip position start, not accounting for 2 first edges [m]
-#     exp_start = exp_start*0.99  # make sure to not stretch too much in simulation
-#     distance: float = 140*1e-3  # how much the arms compressed, [m]
-
-#     # numerical stability
-#     contact_scale: float = 100  # max experimental torque and torque upon edge contact ratio, for numerical stability
-
-
 @dataclass(frozen=True)
 class VariablesConfig:
     material: str = MATERIAL  # "plastic" | "metal" | "numerical"
@@ -111,26 +84,6 @@ class VariablesConfig:
 # -----------------------------
 # Equilibrium solver
 # -----------------------------
-# @dataclass(frozen=True)
-# class EquilibriumConfig:
-#     if k_type in {"Experimental_plastic", "numerical"}:
-#         k_stretch_ratio: float = 2e4  # Stretch force to Torque force ratio, to make edges stiff but not inifinitely stiff.
-#         T_eq: float = 0.04  # total time for equilibrium calculation, [s]
-#         damping = 4.0  # damping coefficient for right-hand-side of ODE. Should be something*sqrt(k*m)
-#         mass: float = 5e-3  # divides right-hand-side of ODE, [kg]
-#         tolerance: float = 1e-8  # for ODE
-#     elif k_type == "Experimental_metal":
-#         k_stretch_ratio: float = 2e4  # Stretch force to Torque force ratio, to make edges stiff but not inifinitely stiff.
-#         T_eq: float = 0.04  # total time for equilibrium calculation, [s]
-#         damping = 4.0  # damping coefficient for right-hand-side of ODE. Should be something*sqrt(k*m)
-#         mass: float = 5e-3  # divides right-hand-side of ODE, [kg]
-#         tolerance: float = 1e-8  # for ODE
-#     calc_through_energy: bool = False  # If False, calculate through torque and stretch forces
-#     rand_key_Eq = 2  # random key for noise on initial positions and velocities
-#     pos_noise = 0.1  # noise on initial positions
-#     vel_noise = 1.0  # noise on initial velocities
-#     ramp_pos = True  # ramp up tip position from previous to next, during equilibrium calculation
-
 @dataclass(frozen=True)
 class EquilibriumConfig:
     material: str = MATERIAL
@@ -140,7 +93,6 @@ class EquilibriumConfig:
     T_eq: float = field(init=False)
     damping: float = field(init=False)
     mass: float = field(init=False)
-    tolerance: float = field(init=False)
 
     # independent knobs
     calc_through_energy: bool = False
@@ -150,6 +102,8 @@ class EquilibriumConfig:
     ramp_pos: bool = True
     r_intersect_factor: float = 0.1
     k_intersect_factor: float = 600.0
+    # tolerance: float = 1e-8
+    tolerance: float = 1e-4
 
     # scale from mN to N
     scale_to_N: float = 1.00
@@ -160,13 +114,11 @@ class EquilibriumConfig:
             object.__setattr__(self, "T_eq", 0.04)
             object.__setattr__(self, "damping", 4.0)
             object.__setattr__(self, "mass", 5e-3)
-            object.__setattr__(self, "tolerance", 1e-8)
         elif self.material == "metal":
             object.__setattr__(self, "k_stretch_ratio", 2e4)
             object.__setattr__(self, "T_eq", 0.04)
             object.__setattr__(self, "damping", 4.0)
             object.__setattr__(self, "mass", 12e-3)
-            object.__setattr__(self, "tolerance", 1e-8)
         else:
             raise ValueError(f"Unknown material: {self.material}")
 
@@ -196,11 +148,11 @@ class TrainingConfig:
 
     # # tip values to buckle shims - 'BEASTAL' for the BEASTAL scheme, else 'one_to_one'
     # update_scheme: str = 'one_to_one'  # direct normalized loss, equal to num of outputs
-    # update_scheme: str = 'radial_one_to_one'  # evolve tip angle and large radius due to instantaneous loss
+    update_scheme: str = 'radial_one_to_one'  # evolve tip angle and large radius due to instantaneous loss
     # update_scheme: str = 'BEASTAL'  # update using the BEASTAL scheme (with pseudoinverse of the incidence matrix).
     # update_scheme: str = 'BEASTAL_no_pinv'  # update using (y_j)(Loss_j), no psuedo inv of the incidence matrix.
     # update_scheme: str = 'radial_halfway_BEASTAL'  # evolve tip angle and large radius due to instantaneous loss
-    update_scheme: str = 'radial_BEASTAL'  # update using BEASTAL (pseudoinverse of 2x2 incidence matrix),
+    # update_scheme: str = 'radial_BEASTAL'  # update using BEASTAL (pseudoinverse of 2x2 incidence matrix),
                                            # calculated in total and tip angles
 
     if update_scheme == 'radial_BEASTAL':

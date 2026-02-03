@@ -877,8 +877,36 @@ class EquilibriumClass(eqx.Module):
         res = res.at[:, mask_imposed_pos].set(vmap(imposed_vals)(self.time_points)[:, imposed_mask])
         # res = res.at[:, mask_imposed_vel].set(vmap(imposed_disp_speed_values)(self.time_points)[:, imposed_mask])
 
+        # # assume n_coords = Strctr.n_coords (number of coordinate DOFs)
+        # # and n_free = sum(free_mask) (number of free positional DOFs)
+        # free_pos_count = jnp.sum(free_mask)  # number of free position DOFs
+        # free_vel_count = free_pos_count      # number of free velocity DOFs (same as free pos)
+
+        # def assemble_full_state(free_state, t):
+        #     # `free_state` contains [x_free, xdot_free] flattened for this time step
+        #     x_free = free_state[:free_pos_count]
+        #     xdot_free = free_state[free_pos_count:]
+            
+        #     # Start with fixed positions in place (others zero)
+        #     # `fixed_vals` is a full-length (n_coords,) vector with fixed DOFs set:contentReference[oaicite:0]{index=0}
+        #     full_pos = fixed_vals
+        #     # Insert free positions and imposed positions
+        #     full_pos = full_pos.at[free_mask].set(x_free)            # fill free DOFs
+        #     full_pos = full_pos.at[imposed_mask].set(imposed_vals(t)[imposed_mask])  # fill imposed DOFs
+            
+        #     # Full velocity: start as zeros, then fill free velocities (fixed and imposed remain 0)
+        #     full_vel = jnp.zeros_like(full_pos)
+        #     full_vel = full_vel.at[free_mask].set(xdot_free)
+        #     # (If needed, one could compute imposed velocity via derivative of imposed_vals, but often set 0 if quasi-static)
+            
+        #     # Concatenate full positions and velocities
+        #     return jnp.concatenate([full_pos, full_vel], axis=0)
+
+        # # Vectorize assembly over all time steps:
+        # res = jax.vmap(assemble_full_state)(res_free, self.time_points)
+
         # res.block_until_ready()
-        # print(f"Integration done in {time.time() - t1:.2f} s")
+        print(f"Integration done in {time.time() - t1:.2f} s")
 
         final_disp = res[-1, :Strctr.n_coords].reshape(self.jnp_init_pos.shape)
 
