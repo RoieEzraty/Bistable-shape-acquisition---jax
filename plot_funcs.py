@@ -161,7 +161,6 @@ def plot_arm(pos_vec: np.ndarray, buckle: np.ndarray, thetas: Union[np.ndarray, 
             ax.add_patch(arrow)
         except:
             print('bad animation, lets solve this later')
-        
 
     # annotate tip
     ax.annotate(rf"$x={xs[-1]:.2f},\ y={ys[-1]:.2f},\ \theta={tip_angle_deg:.2f}$",
@@ -250,49 +249,20 @@ def animate_arm_w_arcs(traj_pos, L, frames=10, interval_ms=30, save_path=None, f
         # ---- draw hinge arcs if data provided ----
         if buckle_traj is not None and theta_traj is not None:
             buckle = np.asarray(buckle_traj[ti])
-            # thetas_rad = np.asarray(theta_traj[ti], dtype=float)  # (H,)
-            # buckle_arr = buckle  # possibly (H, S) with S=1
-
-            # # cumulative hinge angles in radians
-            # cumsum_thetas = np.cumsum(thetas_rad)
-            # # shifted by pi but still in radians
-            # cumsum_thetas_shift = cumsum_thetas - cumsum_thetas[0] + np.pi
-
-            # for i in range(buckle_arr.shape[0]):
-            #     # handle HxS or H arrays
-            #     b_i = buckle_arr[i]
-            #     # if 2D, take the first shim
-            #     if np.ndim(b_i) > 0:
-            #         b_i = b_i[0]
-
-            #     p = pts[i + 1]  # hinge at node i+1
-
-            #     if b_i == -1:
-            #         theta1 = cumsum_thetas[i]
-            #         theta2 = cumsum_thetas_shift[i]
-            #     else:
-            #         theta1 = cumsum_thetas_shift[i]
-            #         theta2 = cumsum_thetas[i]
-
-            #     theta1_deg = float(np.rad2deg(theta1))
-            #     theta2_deg = float(np.rad2deg(theta2))
-
-            #     arc = patches.Arc(xy=(p[0], p[1]), width=2 * r, height=2 * r, angle=0.0, theta1=theta1_deg, theta2=theta2_deg,
-            #                       linewidth=2, zorder=2)
-            #     ax.add_patch(arc)
-            #     arc_patches.append(arc)
 
             diffs = pts[2:, :]-pts[:-2, :]
             diffs_3d = np.concatenate((diffs, np.zeros((np.shape(diffs)[0], 1))), axis=1)
             buckle_3d = np.concatenate((np.zeros((np.shape(buckle)[0], 2)), buckle), axis=1)
             V_3d = np.cross(diffs_3d, buckle_3d)
             V = V_3d[:, :2]
-            # ax = plt.gca()
             for p, v in zip(pts[1:-1], V):
                 arrow = patches.FancyArrowPatch(p, p + v/np.linalg.norm(v)*0.035, arrowstyle='-|>', mutation_scale=25, linewidth=2, capstyle='round',
                                                 joinstyle='round')
-                ax.add_patch(arrow)
-                arc_patches.append(arrow)
+                try:
+                    ax.add_patch(arrow)
+                    arc_patches.append(arrow)
+                except:
+                    print('bad animation, lets solve this later')
 
         return line, scat, tip_text, *arc_patches
 
