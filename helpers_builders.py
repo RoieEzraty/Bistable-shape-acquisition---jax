@@ -386,6 +386,25 @@ def _correct_big_stretch(tip_pos: NDArray[np.float_], tip_angle: float, total_an
 
 
 def _point_segment_closest(p, a, b, eps=1e-12):
+    """
+    Compute the closest point on a line segment to a given point.
+
+    Given a point `p` and a line segment defined by endpoints `a` and `b`, finds the point `c` on the segment `[a, b]` that is
+    closest to `p`, and returns the displacement vector from `c` to `p`, its squared norm, and segment interpolation parameter.
+
+    Parameters
+    ----------
+    p   : jax.Array, shape (2,), Query point.
+    a   : jax.Array, shape (2,), First endpoint of the segment.
+    b   : jax.Array, shape (2,), Second endpoint of the segment.
+    eps : float, optional, Small positive constant added to the denominator to avoid division by zero
+
+    Returns
+    -------
+    d  : jax.Array, shape (2,), Displacement vector from the closest point on the segment to `p`: d = p - c
+    d2 : jax.Array, scalar, Squared distance from `p` to the segment: d2 = ||p - c||²
+    t  : jax.Array, scalar,  Segment interpolation parameter in [0, 1] locating the closest point: c = a + t (b - a)
+    """
     ab = b - a
     ap = p - a
     denom = jnp.dot(ab, ab) + eps

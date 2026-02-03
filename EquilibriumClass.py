@@ -76,12 +76,6 @@ class EquilibriumClass(eqx.Module):
         Return imposed displacement vector at time `t` (default: none).
     force_function(t)
         Return external force vector at time `t` (default: zero).
-    energy(Variabs, Strctr, pos_arr)
-        Compute total, rotational, and stretching energies for a configuration.
-    total_potential_energy(Variabs, Strctr, x_full)
-        Compute scalar total potential energy from a flattened state vector.
-    total_potential_energy_free(...)
-        Same as above, but restricted to free DOFs given masks and imposed values.
     potential_force_free(...)
         Compute forces on free DOFs via gradient of total potential energy.
     force_function_free(t, force_function, free_mask)
@@ -273,51 +267,6 @@ class EquilibriumClass(eqx.Module):
 
         return imposed_vals
 
-    # --- energy ---
-    @eqx.filter_jit
-    def energy(self, Variabs: "VariablesClass", Strctr: "StructureClass", pos_arr: jnp.Array) -> jnp.Array[float]:
-        """Compute the potential energy of the origami with the resting positions as reference"""
-
-        thetas = vmap(lambda h: Strctr._get_theta(pos_arr, h))(jnp.arange(Strctr.hinges))
-        edges_length = vmap(lambda e: Strctr._get_edge_length(pos_arr, e))(jnp.arange(Strctr.edges))
-        T = thetas[:, None]                 # (H,1)
-        TH = Variabs.thetas_ss[:, None]      # (H,1)
-        B = self.buckle_arr                     # (H,S)
-        TH_eff = B[:, None] * TH
-        
-        # spring constant is position dependent
-        if Variabs.k_type == 'Numerical':
-            stiff_mask = ((B == 1) & (T < TH)) | ((B == -1) & (T > -TH))  # thetas are counter-clockwise    
-            k_rot_state = jnp.where(stiff_mask, Variabs.k_stiff, Variabs.k_soft)  # (H,S)
-            rotation_energy = 0.5 * jnp.sum(k_rot_state * (T - TH_eff) ** 2)
-        elif Variabs.k_type == 'Experimental':
-            theta_eff = B[:, None] * T              # (H,S)
-            k_rot_state = Variabs.k(theta_eff)   # (H,S)
-            k_rot_state = jax.lax.stop_gradient(Variabs.k(theta_eff))  # don't take derivative w.r.t k
-            rotation_energy = 0.5 * jnp.sum(k_rot_state * (theta_eff - TH)**2)
-
-        stretch_energy = 0.5 * jnp.sum(Variabs.k_stretch * (edges_length - Strctr.rest_lengths) ** 2)
-
-        # total
-        total_energy = rotation_energy + stretch_energy
-        return jnp.array([total_energy, rotation_energy, stretch_energy])
-
-    @eqx.filter_jit
-    def total_potential_energy(self, Variabs: "VariablesClass", Strctr: "StructureClass",
-                               x_full: jax.Array) -> jax.Array[jnp.float_]:
-        pos_arr = helpers_builders._reshape_state_2_pos_arr(x_full, self.jnp_init_pos)
-        return self.energy(Variabs, Strctr, pos_arr)[0]
-
-    # EquilibriumClass.py
-    def total_potential_energy_free(self, Variabs: "VariablesClass", Strctr: "StructureClass", t: int,
-                                    x_free: jax.Array, *, free_mask: jax.Array, fixed_mask: jax.Array,
-                                    imposed_mask: jax.Array, fixed_vals: jax.Array, imposed_vals: jax.Array):
-        fixed_vals_t = fixed_vals(t)
-        imposed_vals_t = imposed_vals(t)
-        x_full = helpers_builders._assemble_full_from_free(free_mask, fixed_mask, imposed_mask, x_free, fixed_vals_t,
-                                                           imposed_vals_t)
-        return self.total_potential_energy(Variabs, Strctr, x_full)
-
     def total_potential_force(self, Variabs: "VariablesClass", Strctr: "StructureClass", t: float,
                               x_free: jax.Array, *,
                               free_mask: jax.Array, fixed_mask: jax.Array, fixed_vals: jax.Array,
@@ -368,27 +317,26 @@ class EquilibriumClass(eqx.Module):
 
         # ------ Hinge torques: tau_hinges (H,) ------
         thetas = jax.vmap(lambda h: Strctr._get_theta(jnp_pos_arr, h))(jnp.arange(Strctr.hinges))  # (H,)
-        B = self.buckle_arr  # (H,S)
+        B = self.buckle_arr  # (H,S), where S=1 is always incorporated here
         theta_eff = B * thetas[:, None]   # (H,S)
         # torque per shim
-        tau_shims = - Variabs.torque(theta_eff)  # (H,S)
+        tau_shims = - Variabs.torque(theta_eff)  # (H,S), experimental torque, exploding upon neighboring edge contact
         # signed + summed per hinge
-        tau_hinges = jnp.sum(B * tau_shims, axis=1)
+        tau_hinges = jnp.sum(B * tau_shims, axis=1)  
 
         # Jacobian of theta for each hinge: (H, n_coords) which is (H, 2*nodes)
-        theta_jacs = self._theta_jacs_local(Strctr, x_full)  # (H, n_coords)
+        theta_jacs = self._theta_jacs_local(Strctr, x_full)  # (H, n_coords)  
 
         # Map torques to DOF forces
-        F_theta_full = (theta_jacs.T @ tau_hinges).reshape(-1)  # (n_coords,) which is (2*nodes,)
+        F_theta_full = (theta_jacs.T @ tau_hinges).reshape(-1)  # (n_coords,) which is (2*nodes,) 
         
         # ------ Edge stretch forces ------
         F_stretch_full = self.stretch_forces(Strctr, Variabs, jnp_pos_arr)  # (n_coords,) which is (2*nodes,)
 
         # ------ Intersection of nodes and edges prohibited ------
-        # build full positions X (N,2) from x_free + fixed/imposed values
-        # (you already do something like this in potential_force_free)
+        # not including contact of neighboring edges, this is strictly trough Variabs.torque
         F_contact_full = self.contact_forces_node_edge(Strctr, Variabs, jnp_pos_arr, Strctr.edges_arr, p=2.0, fmax=None,
-                                                       skip_band=0)
+                                                       skip_band=1)  # on
 
         # jax.debug.print('F_theta_full {}', F_theta_full)
         # jax.debug.print('F_stretch_full {}', F_stretch_full)
@@ -458,7 +406,7 @@ class EquilibriumClass(eqx.Module):
         F_stretch_full = self.stretch_forces(Strctr, Variabs, jnp_pos_arr)      # (n_coords,) which is (2*nodes,)
 
         F_contact_full = self.contact_forces_node_edge(Strctr, Variabs, jnp_pos_arr, Strctr.edges_arr, p=2.0, fmax=None,
-                                                       skip_band=0)
+                                                       skip_band=1)
 
         # jax.debug.print('F_theta_full {}', F_theta_full)
         # jax.debug.print('F_stretch_full {}', F_stretch_full)
@@ -508,15 +456,8 @@ class EquilibriumClass(eqx.Module):
         jax.Array, shape: (sum(free_mask),)
             Internal reaction force on **free position DOFs** (restoring sign).
         """
-        if self.calc_through_energy:
-            return jax.grad(lambda xf: -self.total_potential_energy_free(Variabs, Strctr, t, xf, free_mask=free_mask,
-                                                                         fixed_mask=fixed_mask, imposed_mask=imposed_mask,
-                                                                         fixed_vals=fixed_vals,
-                                                                         imposed_vals=imposed_vals))(x_free)
-        else:  # no grad of energy, directly through forces instead
-            return self.total_potential_force(Variabs, Strctr, t, x_free, free_mask=free_mask,
-                                              fixed_mask=fixed_mask, imposed_mask=imposed_mask,
-                                              fixed_vals=fixed_vals, imposed_vals=imposed_vals)[free_mask]
+        return self.total_potential_force(Variabs, Strctr, t, x_free, free_mask=free_mask, fixed_mask=fixed_mask,
+                                          imposed_mask=imposed_mask, fixed_vals=fixed_vals, imposed_vals=imposed_vals)[free_mask]
             
     def stretch_forces(self, Strctr: "StructureClass", Variabs: "VariablesClass",
                        jnp_pos_arr: jax.Array[float]) -> jax.Array:
@@ -567,18 +508,21 @@ class EquilibriumClass(eqx.Module):
         F = F.at[edges[:, 1], :].add(-fvec)
         return F.reshape(-1)                  # (n_coords,) which is (2*nodes,)
 
-    def contact_forces_node_edge(self, Strctr: "StructureClass", Variabs: "VariablesClass",
-        jnp_pos_arr: jax.Array,          # (N,2)
-        edges: jax.Array,      # (M,2) int indices (j,k)
-        p: float = 1.0,        # exponent on penetration (1=linear, 2=quadratic)
-        fmax: float | None = None,
-        skip_band: int = 2,    # skip edges within this index distance (chain)
-        eps: float = 1e-12,
-    ):
+    def contact_forces_node_edge(self, Strctr: "StructureClass", Variabs: "VariablesClass", jnp_pos_arr: jax.Array, 
+                                 edges: jax.Array, p: float = 1.0, fmax: float | None = None, skip_band: int = 1,
+                                 eps: float = 1e-12):
         """
         Returns F_contact on all nodes, shape (N,2).
         Designed for a simple chain where node i connects to i±1.
         skip_band=2 skips edges too close: (i with edges touching i, i±1, etc.)
+
+        inputs:
+        jnp_pos_arr: (N,2) jax array, node positions in x-y
+        edges      : (NE, 2) of each edge (1st dim) connecting node i to j (2nd dim)
+        p          : exponent on penetration (1=linear, 2=quadratic)
+        fmax       : float, maximal force that can be applied while using node-edge contact 
+        skip_band  : skip edges within this index distance (chain), don't measure contact between a node and its own edge
+        eps        : 
         """
         r = self.r_intersect_factor*Strctr.L
         k = self.k_intersect_factor*Variabs.k_stretch
@@ -630,16 +574,6 @@ class EquilibriumClass(eqx.Module):
             return jax.vmap(lambda e: pair_force(i, e))(edges)
 
         F_i, Fa_i, Fb_i, j_i, k_i, active_flags = jax.vmap(for_i)(ii)
-
-        # after vmaps
-        # active_count = jnp.sum(active_flags)
-
-        # lax.cond(
-        #     active_count > 0,
-        #     lambda c: jax.debug.print("CONTACT ACTIVE COUNT = {}", c),
-        #     lambda c: None,
-        #     active_count,
-        # )
 
         # Sum contributions:
         # Node forces: add over edges
@@ -745,33 +679,9 @@ class EquilibriumClass(eqx.Module):
             ivec = jnp.asarray(imposed_vals, dtype=self.jnp_init_pos.dtype).reshape((self.jnp_init_pos.size,))
             imposed_vals = lambda t, ivec=ivec: ivec
 
-        # # the speed at each DOF is just the derivative of the displacement, 
-        # def compute_disp_speed(disp_func):
-        #     # Returns another function that calculates derivative of displacement at time t, for jax.grad
-        #     def disp_speed(t):
-        #         # For each DOF where displacement is imposed, compute the derivative with respect to time
-        #         # Use vmap to compute the derivative for all components efficiently
-        #         # For each i, we create a function that gets the i-th component and compute its gradient
-        #         component_grad = lambda i, t: jax.grad(lambda t_: disp_func(t_)[i])(t)
-        #         # Apply this function to all indices using vmap Since imposed_vals is a function t -> vector
-        #         full_derivative = jax.vmap(lambda i: component_grad(i, t))(jnp.arange(len(disp_func(t))))
-        #         return full_derivative
-        #     return disp_speed
-
-        # # Create the speed function by applying the derivative computation
-        # imposed_disp_speed_values = compute_disp_speed(imposed_vals)
-        # jax.debug.print('imposed_disp_speed_values={}', imposed_disp_speed_values)
-        # # imposed_disp_speed_values = grad(imposed_vals)
-
         free_mask, n_free_DOFs, state_0_free = helpers_builders._get_state_free_from_full(state_0, fixed_mask, imposed_mask)
 
-        # ------ pure force function ------
-        if self.calc_through_energy:
-            force_full_fn = eqx.filter_jit(
-                lambda x_full: jax.grad(lambda xf: -self.total_potential_energy(Variabs, Strctr, xf))(x_full))
-        else:  # directly through forces, this is actually what's being used
-            force_full_fn = eqx.filter_jit(
-                lambda x_full: self.total_potential_force_from_full_x(Variabs, Strctr, x_full))
+        force_full_fn = eqx.filter_jit(lambda x_full: self.total_potential_force_from_full_x(Variabs, Strctr, x_full))
 
         # ------ right-hand-size of ODE ------
         @jit
