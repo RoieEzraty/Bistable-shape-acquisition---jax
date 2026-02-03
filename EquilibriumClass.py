@@ -219,23 +219,6 @@ class EquilibriumClass(eqx.Module):
                                                                               imposed_mask=Sprvsr.imposed_mask,
                                                                               imposed_vals=imposed_vals)
 
-        # self.jnp_init_pos = pos_in_t[-1]
-
-        # # split to components if you want:
-        # F_stretch = self.stretch_forces(Strctr, Variabs, final_pos)     # (n_coords,) which is (2*nodes,)
-        # F_theta = potential_F_in_t[-1] - F_stretch           # (n_coords,) which is (2*nodes,)
-
-        # # reshape for per-node view
-        # F_stretch_2d = F_stretch.reshape(-1, 2)
-        # F_theta_2d = F_theta.reshape(-1, 2)
-        # F_compare = jnp.hstack([F_stretch_2d, F_theta_2d])
-
-        # print("\n=== Final-step per-node forces comparison ===")
-        # print("(Fx_stretch, Fy_stretch,  Fx_theta, Fy_theta)")
-        # print(F_compare)
-        # print("\n=== total forces")
-        # print(jnp.sum(F_compare, axis=1))
-
         forces = potential_F_in_t[-1] * self.scale_to_N
 
         return final_pos, pos_in_t, vel_in_t, forces
@@ -244,57 +227,6 @@ class EquilibriumClass(eqx.Module):
         # USED
         fixed_vals = jnp.zeros((len(fixed_mask),), dtype=float)
         return fixed_vals.at[fixed_mask].set(self.jnp_init_pos.reshape((-1,))[fixed_mask])
-
-    # def _set_imposed_vals(self, Strctr: "StructureClass", Sprvsr: "SupervisorClass", imposed_mask, tip_pos, tip_angle, 
-    #                       fixed_vals, init_pos):
-    #     """
-    #     Build a time-dependent imposed displacement function.
-
-    #     - At t = 0: imposed DOFs equal the previous equilibrium positions (self.jnp_init_pos).
-    #     - For 0 < t < T_ramp: linearly ramp to the new tip pose.
-    #     - For t >= T_ramp: imposed DOFs stay at the new pose.
-    #     """
-    #     # ------ instantiate sizes ------
-    #     # Full starting geometry (previous equilibrium), flattened
-    #     start_vec = init_pos.reshape(-1)  # (n_coords,) which is (2*nodes,)
-
-    #     # If there's nothing to impose, keep the previous equilibrium for all t
-    #     if tip_pos is None:
-    #         return (lambda t, v=start_vec: v)
-
-    #     # Build target vector: same as start_vec, but with tip / before-tip overwritten
-    #     target_vec = start_vec
-
-    #     # jaxify tip coordiantes 
-    #     tip_xy = jnp.asarray(tip_pos, dtype=init_pos.dtype).reshape((2,))
-
-    #     # ------ final position as vector ------
-    #     if tip_angle is None:  # Only tip position is imposed:
-    #         target_vec = target_vec.at[imposed_mask].set(tip_xy)
-    #     else:  # Tip position + tip angle: impose node before tip as well
-    #         before_tip_xy = helpers_builders._get_before_tip(
-    #             tip_pos=tip_xy,
-    #             tip_angle=jnp.asarray(tip_angle, dtype=init_pos.dtype),
-    #             L=Strctr.L,
-    #             dtype=init_pos.dtype,
-    #         )
-    #         tip_vals = jnp.concatenate([before_tip_xy, tip_xy])  # (4,)
-    #         # Sprvsr.imposed_mask should correspond to [before_tip_xy, tip_xy]
-    #         target_vec = target_vec.at[Sprvsr.imposed_mask].set(tip_vals)
-
-    #     # ------- position as temporal function ------
-    #     if self.ramp_pos:  # linear ramp in time 
-    #         T_total = self.time_points[-1]
-    #         ramp_fraction = 0.25  # use half of the simulation time for the ramp
-    #         T_ramp = ramp_fraction * T_total
-
-    #         def imposed_vals(t, start=start_vec, target=target_vec, T_r=T_ramp):
-    #             s = jnp.clip(t / T_r, 0.0, 1.0)  # Linear ramp parameter s(t) in [0, 1]
-    #             return (1.0 - s) * start + s * target
-    #     else:  # constant
-    #         imposed_vals = lambda t, v=target_vec: v
-
-    #     return imposed_vals
 
     def _set_imposed_vals(self, Strctr: "StructureClass", Sprvsr: "SupervisorClass", imposed_mask, tip_pos, tip_angle, 
                           fixed_vals, init_pos):
