@@ -74,6 +74,7 @@ class SupervisorClass:
 
     # --- running logs / losses ---
     loss_in_t: NDArray[np.float32] = eqx.field(init=False, static=True)            # (T, 2) or (T, 3)
+    loss_MSE_in_t: NDArray[np.float32] = eqx.field(init=False, static=True)        # (T,)
     tip_pos_update_in_t: NDArray[np.float32] = eqx.field(init=False, static=True)  # (T, 2)
     tip_angle_update_in_t: Optional[NDArray[np.float32]] = eqx.field(default=None, init=False, 
                                                                      static=True)  # (T,)
@@ -131,6 +132,7 @@ class SupervisorClass:
         else:
             loss_size = 2
         self.loss_in_t = np.zeros((self.T, loss_size), dtype=np.float32)
+        self.loss_MSE_in_t = np.zeros((self.T,), dtype=np.float32)
 
         self.loss_type = CFG.Train.loss_type
         # Last loss vector (shape matches control mode)
@@ -246,6 +248,8 @@ class SupervisorClass:
                 # normalize, dimless
                 self.loss = self.loss / np.array([Variabs.norm_force], dtype=np.float32)
         self.loss_in_t[t, : self.loss.shape[0]] = self.loss
+        loss_MSE = np.sqrt(np.sum(self.loss**2))
+        self.loss_MSE_in_t[t] = loss_MSE
 
     def calc_update_tip(self, t: int, Strctr: "StructureClass", Variabs: "VariablesClass", State: "StateClass",
                         current_tip_pos: Optional[np.ndarray] = None,

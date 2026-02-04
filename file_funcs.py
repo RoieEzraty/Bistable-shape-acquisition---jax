@@ -251,6 +251,7 @@ def export_training_csv(path_csv: str, Strctr, Sprvsr, T=None, State_meas=None, 
     # loss columns (Sprvsr.loss_in_t is (T, loss_size))
     loss_size = Sprvsr.loss_in_t.shape[1]
     header += [f"loss_{i}" for i in range(loss_size)]
+    header += ["loss_MSE"]
 
     # measured
     if State_meas is not None:
@@ -281,6 +282,8 @@ def export_training_csv(path_csv: str, Strctr, Sprvsr, T=None, State_meas=None, 
                 row += [float(Sprvsr.tip_angle_update_in_t[t])]
 
             row += [float(x) for x in Sprvsr.loss_in_t[t, :]]
+
+            row += [float(Sprvsr.loss_MSE_in_t[t])]
 
             if State_meas is not None:
                 row += [float(State_meas.Fx_in_t[t]),
