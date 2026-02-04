@@ -142,6 +142,10 @@ class TrainingConfig:
         desired_buckle_pattern: tuple = (1, -1, -1, -1)  # which shims should be buckled up, initially
         # desired_buckle_pattern: tuple = (-1, 1, 1, 1)  # which shims should be buckled up, initially
 
+    # init_buckle_pattern: tuple = (-1, -1, -1, -1, 1)  # which shims should be buckled up, initially
+    init_buckle_pattern: tuple = (-1, -1, -1, 1)  # which shims should be buckled up, initially
+    # init_buckle_pattern: tuple = (1, 1, 1, -1)  # which shims should be buckled up, initially
+
     # dataset_sampling: str = 'uniform'  # random uniform vals for x, y, angle
     dataset_sampling: str = 'specified'  # constant
     # dataset_sampling = 'almost flat'  # flat piece, single measurement
@@ -154,10 +158,14 @@ class TrainingConfig:
     # update_scheme: str = 'BEASTAL_no_pinv'  # update using (y_j)(Loss_j), no psuedo inv of the incidence matrix.
     # update_scheme: str = 'radial_halfway_BEASTAL'  # evolve tip angle and large radius due to instantaneous loss
     # update_scheme: str = 'radial_BEASTAL'  # update using BEASTAL (pseudoinverse of 2x2 incidence matrix),
-                                           # calculated in total and tip angles
+                                             # calculated in total and tip angles
 
-    if update_scheme == 'radial_BEASTAL':
+    normalize_step: bool = True
+
+    if update_scheme == 'radial_BEASTAL' and not normalize_step:
         alpha: float = 1.0  # learning rate
+    elif normalize_step:
+        alpha: float = 0.0005
     else:
         alpha: float = 0.02  # learning rate
 
@@ -167,9 +175,6 @@ class TrainingConfig:
     control_tip_pos: bool = True  # imposed tip position in measurement and update. If False, tip is free
     control_tip_angle: bool = True  # impose tip angle in measurement and update. If False, imposed tip pos but free to ratoate
     control_first_edge: bool = True  # if True, fix nodes (0, 1) to zero. if Flase, just the first
-    # init_buckle_pattern: tuple = (-1, -1, -1, -1, 1)  # which shims should be buckled up, initially
-    init_buckle_pattern: tuple = (-1, -1, -1, 1)  # which shims should be buckled up, initially
-    # init_buckle_pattern: tuple = (1, 1, 1, -1)  # which shims should be buckled up, initially
 
     rand_key_dataset: int = 7  # for random sampling of dataset, if dataset_sampling is True
 

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import numpy as np
+np.set_printoptions(precision=3, suppress=True)
+
 import copy
 import jax
 import jax.numpy as jnp
@@ -30,29 +32,23 @@ class SupervisorClass:
     """
     Variables that are by the external supervisor in the experiment
 
-    alpha : float
-        Step size for updating the commanded tip pose.
-    T : int
-        Number of training steps in the dataset.
-    desired_buckle_arr : ndarray[int]
-        Desired buckle configuration (H,S).
-    sampling : str, optional
-        Method for generating the command dataset. One of:
-        - 'uniform'       = random uniform vals for x, y, angle
-        - 'almost flat'   = flat piece, single measurement
-        - 'stress strain' = immitate stress strain where compression is in x axis, incremental
-    control_tip_angle : bool, default=True
-        If True, tip angle is controlled and included in losses/updates.
-        If False, only tip position is controlled.
-    control_first_edge : bool, default=True
-        If True, nodes 0 and 1 are fixed.  If False, only node 0 is fixed.
-    update_scheme : str, How tip commands are updated from the loss:
-        - 'one_to_one'      = direct normalized loss, equal to num of outputs
-        - 'BEASTAL'         = update using pseudoinverse of the incidence matrix.
-        - 'BEASTAL_no_pinv' = update using (y_j)(Loss_j), no psuedo inv of the incidence matrix.
-    loss_type : str, Selects which physical quantities appear in the loss vector.
-        -'cartesian'          = uses (Fx, Fy, tip_torque (if tip angle is controlled)).
-        - 'Fx_and_tip_torque' = uses (Fx, tip_torque (if tip angle is controlled))
+    alpha              : float, Step size for updating the commanded tip pose.
+    T                  : int, Number of training steps in the dataset.
+    desired_buckle_arr : ndarray[int] (H,S), desired buckle configuration .
+    sampling           : str, optional, Method for generating the command dataset. One of:
+                         'uniform'       = random uniform vals for x, y, angle
+                         'almost flat'   = flat piece, single measurement
+                         'stress strain' = immitate stress strain where compression is in x axis, incremental
+    control_tip_angle  : bool, default=True, control tip angle and includ in losses/updates. If False, only control tip position.
+    control_first_edge : bool, default=True, nodes 0 and 1 are fixed.  If False, only node 0 is fixed.
+    normalize_step     : bool, default=True. normalize Update position and angle step size so won't be too large or small
+    update_scheme      : str, How tip commands are updated from the loss:
+                         'one_to_one'      = direct normalized loss, equal to num of outputs
+                         'BEASTAL'         = update using pseudoinverse of the incidence matrix.
+                         'BEASTAL_no_pinv' = update using (y_j)(Loss_j), no psuedo inv of the incidence matrix.
+    loss_type          : str, Selects which physical quantities appear in the loss vector.
+                         'cartesian'         = uses (Fx, Fy, tip_torque (if tip angle is controlled)).
+                         'Fx_and_tip_torque' = uses (Fx, tip_torque (if tip angle is controlled))
     """  
     # --- configuration / hyperparams ---
     T: int = eqx.field(static=True)
@@ -60,6 +56,7 @@ class SupervisorClass:
     update_scheme: str = eqx.field(static=True)
     control_tip_angle: bool = eqx.field(static=True)
     control_first_edge: bool = eqx.field(static=True)
+    normlize_step: bool = eqx.field(static=True)
 
     # --- desired targets (fixed-size buffers; NumPy, mutable at runtime) ---
     desired_buckle_arr: NDArray[np.int32] = eqx.field(static=True)                 # (hinges,)
@@ -142,6 +139,8 @@ class SupervisorClass:
         if self.control_tip_angle:
             self.tip_angle_update_in_t = np.zeros((self.T,), dtype=np.float32)
             self.total_angle_update_in_t = np.zeros((self.T,), dtype=np.float32)
+
+        self.normalize_step = bool(CFG.Train.normalize_step)
 
     def _build_imposed_mask(self, Strctr: "StructureClass", control_tip_pos: bool = True, control_tip_angle: bool = True):
         n_coords = Strctr.n_coords  # 2 * nodes
@@ -428,8 +427,23 @@ class SupervisorClass:
         else:
             raise ValueError(f"Unknown update_scheme='{self.update_scheme}'")
         delta_tip = np.array([delta_tip_x, delta_tip_y])
-        # print('delta_tip=', delta_tip)
-        # print('delta_angle=', delta_angle)
+        print('delta_tip=', delta_tip)
+        print('delta_angle=', delta_angle)
+
+        if self.normalize_step:
+            step_size = np.linalg.norm(delta_tip)
+            delta_tip = copy.copy(delta_tip)/step_size*self.alpha
+            delta_angle = copy.copy(delta_angle)/step_size*self.alpha
+            # step_size = 1
+            # self.tip_pos_update_in_t[t, :] = prev_tip_update_pos + delta_tip
+            print(f'delta_tip after normalization={delta_tip}')
+            print(f'delta_angle after normalization={delta_angle}')
+            # self.tip_pos_update_in_t[t, :] = prev_tip_update_pos + self.alpha*delta_tip/step_size
+            # self.tip_angle_update_in_t[t] = prev_tip_update_angle + self.alpha*(float(delta_angle) + delta_total_angle)/step_size
+            # print(f'normalized position step from {delta_tip} to {self.alpha*delta_tip/step_size}')
+            # print(f'normalized angle step from {float(delta_angle) + delta_total_angle}')
+            # print(f'to {self.alpha*(float(delta_angle) + delta_total_angle)/step_size}')
+            pass
 
         # insert into tip_pos_update
         if prev_tip_update_pos is None:
@@ -442,7 +456,7 @@ class SupervisorClass:
             if prev_tip_update_angle is None and t > 0:
                 prev_tip_update_angle = float(self.tip_angle_update_in_t[t - 1])
             elif prev_tip_update_angle is None:
-                prev_tip_update_angle = 0.0
+                prev_tip_update_angle = current_tip_angle
             self.tip_angle_update_in_t[t] = prev_tip_update_angle + float(delta_angle)
 
         if correct_for_total_angle:
