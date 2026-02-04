@@ -431,7 +431,8 @@ class SupervisorClass:
         print('delta_angle=', delta_angle)
 
         if self.normalize_step:
-            step_size = np.linalg.norm(delta_tip)
+            step_size = np.linalg.norm(np.append(delta_tip, delta_angle))
+            print(f'step_size={step_size}')
             delta_tip = copy.copy(delta_tip)/step_size*self.alpha
             delta_angle = copy.copy(delta_angle)/step_size*self.alpha
             # step_size = 1
