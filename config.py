@@ -128,7 +128,7 @@ class EquilibriumConfig:
 # -----------------------------
 @dataclass(frozen=True)
 class TrainingConfig:
-    T: int = 28  # total training set time (not time to reach equilibrium during every step)
+    T: int = 100  # total training set time (not time to reach equilibrium during every step)
 
     # desired_buckle_type: str = 'random'
     # desired_buckle_type: str = 'opposite'
@@ -158,7 +158,7 @@ class TrainingConfig:
     if update_scheme == 'radial_BEASTAL':
         alpha: float = 1.0  # learning rate
     else:
-        alpha: float = 0.5  # learning rate
+        alpha: float = 0.02  # learning rate
 
     loss_type: str = 'cartesian'
     # loss_type: str = 'Fx_and_tip_torque'

@@ -372,12 +372,12 @@ class SupervisorClass:
                 tip_update = self.tip_pos_update_in_t[t-1, :]
             # total_angle = helpers_builders._get_total_angle(tip_update, prev_total_angle, Strctr.L)
             total_angle = helpers_builders._get_total_angle(current_tip_pos, 0.0, Strctr.L)
-            print(f'total_angle_for_loss={total_angle}')
+            # print(f'total_angle_for_loss={total_angle}')
             loss_total_angle = -self.loss[0]*np.sin(total_angle) + self.loss[1]*np.cos(total_angle)
-            print(f'loss_total_angle={loss_total_angle:.2f}')
+            # print(f'loss_total_angle={loss_total_angle:.2f}')
             loss_tip = -self.loss[0]*np.sin(current_tip_angle) + self.loss[1]*np.cos(current_tip_angle)
-            print(f'tip_angle_for_loss={current_tip_angle}')
-            print(f'loss_tip={loss_tip:.2f}')
+            # print(f'tip_angle_for_loss={current_tip_angle}')
+            # print(f'loss_tip={loss_tip:.2f}')
             # delta_tip_x = (- self.alpha * loss_total_angle) * current_tip_pos[1]
             # delta_tip_y = (- self.alpha * loss_total_angle) * (-current_tip_pos[0])
             delta_tip_x = (- self.alpha * loss_total_angle) * tip_update[1]
