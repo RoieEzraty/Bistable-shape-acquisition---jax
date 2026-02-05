@@ -164,8 +164,8 @@ class SupervisorClass:
 
         return imposed_mask
 
-    def create_dataset(self, Strctr: "StructureClass", CFG, sampling: str, tip_pos: Optional[NDArray] = None, tip_angle = Optional[float],
-                       dist_noise: float = 0.0, angle_noise: float = 0.0) -> None:
+    def create_dataset(self, Strctr: "StructureClass", CFG, sampling: str, tip_pos: Optional[NDArray] = None,
+                       tip_angle: Optional[float] = None, dist_noise: float = 0.0, angle_noise: float = 0.0) -> None:
         # save as variable
         self.dataset_sampling = sampling
 
@@ -214,6 +214,10 @@ class SupervisorClass:
 
             if self.control_tip_angle and self.tip_angle_in_t is not None:
                 self.tip_angle_in_t[:] = angle_noise
+        elif sampling == "tile":
+            self.tip_pos_in_t[:] = np.tile(tip_pos, (self.T // len(tip_pos) + 1, 1))[:self.T]
+            tip_angles_block = np.repeat(tip_angle, tip_pos.shape[0])
+            self.tip_angle_in_t[:] = np.tile(tip_angles_block, self.T // len(tip_angles_block) + 1)[:self.T]
         else:
             raise ValueError(f"Incompatible sampling='{sampling}'")
 
@@ -450,6 +454,8 @@ class SupervisorClass:
         if prev_tip_update_pos is None:
             prev_tip_update_pos = self.tip_pos_update_in_t[t-1, :]
         # delta_tip = self.alpha*(np.array([Fx, Fy]) - current_tip_pos)*(self.loss) * ([2, 0.5])  # not BEASTAL
+        print(f'prev_tip_update_pos{prev_tip_update_pos}')
+        print(f'delta_tip{delta_tip}')
         self.tip_pos_update_in_t[t, :] = prev_tip_update_pos + delta_tip
 
         # Angle update (only if enabled)

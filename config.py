@@ -148,6 +148,7 @@ class TrainingConfig:
 
     # dataset_sampling: str = 'uniform'  # random uniform vals for x, y, angle
     dataset_sampling: str = 'specified'  # constant
+    # dataset_sampling: str = 'tile'  # constant
     # dataset_sampling = 'almost flat'  # flat piece, single measurement
     # dataset_sampling = 'stress strain'
 
@@ -160,7 +161,8 @@ class TrainingConfig:
     # update_scheme: str = 'radial_BEASTAL'  # update using BEASTAL (pseudoinverse of 2x2 incidence matrix),
                                              # calculated in total and tip angles
 
-    normalize_step: bool = True
+    # normalize_step: bool = True
+    normalize_step: bool = False
 
     if update_scheme == 'radial_BEASTAL' and not normalize_step:
         alpha: float = 1.0  # learning rate
