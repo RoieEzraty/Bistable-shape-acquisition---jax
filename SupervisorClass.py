@@ -247,8 +247,8 @@ class SupervisorClass:
                 # normalize, dimless
                 self.loss = self.loss / np.array([Variabs.norm_force], dtype=np.float32)
         self.loss_in_t[t, : self.loss.shape[0]] = self.loss
-        loss_MSE = np.sqrt(np.sum(self.loss**2))
-        self.loss_MSE_in_t[t] = loss_MSE
+        self.loss_MSE = np.sqrt(np.sum(self.loss**2))
+        self.loss_MSE_in_t[t] = self.loss_MSE
 
     def calc_update_tip(self, t: int, Strctr: "StructureClass", Variabs: "VariablesClass", State: "StateClass",
                         current_tip_pos: Optional[np.ndarray] = None,
@@ -427,18 +427,18 @@ class SupervisorClass:
         else:
             raise ValueError(f"Unknown update_scheme='{self.update_scheme}'")
         delta_tip = np.array([delta_tip_x, delta_tip_y])
-        print('delta_tip=', delta_tip)
-        print('delta_angle=', delta_angle)
+        # print('delta_tip=', delta_tip)
+        # print('delta_angle=', delta_angle)
 
         if self.normalize_step:
             step_size = np.linalg.norm(np.append(delta_tip, delta_angle))
-            print(f'step_size={step_size}')
+            # print(f'step_size={step_size}')
             delta_tip = copy.copy(delta_tip)/step_size*self.alpha
             delta_angle = copy.copy(delta_angle)/step_size*self.alpha
             # step_size = 1
             # self.tip_pos_update_in_t[t, :] = prev_tip_update_pos + delta_tip
-            print(f'delta_tip after normalization={delta_tip}')
-            print(f'delta_angle after normalization={delta_angle}')
+            # print(f'delta_tip after normalization={delta_tip}')
+            # print(f'delta_angle after normalization={delta_angle}')
             # self.tip_pos_update_in_t[t, :] = prev_tip_update_pos + self.alpha*delta_tip/step_size
             # self.tip_angle_update_in_t[t] = prev_tip_update_angle + self.alpha*(float(delta_angle) + delta_total_angle)/step_size
             # print(f'normalized position step from {delta_tip} to {self.alpha*delta_tip/step_size}')
