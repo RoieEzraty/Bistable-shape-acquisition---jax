@@ -259,7 +259,8 @@ class SupervisorClass:
                         prev_tip_update_pos: Optional[np.ndarray] = None,
                         current_tip_angle: Optional[float] = None,
                         prev_tip_update_angle: Optional[float] = None,
-                        correct_for_total_angle: Optional[bool] = False) -> None:
+                        correct_for_total_angle: Optional[bool] = False,
+                        correct_for_coil: Optional[bool] = True) -> None:
         """Compute next tip position/angle commands from current loss and state (pure NumPy)."""
         # Normalised inputs/outputs (NumPy)
 
@@ -466,6 +467,7 @@ class SupervisorClass:
                 prev_tip_update_angle = current_tip_angle
             self.tip_angle_update_in_t[t] = prev_tip_update_angle + float(delta_angle)
 
+        # add change in tip angle to the total angle from the origin
         if correct_for_total_angle:
             if t == 1:
                 prev_total_angle = 0.0
@@ -487,6 +489,13 @@ class SupervisorClass:
         self.tip_pos_update_in_t[t, :] = helpers_builders._correct_big_stretch(self.tip_pos_update_in_t[t],
                                                                                self.tip_angle_update_in_t[t], total_angle,
                                                                                Strctr.L, Strctr.edges)
+
+        if correct_for_coil and np.abs(self.tip_angle_update_in_t[t]) > np.pi*Strctr.hinges:
+            print('coiled up too much')
+            self.tip_pos_update_in_t[t, :] = self.tip_pos_in_t[t, :]
+            print(f'setting update tip position as{self.tip_pos_update_in_t[t, :]}')
+            self.tip_angle_update_in_t[t] = self.tip_angle_in_t[t]
+            print(f'setting update tip angle as{self.tip_angle_update_in_t[t]}')
 
     # def clamp_to_circle_xy(self, Strctr: "StructureClass", tip_pos_update, tip_angle, margin=2.0):
     #     """

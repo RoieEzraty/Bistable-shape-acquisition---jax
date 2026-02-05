@@ -139,16 +139,16 @@ class TrainingConfig:
         desired_buckle_rand_key: int = 169  # key for seed of random sampling of buckle pattern
     elif desired_buckle_type == 'specified':
         # desired_buckle_pattern: tuple = (1, -1, -1, -1, -1)  # which shims should be buckled up, initially
-        desired_buckle_pattern: tuple = (-1, -1, -1, -1)  # which shims should be buckled up, initially
+        desired_buckle_pattern: tuple = (1, -1, -1, -1)  # which shims should be buckled up, initially
         # desired_buckle_pattern: tuple = (-1, 1, 1, 1)  # which shims should be buckled up, initially
 
     # init_buckle_pattern: tuple = (-1, -1, -1, -1, 1)  # which shims should be buckled up, initially
-    init_buckle_pattern: tuple = (-1, -1, -1, 1)  # which shims should be buckled up, initially
+    init_buckle_pattern: tuple = (-1, 1, -1, 1)  # which shims should be buckled up, initially
     # init_buckle_pattern: tuple = (1, 1, 1, -1)  # which shims should be buckled up, initially
 
     # dataset_sampling: str = 'uniform'  # random uniform vals for x, y, angle
-    dataset_sampling: str = 'specified'  # constant
-    # dataset_sampling: str = 'tile'  # constant
+    # dataset_sampling: str = 'specified'  # constant
+    dataset_sampling: str = 'tile'  # constant
     # dataset_sampling = 'almost flat'  # flat piece, single measurement
     # dataset_sampling = 'stress strain'
 
@@ -169,7 +169,7 @@ class TrainingConfig:
     elif normalize_step:
         alpha: float = 0.1
     else:
-        alpha: float = 0.02  # learning rate
+        alpha: float = 0.08  # learning rate
 
     loss_type: str = 'cartesian'
     # loss_type: str = 'Fx_and_tip_torque'
