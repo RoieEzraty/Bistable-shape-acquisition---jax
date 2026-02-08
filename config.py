@@ -36,9 +36,6 @@ class StructureConfig:
 class VariablesConfig:
     material: str = MATERIAL  # "plastic" | "metal" | "numerical"
 
-    # common
-    contact_scale: float = 100
-
     # chosen per material
     k_type: str = field(init=False)
     tau_file: str | None = field(init=False)
@@ -101,7 +98,8 @@ class EquilibriumConfig:
     vel_noise: float = 1.0
     ramp_pos: bool = True
     r_intersect_factor: float = 0.1
-    k_intersect_factor: float = 600.0
+    # k_intersect_factor: float = 600.0
+    k_intersect_factor: float = 1.0
     # tolerance: float = 1e-8
     tolerance: float = 1e-4
 
@@ -128,7 +126,7 @@ class EquilibriumConfig:
 # -----------------------------
 @dataclass(frozen=True)
 class TrainingConfig:
-    T: int = 100  # total training set time (not time to reach equilibrium during every step)
+    T: int = 2  # total training set time (not time to reach equilibrium during every step)
 
     # desired_buckle_type: str = 'random'
     # desired_buckle_type: str = 'opposite'
@@ -146,8 +144,8 @@ class TrainingConfig:
     init_buckle_pattern: tuple = (-1, -1, -1, 1)  # which shims should be buckled up, initially
     # init_buckle_pattern: tuple = (1, 1, 1, -1)  # which shims should be buckled up, initially
 
-    dataset_sampling: str = 'uniform'  # random uniform vals for x, y, angle
-    # dataset_sampling: str = 'specified'  # constant
+    # dataset_sampling: str = 'uniform'  # random uniform vals for x, y, angle
+    dataset_sampling: str = 'specified'  # constant
     # dataset_sampling: str = 'tile'  # constant
     # dataset_sampling = 'almost flat'  # flat piece, single measurement
     # dataset_sampling = 'stress strain'
