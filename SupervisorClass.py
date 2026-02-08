@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import numpy as np
-np.set_printoptions(precision=3, suppress=True)
+np.set_printoptions(precision=4, suppress=True)
 
 import copy
 import jax
@@ -57,6 +57,7 @@ class SupervisorClass:
     control_tip_angle: bool = eqx.field(static=True)
     control_first_edge: bool = eqx.field(static=True)
     normlize_step: bool = eqx.field(static=True)
+    R_free: float = eqx.field(static=True)
 
     # --- desired targets (fixed-size buffers; NumPy, mutable at runtime) ---
     desired_buckle_arr: NDArray[np.int32] = eqx.field(static=True)                 # (hinges,)
@@ -141,6 +142,8 @@ class SupervisorClass:
             self.total_angle_update_in_t = np.zeros((self.T,), dtype=np.float32)
 
         self.normalize_step = bool(CFG.Train.normalize_step)
+
+        self.R_free = (Strctr.edges - 1.8)*Strctr.L
 
     def _build_imposed_mask(self, Strctr: "StructureClass", control_tip_pos: bool = True, control_tip_angle: bool = True):
         n_coords = Strctr.n_coords  # 2 * nodes
@@ -260,7 +263,8 @@ class SupervisorClass:
                         current_tip_angle: Optional[float] = None,
                         prev_tip_update_angle: Optional[float] = None,
                         correct_for_total_angle: Optional[bool] = False,
-                        correct_for_coil: Optional[bool] = True) -> None:
+                        correct_for_coil: Optional[bool] = True,
+                        correct_for_cut_origin: Optional[bool] = True) -> None:
         """Compute next tip position/angle commands from current loss and state (pure NumPy)."""
         # Normalised inputs/outputs (NumPy)
 
@@ -435,11 +439,12 @@ class SupervisorClass:
         # print('delta_tip=', delta_tip)
         # print('delta_angle=', delta_angle)
 
-        if self.normalize_step:
+        if self.normalize_step and np.linalg.norm(np.append(delta_tip, delta_angle)) > 10**(-12):  # normalize if non-zero update
             step_size = np.linalg.norm(np.append(delta_tip, delta_angle))
             # print(f'step_size={step_size}')
+            tradeoff_pos_angle = 2
             delta_tip = copy.copy(delta_tip)/step_size*self.alpha
-            delta_angle = copy.copy(delta_angle)/step_size*self.alpha
+            delta_angle = copy.copy(delta_angle)/step_size*self.alpha * tradeoff_pos_angle
             # step_size = 1
             # self.tip_pos_update_in_t[t, :] = prev_tip_update_pos + delta_tip
             # print(f'delta_tip after normalization={delta_tip}')
@@ -449,14 +454,13 @@ class SupervisorClass:
             # print(f'normalized position step from {delta_tip} to {self.alpha*delta_tip/step_size}')
             # print(f'normalized angle step from {float(delta_angle) + delta_total_angle}')
             # print(f'to {self.alpha*(float(delta_angle) + delta_total_angle)/step_size}')
-            pass
 
         # insert into tip_pos_update
         if prev_tip_update_pos is None:
             prev_tip_update_pos = self.tip_pos_update_in_t[t-1, :]
         # delta_tip = self.alpha*(np.array([Fx, Fy]) - current_tip_pos)*(self.loss) * ([2, 0.5])  # not BEASTAL
-        print(f'prev_tip_update_pos{prev_tip_update_pos}')
-        print(f'delta_tip{delta_tip}')
+        # print(f'prev_tip_update_pos{prev_tip_update_pos}')
+        # print(f'delta_tip{delta_tip}')
         self.tip_pos_update_in_t[t, :] = prev_tip_update_pos + delta_tip
 
         # Angle update (only if enabled)
@@ -486,16 +490,29 @@ class SupervisorClass:
         # print('update angle change', self.tip_angle_update_in_t[t]-self.tip_angle_update_in_t[t-1])
 
         # correct for to big a stretch
-        self.tip_pos_update_in_t[t, :] = helpers_builders._correct_big_stretch(self.tip_pos_update_in_t[t],
-                                                                               self.tip_angle_update_in_t[t], total_angle,
-                                                                               Strctr.L, Strctr.edges)
+        # self.tip_pos_update_in_t[t, :] = helpers_builders._correct_big_stretch(self.tip_pos_update_in_t[t],
+        #                                                                        self.tip_angle_update_in_t[t], total_angle,
+        #                                                                        Strctr.L, Strctr.edges)
+        self.tip_pos_update_in_t[t, :] = helpers_builders._correct_big_stretch_robot_style(self.tip_pos_update_in_t[t], 
+                                                                                           self.tip_angle_update_in_t[t],
+                                                                                           total_angle, self.R_free, Strctr.L,
+                                                                                           margin=0.1)
 
-        if correct_for_coil and np.abs(self.tip_angle_update_in_t[t]) > np.pi*Strctr.hinges:
-            print('coiled up too much')
+        cond_coil = np.abs(self.tip_angle_update_in_t[t]) > 3.5*np.pi
+        cond_cut_origin = np.linalg.norm(self.tip_pos_update_in_t[t, :]) < Strctr.L
+        if (correct_for_coil and cond_coil) or (correct_for_cut_origin and cond_cut_origin):
+            if cond_coil:
+                print('coiled up too much')
+            if cond_cut_origin:
+                print('cut origin')
             self.tip_pos_update_in_t[t, :] = self.tip_pos_in_t[t, :]
             print(f'setting update tip position as{self.tip_pos_update_in_t[t, :]}')
             self.tip_angle_update_in_t[t] = self.tip_angle_in_t[t]
             print(f'setting update tip angle as{self.tip_angle_update_in_t[t]}')
+
+        # if correct_for_cut_origin:
+            # self.tip_pos_update_in_t[t] = helpers_builders.clamp_tip_no_cross(self.tip_pos_update_in_t[t, :],
+            #                                                                   self.tip_angle_update_in_t[t], Strctr.L)
 
     # def clamp_to_circle_xy(self, Strctr: "StructureClass", tip_pos_update, tip_angle, margin=2.0):
     #     """

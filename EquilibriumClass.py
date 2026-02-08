@@ -748,7 +748,7 @@ class EquilibriumClass(eqx.Module):
         # res = jax.vmap(assemble_full_state)(res_free, self.time_points)
 
         # res.block_until_ready()
-        print(f"Integration done in {time.time() - t1:.2f} s")
+        # print(f"Integration done in {time.time() - t1:.2f} s")
 
         final_disp = res[-1, :Strctr.n_coords].reshape(self.jnp_init_pos.shape)
 

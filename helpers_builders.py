@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import numpy as np
+np.set_printoptions(precision=4, suppress=True)
 import copy
 import diffrax
 import jax
@@ -357,32 +358,70 @@ def _correct_big_stretch(tip_pos: NDArray[np.float_], tip_angle: float, total_an
     # Maximum physically possible stretch (remaining edges)
     epsilon = 0.1*L  # add some breathing room
 
-    wrap_tip = np.floor(np.abs(tip_angle) / np.pi)
+    # wrap_tip = np.floor(np.abs(tip_angle) / np.pi)
+    wrap_tip = np.floor(np.abs(tip_angle-total_angle) / np.pi)
     wrap_total = np.floor(np.abs(total_angle) / np.pi)
     n_wrap = wrap_tip + wrap_total + 2
 
     max_stretch = edges * L - n_wrap * L - epsilon
     max_stretch = max(max_stretch, 0.0)
 
-    # if np.abs(tip_angle) < np.pi:
-    #     max_stretch = (edges - 2) * L - epsilon
-    # elif np.abs(tip_angle) < 2*np.pi:
-    #     max_stretch = (edges - 3) * L - epsilon
-    # elif np.abs(tip_angle) < 3*np.pi:
-    #     max_stretch = (edges - 4) * L - epsilon
-    # elif np.abs(tip_angle) < 4*np.pi:
-    #     max_stretch = (edges - 5) * L - epsilon
-
     # If unphysical → scale back
     if actual_stretch > max_stretch:
         ratio = max_stretch / actual_stretch
         corrected = (before_last - second_node) * ratio + (second_node + tip_pos - before_last)
-        print('corrected tip_pos_update_in_t[t, :]=', corrected)
-        print('with maximal stretch', max_stretch)
+        # print('corrected tip_pos_update_in_t[t, :]=', corrected)
+        # print('with maximal stretch', max_stretch)
         return corrected
 
     # Otherwise nothing to correct
     return tip_pos
+
+
+def _correct_big_stretch_robot_style(tip_pos, tip_angle, total_angle, R_free, L, margin=0.0):
+    # Compute the location of the node before the tip
+    before_last = np.array([tip_pos[0] - L * np.cos(tip_angle), tip_pos[1] - L * np.sin(tip_angle)])
+
+    # Second node from the base sits at (L, 0)
+    second_node = np.array([L, 0.0], dtype=float)
+
+    # chain current radius
+    disp = before_last - second_node
+    r_chain = np.hypot(disp[0], disp[1])
+    # print(f'r_chain{r_chain}')
+
+    R_eff = effective_radius(R_free, L, total_angle, tip_angle)
+    # print(f'R_eff{R_eff}')
+    # print(f'R_free{R_free}')
+
+    x2, y2 = None, None
+
+    if r_chain >= (R_eff - margin*L):
+        scale = (R_eff - margin*L) / r_chain
+        x2 = second_node[0] + (tip_pos[0]-second_node[0]) * scale
+        y2 = second_node[1] + (tip_pos[1]-second_node[1]) * scale
+        # print(f'clamped from x={tip_pos[0]},y={tip_pos[1]} to x={x2},y={y2}')
+        return np.array([x2, y2])
+    else:
+        return tip_pos
+
+
+def effective_radius(R, L, total_angle, tip_angle, margin=0.0) -> float:
+    # total_angle should be *unwrapped* (can exceed 360)
+    # print(f'total_angle={total_angle:.2f}, tip_angle={tip_angle:.2f}')
+    delta = float(np.abs(total_angle - tip_angle))  # radians, unwrapped
+    two_pi = 2.0 * np.pi
+    n_rev = int(np.floor(delta / two_pi))
+    rem = delta - n_rev * two_pi  # in [0, 2π)
+
+    shrink_full = (2.0 * L) * n_rev
+    print('shrink due to revolutions', shrink_full)
+    shrink_partial = L * (1.0 - np.cos(rem / 2.0))  # in [0, 2L)
+    # shrink_partial = L * (1.0 - np.cos(rem))  # in [0, 2L)
+    print('shrink remainder in [mm]', shrink_partial)
+
+    shrink = shrink_full + shrink_partial
+    return max(0.0, (R - margin) - shrink)
 
 
 def _point_segment_closest(p, a, b, eps=1e-12):
@@ -413,6 +452,29 @@ def _point_segment_closest(p, a, b, eps=1e-12):
     d = p - c
     d2 = jnp.dot(d, d)
     return d, d2, t  # d = (p-c)
+
+
+def clamp_tip_no_cross(tip_pos, tip_angle, L, it=30):
+    p0, p1 = np.array([0., 0.]), np.array([L, 0.])
+    s = np.array([L, 0.])
+    b = np.asarray(tip_pos, float)
+    d = b - s
+    if not inter(b, L, p0, p1, tip_angle): 
+        return b
+
+    lo, hi = 0., 1.
+    for _ in range(it): 
+        mid = (lo+hi)/2
+        x = s+mid*d
+        (hi := mid) if inter(x) else (lo := mid)
+    return s + lo*d
+
+
+def inter(x, L, p0, p1, tip_angle, eps=1e-12):
+    u = x - np.array([L*np.cos(tip_angle), L*np.sin(tip_angle)])
+    o = lambda A, B, C: (B[0]-A[0])*(C[1]-A[1])-(B[1]-A[1])*(C[0]-A[0])
+    o1, o2, o3, o4 = o(u, x, p0), o(u, x, p1), o(p0, p1, u), o(p0, p1, x)
+    return (o1*o2 < -eps) and (o3*o4 < -eps)
 
 
 def _get_first_in_file(r, keys, *, name="", allow_missing=False):
