@@ -246,7 +246,7 @@ class EquilibriumClass(eqx.Module):
         theta_fin = jnp.asarray(tip_angle, dtype=init_pos.dtype) if tip_angle is not None else theta_init
 
         T_total = self.time_points[-1]
-        T_ramp = 0.25 * T_total
+        T_ramp = 0.33 * T_total
 
         def smoothstep(s):
             return s*s*(3 - 2*s)  # C1 smooth

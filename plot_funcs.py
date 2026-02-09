@@ -180,14 +180,13 @@ def plot_arm(pos_vec: np.ndarray, buckle: np.ndarray, thetas: Union[np.ndarray, 
 
 
 def animate_arm_w_arcs(traj_pos, L, frames=10, interval_ms=30, save_path=None, fps=30, show_inline=False, buckle_traj=None,
-                       theta_traj=None, arc_scale: float = 0.2):
+                       arc_scale: float = 0.2):
     """
     Animate an N-link arm over time, optionally drawing hinge arcs.
 
     traj_pos   : array-like, shape (T, N, 2), positions over time
     L          : reference link length
-    buckle_traj: optional, shape (T, H, S) or (T, H), buckle states per frame
-    theta_traj : optional, shape (T, H), hinge angles per frame [rad]
+    buckle_traj: optional, shape (T, H, S) or (H, S), buckle states per frame
     """
     colors_lst, red, custom_cmap = colors.color_scheme()
     plt.rcParams["axes.prop_cycle"] = plt.cycler("color", colors_lst)
@@ -196,15 +195,14 @@ def animate_arm_w_arcs(traj_pos, L, frames=10, interval_ms=30, save_path=None, f
     T_all = pos.shape[0]
     assert pos.ndim == 3 and pos.shape[2] == 2
 
+    if np.shape(buckle_traj)[0] != np.shape(traj_pos)[0]:
+        buckle_traj = np.tile(buckle_traj, np.shape(traj_pos)[0]).T.reshape(np.shape(traj_pos)[0],
+                                                                            np.shape(traj_pos)[1]-2, 1)
+
     # --- downsample time ---
     stride = max(1, int(T_all / frames))
     pos = pos[::stride]
     T, N, _ = pos.shape
-
-    if buckle_traj is not None:
-        buckle_traj = np.asarray(buckle_traj)[::stride]  # (T, H, S) or (T, H)
-    if theta_traj is not None:
-        theta_traj = np.asarray(theta_traj)[::stride]    # (T, H)
 
     fig, ax = plt.subplots(figsize=(4, 4))
     ax.set_aspect("equal", adjustable="box")
@@ -247,7 +245,7 @@ def animate_arm_w_arcs(traj_pos, L, frames=10, interval_ms=30, save_path=None, f
         arc_patches.clear()
 
         # ---- draw hinge arcs if data provided ----
-        if buckle_traj is not None and theta_traj is not None:
+        if buckle_traj is not None:
             buckle = np.asarray(buckle_traj[ti])
 
             diffs = pts[2:, :]-pts[:-2, :]

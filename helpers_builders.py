@@ -379,6 +379,8 @@ def _correct_big_stretch(tip_pos: NDArray[np.float_], tip_angle: float, total_an
 
 
 def _correct_big_stretch_robot_style(tip_pos, tip_angle, total_angle, R_free, L, margin=0.0):
+    
+    print(f'update vals before correction={tip_pos},{tip_angle}')
     # Compute the location of the node before the tip
     before_last = np.array([tip_pos[0] - L * np.cos(tip_angle), tip_pos[1] - L * np.sin(tip_angle)])
 
@@ -388,10 +390,10 @@ def _correct_big_stretch_robot_style(tip_pos, tip_angle, total_angle, R_free, L,
     # chain current radius
     disp = before_last - second_node
     r_chain = np.hypot(disp[0], disp[1])
-    # print(f'r_chain{r_chain}')
+    print(f'r_chain{r_chain}')
 
     R_eff = effective_radius(R_free, L, total_angle, tip_angle)
-    # print(f'R_eff{R_eff}')
+    print(f'R_eff{R_eff}')
     # print(f'R_free{R_free}')
 
     x2, y2 = None, None
@@ -400,7 +402,7 @@ def _correct_big_stretch_robot_style(tip_pos, tip_angle, total_angle, R_free, L,
         scale = (R_eff - margin*L) / r_chain
         x2 = second_node[0] + (tip_pos[0]-second_node[0]) * scale
         y2 = second_node[1] + (tip_pos[1]-second_node[1]) * scale
-        # print(f'clamped from x={tip_pos[0]},y={tip_pos[1]} to x={x2},y={y2}')
+        print(f'clamped from x={tip_pos[0]},y={tip_pos[1]} to x={x2},y={y2}')
         return np.array([x2, y2])
     else:
         return tip_pos
