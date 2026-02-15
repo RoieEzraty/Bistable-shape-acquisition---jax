@@ -98,7 +98,7 @@ class VariablesClass(eqx.Module):
             self.thetas_ss = thetas_ss_scalar * np.ones((H, S), np.float32)
             thresh_scalar = CFG.Variabs.thresh
             self.norm_torque = float(self.k_max*self.norm_angle)
-        elif self.k_type in {"Experimental_plastic", "Experimental_metal"}:  # Leon's shim
+        elif self.k_type in {"Leon_plastic_txt", "Leon_metal_txt", "Roie_metal_csv"}:  # Leon's shim
             self.k_soft = None
             self.k_stiff = None
             # Load τ(θ) and k(θ) from experimental file

@@ -7,8 +7,9 @@ from dataclasses import dataclass, field
 # -----------------------------
 
 # MATERIAL = "numerical"
-# MATERIAL = "plastic"
-MATERIAL = "metal"
+# MATERIAL = "Leon_plastic"
+MATERIAL = "Leon_metal"
+# MATERIAL = "Roie_metal"
 
 
 # -----------------------------
@@ -34,7 +35,7 @@ class StructureConfig:
 # -----------------------------
 @dataclass(frozen=True)
 class VariablesConfig:
-    material: str = MATERIAL  # "plastic" | "metal" | "numerical"
+    material: str = MATERIAL  # "Leon_plastic" | "Leon_metal" | "numerical" | "Roie_metal"
 
     # chosen per material
     k_type: str = field(init=False)
@@ -45,18 +46,25 @@ class VariablesConfig:
     k_stiff: str | None = field(init=False)
 
     def __post_init__(self):
-        if self.material == "plastic":
-            object.__setattr__(self, "k_type", "Experimental_plastic")
+        if self.material == "Leon_plastic":
+            object.__setattr__(self, "k_type", "Leon_plastic_txt")
             object.__setattr__(self, "tau_file", "Roee_offset3mm_dl75.txt")
-            object.__setattr__(self, "thetas_ss", 1.03312)
+            object.__setattr__(self, "thetas_ss", 1.03312)  # not used in experimental
             object.__setattr__(self, "thresh", 1.96257)
             object.__setattr__(self, "k_soft", None)
             object.__setattr__(self, "k_stiff", None)
-        elif self.material == "metal":
-            object.__setattr__(self, "k_type", "Experimental_metal")
+        elif self.material == "Leon_metal":
+            object.__setattr__(self, "k_type", "Leon_metal_txt")
             object.__setattr__(self, "tau_file", "Roee_metal_offset3mm_dl75.txt")
-            object.__setattr__(self, "thetas_ss", 1.227)
+            object.__setattr__(self, "thetas_ss", 1.227)  # not used in experimental
             object.__setattr__(self, "thresh", 1.693)
+            object.__setattr__(self, "k_soft", None)
+            object.__setattr__(self, "k_stiff", None)
+        elif self.material == "Roie_metal":
+            object.__setattr__(self, "k_type", "Roie_metal_csv")
+            object.__setattr__(self, "tau_file", "Roie_metal_singleMylar_short.csv")
+            object.__setattr__(self, "thetas_ss", 0.91)  # not used in experimental
+            object.__setattr__(self, "thresh", 1.58)
             object.__setattr__(self, "k_soft", None)
             object.__setattr__(self, "k_stiff", None)
         elif self.material == "numerical":
@@ -106,12 +114,12 @@ class EquilibriumConfig:
     scale_to_N: float = 1.00
 
     def __post_init__(self):
-        if self.material in {"plastic", "numerical"}:
+        if self.material in {"Leon_plastic", "numerical"}:
             object.__setattr__(self, "k_stretch_ratio", 2e4)
             object.__setattr__(self, "T_eq", 0.04)
             object.__setattr__(self, "damping", 4.0)
             object.__setattr__(self, "mass", 5e-3)
-        elif self.material == "metal":
+        elif self.material in {"Leon_metal", "Roie_metal"}:
             object.__setattr__(self, "k_stretch_ratio", 2e4)
             object.__setattr__(self, "T_eq", 0.04)
             object.__setattr__(self, "damping", 4.0)
@@ -125,7 +133,7 @@ class EquilibriumConfig:
 # -----------------------------
 @dataclass(frozen=True)
 class TrainingConfig:
-    T: int = 100  # total training set time (not time to reach equilibrium during every step)
+    T: int = 42  # total training set time (not time to reach equilibrium during every step)
 
     # desired_buckle_type: str = 'random'
     # desired_buckle_type: str = 'opposite'
@@ -140,11 +148,11 @@ class TrainingConfig:
         # desired_buckle_pattern: tuple = (-1, 1, 1, 1)  # which shims should be buckled up, initially
 
     # init_buckle_pattern: tuple = (-1, -1, -1, -1, 1)  # which shims should be buckled up, initially
-    init_buckle_pattern: tuple = (-1, 1, -1, 1)  # which shims should be buckled up, initially
+    init_buckle_pattern: tuple = (-1, -1, -1, 1)  # which shims should be buckled up, initially
     # init_buckle_pattern: tuple = (1, 1, 1, -1)  # which shims should be buckled up, initially
 
-    dataset_sampling: str = 'uniform'  # random uniform vals for x, y, angle
-    # dataset_sampling: str = 'specified'  # constant
+    # dataset_sampling: str = 'uniform'  # random uniform vals for x, y, angle
+    dataset_sampling: str = 'specified'  # constant
     # dataset_sampling: str = 'tile'  # constant
     # dataset_sampling = 'almost flat'  # flat piece, single measurement
     # dataset_sampling = 'stress strain'
@@ -164,7 +172,7 @@ class TrainingConfig:
     if update_scheme == 'radial_BEASTAL' and not normalize_step:
         alpha: float = 1.0  # learning rate
     elif normalize_step:
-        alpha: float = 0.5
+        alpha: float = 0.1
     else:
         alpha: float = 0.12  # learning rate
 

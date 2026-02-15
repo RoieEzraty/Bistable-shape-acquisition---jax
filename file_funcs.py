@@ -86,20 +86,6 @@ def load_pos_force(path: str, mod: Literal["dict", "arrays"] = "dict", stretch_f
                 })
         return rows
 
-    # elif mod == "arrays":
-    #     T, P, F = [], [], []
-    #     with open(path, newline="", encoding="utf-8") as f:
-    #         reader = csv.DictReader(f)
-    #         for r in reader:
-    #             T.append([float(r["t_unix"])])
-    #             if stretch_factor:
-    #                 P.append([stretch_factor * float(r["pos_x"]), stretch_factor * float(r["pos_y"]),
-    #                           np.deg2rad(float(r["pos_z"]))])
-    #             else:
-    #                 P.append([float(r["pos_x"]), float(r["pos_y"]), np.deg2rad(float(r["pos_z"]))])
-    #             F.append([float(r["force_x"]), float(r["force_y"])])
-
-    #     return (np.asarray(T, dtype=float), np.asarray(P, dtype=float), np.asarray(F, dtype=float))
     elif mod == "arrays":
         T, P, F = [], [], []
 
@@ -162,6 +148,9 @@ def build_torque_and_k_from_file(path: str, *, contact: bool = True, angles_in_d
         data = np.loadtxt(path, delimiter=',')
     theta = data[:, 0]
     tau = data[:, 1]
+
+    if path == "Roie_metal_singleMylar_short.csv":  # flip axes
+        tau = -tau
 
     # degrees -> radians if needed
     if angles_in_degrees:

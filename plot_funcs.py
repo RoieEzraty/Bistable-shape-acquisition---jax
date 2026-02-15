@@ -237,7 +237,7 @@ def animate_arm_w_arcs(traj_pos, L, frames=10, interval_ms=30, save_path=None, f
         scat.set_offsets(pts)
         tip_text.set_position((xs[-1], ys[-1]))
         tip_text.set_text(f"Tip ({xs[-1]:.2f}, {ys[-1]:.2f})")
-        ax.set_title(f"update, t= {ti + 1}/{T}")
+        ax.set_title(f"t= {ti + 1}/{T}")
 
         # ---- remove previous arcs ----
         for a in arc_patches:

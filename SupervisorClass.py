@@ -364,6 +364,8 @@ class SupervisorClass:
                 delta_tip_y = - self.alpha * self.loss[0] * Strctr.hinges * Variabs.norm_pos * sgnx
                 delta_tip_x = self.alpha * self.loss[0] * Strctr.hinges * Variabs.norm_pos * sgny
                 delta_angle = - self.alpha * self.loss[1] * Variabs.norm_angle * np.pi
+                print(f'delta_tip before corr {delta_tip_x},{delta_tip_y}')
+                print(f'delta_angle before corr {delta_angle}')
             elif self.loss_type == 'Fx_and_tip_torque':
                 # norm_y = Variabs.norm_force * Strctr.hinges * Strctr.L
                 # norm_angle = Variabs.norm_torque * np.pi if (self.control_tip_angle and self.loss.size == 2) else 0.0
@@ -442,7 +444,7 @@ class SupervisorClass:
         if self.normalize_step and np.linalg.norm(np.append(delta_tip, delta_angle)) > 10**(-12):  # normalize if non-zero update
             step_size = np.linalg.norm(np.append(delta_tip, delta_angle))
             # print(f'step_size={step_size}')
-            tradeoff_pos_angle = 2
+            tradeoff_pos_angle = 1/2
             delta_tip = copy.copy(delta_tip)/step_size*self.alpha
             delta_angle = copy.copy(delta_angle)/step_size*self.alpha * tradeoff_pos_angle
             # step_size = 1
@@ -509,6 +511,11 @@ class SupervisorClass:
             print(f'setting update tip position as{self.tip_pos_update_in_t[t, :]}')
             self.tip_angle_update_in_t[t] = self.tip_angle_in_t[t]
             print(f'setting update tip angle as{self.tip_angle_update_in_t[t]}')
+
+        delta_tip_after_corr = self.tip_pos_update_in_t[t, :] - self.tip_pos_update_in_t[t-1, :]
+        delta_angle_after_corr = self.tip_angle_update_in_t[t] - self.tip_angle_update_in_t[t-1]
+        print(f'delta_tip after corr {delta_tip_after_corr}')
+        print(f'delta_angle after corr {delta_angle_after_corr}')
 
         # if correct_for_cut_origin:
             # self.tip_pos_update_in_t[t] = helpers_builders.clamp_tip_no_cross(self.tip_pos_update_in_t[t, :],
