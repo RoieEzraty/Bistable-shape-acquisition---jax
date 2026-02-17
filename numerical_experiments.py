@@ -198,8 +198,8 @@ def measure_determined_pos_from_file(Strctr: "StructureClass", Variabs: "Variabl
     F_x_vec_exp = F[:, 0]
     F_y_vec_exp = F[:, 1]
     print('P', P)
-    F_x_vec = np.zeros(np.size(T))
-    F_y_vec = np.zeros(np.size(T))
+    F_x_vec = np.zeros(np.shape(P)[0])
+    F_y_vec = np.zeros(np.shape(P)[0])
     State = StateClass(Strctr, Sprvsr, buckle_arr=buckle)
     for i, pos in enumerate(P):
         if i == 0:

@@ -75,13 +75,13 @@ def load_pos_force(path: str, mod: Literal["dict", "arrays"] = "dict", stretch_f
                 rows.append({
                     "t_unix": float(r["t_unix"]),
                     "pos": (
-                        float(r["pos_x"]),
-                        float(r["pos_y"]),
-                        float(r["pos_z"]),
+                        float(r["x_tip"]),
+                        float(r["y_tip"]),
+                        float(r["tip_angle_deg"]),
                     ),
                     "force": (
-                        float(r["force_x"]),
-                        float(r["force_y"]),
+                        float(r["F_x"]),
+                        float(r["F_y"]),
                     ),
                 })
         return rows
@@ -101,7 +101,7 @@ def load_pos_force(path: str, mod: Literal["dict", "arrays"] = "dict", stretch_f
                 # ---- position / tip pose ----
                 x = helpers_builders._get_first_in_file(r, ["pos_x", "x_tip", "Px"], name="x")
                 y = helpers_builders._get_first_in_file(r, ["pos_y", "y_tip", "Py"], name="y")
-                theta = helpers_builders._get_first_in_file(r, ["pos_z", "theta", "tip_angle_rad"], name="theta")
+                theta = helpers_builders._get_first_in_file(r, ["theta", "tip_angle_rad", "tip_angle_deg"], name="theta")
 
                 if stretch_factor is not None:
                     x *= stretch_factor

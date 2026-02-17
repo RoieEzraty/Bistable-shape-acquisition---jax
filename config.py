@@ -8,8 +8,8 @@ from dataclasses import dataclass, field
 
 # MATERIAL = "numerical"
 # MATERIAL = "Leon_plastic"
-MATERIAL = "Leon_metal"
-# MATERIAL = "Roie_metal"
+# MATERIAL = "Leon_metal"
+MATERIAL = "Roie_metal"
 
 
 # -----------------------------
@@ -148,7 +148,7 @@ class TrainingConfig:
         # desired_buckle_pattern: tuple = (-1, 1, 1, 1)  # which shims should be buckled up, initially
 
     # init_buckle_pattern: tuple = (-1, -1, -1, -1, 1)  # which shims should be buckled up, initially
-    init_buckle_pattern: tuple = (-1, -1, -1, 1)  # which shims should be buckled up, initially
+    init_buckle_pattern: tuple = (-1, -1, -1, -1)  # which shims should be buckled up, initially
     # init_buckle_pattern: tuple = (1, 1, 1, -1)  # which shims should be buckled up, initially
 
     # dataset_sampling: str = 'uniform'  # random uniform vals for x, y, angle
