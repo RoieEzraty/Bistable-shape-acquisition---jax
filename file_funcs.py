@@ -28,14 +28,18 @@ if TYPE_CHECKING:
 
 def export_stress_strain_sim(Sprvsr: "SupervisorClass", Fx_afo_pos: NDArray[np.float_], Fy_afo_pos: NDArray[np.float_], 
                              L: float, buckle_arr: NDArray[np.int], filename: str = None) -> None:
+    tip_pos_in_t = Sprvsr.tip_pos_in_t * Sprvsr.convert_pos
+    tip_angle_in_t = Sprvsr.tip_angle_in_t * Sprvsr.convert_angle
+    Fx_afo_pos = Fx_afo_pos * Sprvsr.convert_F
+    Fy_afo_pos = Fy_afo_pos * Sprvsr.convert_F
 
     # --- build pandas dataframe ---
     df = pd.DataFrame({
-        "x_tip": Sprvsr.tip_pos_in_t[:, 0],
-        "y_tip": Sprvsr.tip_pos_in_t[:, 1],
-        "tip_angle_rad": Sprvsr.tip_angle_in_t,
-        "Fx": Fx_afo_pos,
-        "Fy": Fy_afo_pos,
+        "x_tip": tip_pos_in_t[:, 0],
+        "y_tip": tip_pos_in_t[:, 1],
+        "tip_angle_deg": tip_angle_in_t,
+        "F_x": Fx_afo_pos,
+        "F_y": Fy_afo_pos,
     })
     if filename is not None:
         pass 
@@ -216,6 +220,15 @@ def export_training_csv(path_csv: str, Strctr, Sprvsr, T=None, State_meas=None, 
     """
     Save one row per training step t.
     """
+    tip_pos_in_t = Sprvsr.tip_pos_in_t * Sprvsr.convert_pos
+    tip_pos_update_in_t = Sprvsr.tip_pos_update_in_t * Sprvsr.convert_pos
+    angle_in_t = Sprvsr.tip_angle_in_t * Sprvsr.convert_angle
+    angle_update_in_t = Sprvsr.tip_angle_update_in_t * Sprvsr.convert_angle
+    meas_Fx = State_meas.Fx_in_t * Sprvsr.convert_F
+    meas_Fy = State_meas.Fy_in_t * Sprvsr.convert_F
+    des_Fx = Sprvsr.desired_Fx_in_t * Sprvsr.convert_F
+    des_Fy = Sprvsr.desired_Fy_in_t * Sprvsr.convert_F
+
     path_csv = Path(path_csv)
     path_csv.parent.mkdir(parents=True, exist_ok=True)
 
@@ -224,18 +237,12 @@ def export_training_csv(path_csv: str, Strctr, Sprvsr, T=None, State_meas=None, 
     H = int(Strctr.hinges)
     S = int(Strctr.shims)
 
-    has_angle = (getattr(Sprvsr, "tip_angle_in_t", None) is not None) and (Sprvsr.tip_angle_in_t is not None)
-    has_upd_angle = (getattr(Sprvsr, "tip_angle_update_in_t", None) is not None) and (Sprvsr.tip_angle_update_in_t is not None)
-
     # ---- header ----
     header = ["t",
-              "tip_x", "tip_y"]
-    if has_angle:
-        header += ["tip_angle"]
-
-    header += ["upd_tip_x", "upd_tip_y"]
-    if has_upd_angle:
-        header += ["upd_tip_angle"]
+              "x_tip", "y_tip"]
+    header += ["tip_angle"]
+    header += ["upd_x_tip", "upd_y_tip"]
+    header += ["upd_tip_angle"]
 
     # loss columns (Sprvsr.loss_in_t is (T, loss_size))
     loss_size = Sprvsr.loss_in_t.shape[1]
@@ -261,25 +268,22 @@ def export_training_csv(path_csv: str, Strctr, Sprvsr, T=None, State_meas=None, 
         w.writerow(header)
 
         for t in range(T):
-            row = [t,
-                   float(Sprvsr.tip_pos_in_t[t, 0]), float(Sprvsr.tip_pos_in_t[t, 1])]
-            if has_angle:
-                row += [float(Sprvsr.tip_angle_in_t[t])]
-
-            row += [float(Sprvsr.tip_pos_update_in_t[t, 0]), float(Sprvsr.tip_pos_update_in_t[t, 1])]
-            if has_upd_angle:
-                row += [float(Sprvsr.tip_angle_update_in_t[t])]
+            row = [t]
+            row += [float(tip_pos_in_t[t, 0]), float(tip_pos_in_t[t, 1])]
+            row += [float(angle_in_t[t])]
+            row += [float(tip_pos_update_in_t[t, 0]), float(tip_pos_update_in_t[t, 1])]
+            row += [float(angle_update_in_t[t])]
 
             row += [float(x) for x in Sprvsr.loss_in_t[t, :]]
 
             row += [float(Sprvsr.loss_MSE_in_t[t])]
 
             if State_meas is not None:
-                row += [float(State_meas.Fx_in_t[t]),
-                        float(State_meas.Fy_in_t[t])]
+                row += [float(meas_Fx[t]),
+                        float(meas_Fy[t])]
 
-            row += [float(Sprvsr.desired_Fx_in_t[t]),
-                    float(Sprvsr.desired_Fy_in_t[t])]
+            row += [float(des_Fx[t]),
+                    float(des_Fy[t])]
 
             if State_update is not None:
                 B = State_update.buckle_in_t[:, :, t]  # (H,S)

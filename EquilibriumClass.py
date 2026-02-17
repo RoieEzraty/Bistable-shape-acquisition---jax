@@ -86,7 +86,6 @@ class EquilibriumClass(eqx.Module):
     damping_coeff: float       # damping coefficient for right hand side of eqn of motion
     mass: float                # Newtonian mass for right hand side of eqn of motion
     tolerance: float           # tolerance for dynamics simulation step size
-    scale_to_N: float          # scale forces to Newtons upon release to State and Sprvsr
     calc_through_energy: bool  # whether to calculate state through grad of energy or derictly w/forces
     ramp_pos: bool             # if True, ramp imposed vals during equilibrium simulation from initials vals to final imposed
     rand_key: int              # random key for noise on DOFs during equilibrium calculation
@@ -107,7 +106,6 @@ class EquilibriumClass(eqx.Module):
         self.mass = CFG.Eq.mass        
         self.time_points = jnp.linspace(0, CFG.Eq.T_eq, int(5e2))
         self.tolerance = CFG.Eq.tolerance
-        self.scale_to_N = CFG.Eq.scale_to_N
 
         # default buckle: all +1
         if buckle_arr is None:
@@ -177,7 +175,7 @@ class EquilibriumClass(eqx.Module):
         vel_in_t : jax.Array, shape (T_eq_samples, N, 2)
             Time history of nodal velocities over the integration time grid.
         potential_force_in_t : jax.Array, shape (T_eq_samples, n_coords)
-            Time history of the internal reaction forces (stretch + bending)
+            Time history of the internal reaction forces (stretch + bending) [mN]
             on each positional DOF, evaluated along the trajectory.
 
         Notes
@@ -213,7 +211,7 @@ class EquilibriumClass(eqx.Module):
                                                                               imposed_mask=Sprvsr.imposed_mask,
                                                                               imposed_vals=imposed_vals)
 
-        forces = potential_F_in_t[-1] * self.scale_to_N
+        forces = potential_F_in_t[-1]  # [mN] from torque files
 
         return final_pos, pos_in_t, vel_in_t, forces
 
@@ -304,7 +302,7 @@ class EquilibriumClass(eqx.Module):
         Returns
         -------
         jax.Array, shape: (2*nodes,)
-            Internal reaction force on **all position DOFs** (no velocities), matching
+            Internal reaction force on **all position DOFs** (no velocities) [mN], matching
             the sign used in the equations of motion:
                 accel = (f_ext + f_internal - damping * xdot_free) / mass
         """
@@ -328,15 +326,15 @@ class EquilibriumClass(eqx.Module):
         theta_jacs = self._theta_jacs_local(Strctr, x_full)  # (H, n_coords)  
 
         # Map torques to DOF forces
-        F_theta_full = (theta_jacs.T @ tau_hinges).reshape(-1)  # (n_coords,) which is (2*nodes,) 
+        F_theta_full = (theta_jacs.T @ tau_hinges).reshape(-1)  # (n_coords,) which is (2*nodes,), [mN]
         
         # ------ Edge stretch forces ------
-        F_stretch_full = self.stretch_forces(Strctr, Variabs, jnp_pos_arr)  # (n_coords,) which is (2*nodes,)
+        F_stretch_full = self.stretch_forces(Strctr, Variabs, jnp_pos_arr)  # (n_coords,) which is (2*nodes,), [mN]
 
         # ------ Intersection of nodes and edges prohibited ------
         # not including contact of neighboring edges, this is strictly trough Variabs.torque
         F_contact_full = self.contact_forces_node_edge(Strctr, Variabs, jnp_pos_arr, Strctr.edges_arr, p=2.0, fmax=None,
-                                                       skip_band=1)  # on
+                                                       skip_band=1)  # [mN]
 
         # jax.debug.print('F_theta_full {}', F_theta_full)
         # jax.debug.print('F_stretch_full {}', F_stretch_full)
@@ -347,12 +345,6 @@ class EquilibriumClass(eqx.Module):
         # max_pot = jnp.max(mag(F_stretch_full))
         # max_con = jnp.max(mag(F_contact_full))
 
-        # lax.cond(
-        #     max_con > 0,
-        #     lambda _: jax.debug.print("max |F|: theta={} stretch={} contact={} inside total_potential_force", max_ext, max_pot, max_con),
-        #     lambda _: None,
-        #     operand=None,
-        # )
         # ------ Combine internal forces (reaction) ------
         # F_internal_full = F_theta_full + F_stretch_full  # (n_coords,) which is (2*nodes,)
         F_internal_full = F_theta_full + F_stretch_full + F_contact_full  # (n_coords,) which is (2*nodes,)
@@ -383,7 +375,7 @@ class EquilibriumClass(eqx.Module):
         Returns
         -------
         jax.Array, shape: (n_coords,) which is (2*nodes,)
-            Internal reaction force on **all position DOFs**.
+            Internal reaction force on **all position DOFs**. [mN] since torque is in [mN]
         """
         # ------ pos_arr from x_full ------
         # already built x_full: (n_coords,) flattened positions ONLY (no velocities)
@@ -400,13 +392,13 @@ class EquilibriumClass(eqx.Module):
         theta_jacs = self._theta_jacs_local(Strctr, x_full)  # (H, n_coords)
 
         # Map torques to DOF forces
-        F_theta_full = (theta_jacs.T @ tau_hinges).reshape(-1)  # (n_coords,) which is (2*nodes,)
+        F_theta_full = (theta_jacs.T @ tau_hinges).reshape(-1)  # (n_coords,) which is (2*nodes,), [mN]
 
         # --- stretch forces ---
-        F_stretch_full = self.stretch_forces(Strctr, Variabs, jnp_pos_arr)      # (n_coords,) which is (2*nodes,)
+        F_stretch_full = self.stretch_forces(Strctr, Variabs, jnp_pos_arr)      # (n_coords,) which is (2*nodes,), [mN]
 
         F_contact_full = self.contact_forces_node_edge(Strctr, Variabs, jnp_pos_arr, Strctr.edges_arr, p=2.0, fmax=None,
-                                                       skip_band=1)
+                                                       skip_band=1)  # [mN]
 
         # jax.debug.print('F_theta_full {}', F_theta_full)
         # jax.debug.print('F_stretch_full {}', F_stretch_full)
@@ -426,7 +418,7 @@ class EquilibriumClass(eqx.Module):
 
         # reaction/internal force on DOFs (same sign you use in rhs)
         # return F_theta_full + F_stretch_full                                # (n_coords,) which is (2*nodes,)
-        return F_theta_full + F_stretch_full + F_contact_full                 # (n_coords,) which is (2*nodes,)
+        return F_theta_full + F_stretch_full + F_contact_full                 # (n_coords,) which is (2*nodes,), [mN]
 
     def potential_force_free(self, Variabs: "VariablesClass", Strctr: "StructureClass", t: float,
                              x_free: jax.Array, *,
@@ -454,7 +446,7 @@ class EquilibriumClass(eqx.Module):
         Returns
         -------
         jax.Array, shape: (sum(free_mask),)
-            Internal reaction force on **free position DOFs** (restoring sign).
+            Internal reaction force on **free position DOFs** (restoring sign), [mN]
         """
         return self.total_potential_force(Variabs, Strctr, t, x_free, free_mask=free_mask, fixed_mask=fixed_mask,
                                           imposed_mask=imposed_mask, fixed_vals=fixed_vals, imposed_vals=imposed_vals)[free_mask]
@@ -480,7 +472,7 @@ class EquilibriumClass(eqx.Module):
         Returns
         -------
         jax.Array, shape: (n_coords,) which is (2*nodes,)
-            Flattened reaction force on all position DOFs.
+            Flattened reaction force on all position DOFs, [mN]
         """
         # pos_arr: (N, 2)
         # Strctr.edge_list: (E, 2) with node indices (ia, ib)
@@ -555,7 +547,7 @@ class EquilibriumClass(eqx.Module):
             if fmax is not None:
                 Fmag = jnp.minimum(Fmag, fmax)
 
-            F = jnp.where(active, Fmag * n, jnp.zeros_like(n))  # force on node i
+            F = jnp.where(active, Fmag * n, jnp.zeros_like(n))  # force on node i, [mN]
 
             # Distribute equal and opposite on the segment endpoints
             Fa = -(1.0 - t) * F
@@ -577,7 +569,7 @@ class EquilibriumClass(eqx.Module):
 
         # Sum contributions:
         # Node forces: add over edges
-        Ftot = Ftot.at[ii].add(jnp.sum(F_i, axis=1))  # (N,2)
+        Ftot = Ftot.at[ii].add(jnp.sum(F_i, axis=1))  # (N,2), [mN]
 
         # Edge endpoint forces: need scatter add with indices j_i,k_i (shape N,M)
         # Flatten N,M -> NM for scatter
@@ -758,9 +750,8 @@ class EquilibriumClass(eqx.Module):
         # Get velocities from the last part of the state vector
         velocities = res[:, Strctr.n_coords:].reshape((len(res), self.jnp_init_pos.shape[0], self.jnp_init_pos.shape[1]))
 
-        # we put the - to have the force as a reaction force
+        # No "-" sign for force as a reaction force?   [mN]
         potential_F_evolution = vmap(lambda x: force_full_fn(x[:Strctr.n_coords].reshape(self.jnp_init_pos.shape).flatten()))(res)
-        # potential_force_evolution.block_until_ready()
 
         return (final_disp, displacements, velocities, potential_F_evolution)
 

@@ -58,6 +58,9 @@ class SupervisorClass:
     control_first_edge: bool = eqx.field(static=True)
     normlize_step: bool = eqx.field(static=True)
     R_free: float = eqx.field(static=True)
+    convert_pos: float = 1000  # convert [m] to [mm]
+    convert_angle: float = 180/np.pi  # convert rad to deg
+    convert_F: float = 1  # already in [mN]
 
     # --- desired targets (fixed-size buffers; NumPy, mutable at runtime) ---
     desired_buckle_arr: NDArray[np.int32] = eqx.field(static=True)                 # (hinges,)
@@ -141,9 +144,14 @@ class SupervisorClass:
             self.tip_angle_update_in_t = np.zeros((self.T,), dtype=np.float32)
             self.total_angle_update_in_t = np.zeros((self.T,), dtype=np.float32)
 
-        self.normalize_step = bool(CFG.Train.normalize_step)
+        self.normalize_step = bool(CFG.Train.normalize_step)  # whether to normalize the training step in [x, y, theta] space
 
-        self.R_free = (Strctr.edges - 1.8)*Strctr.L
+        self.R_free = (Strctr.edges - 2*0.9)*Strctr.L  # maximal radius the chain could have, up to some margin
+
+        # for output files
+        self.convert_pos = CFG.Train.convert_pos
+        self.convert_angle = CFG.Train.convert_angle
+        self.convert_F = CFG.Train.convert_F
 
     def _build_imposed_mask(self, Strctr: "StructureClass", control_tip_pos: bool = True, control_tip_angle: bool = True):
         n_coords = Strctr.n_coords  # 2 * nodes

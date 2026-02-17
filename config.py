@@ -1,5 +1,6 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
+import numpy as np
 
 
 # -----------------------------
@@ -110,9 +111,6 @@ class EquilibriumConfig:
     # tolerance: float = 1e-8
     tolerance: float = 1e-4
 
-    # scale from mN to N
-    scale_to_N: float = 1.00
-
     def __post_init__(self):
         if self.material in {"Leon_plastic", "numerical"}:
             object.__setattr__(self, "k_stretch_ratio", 2e4)
@@ -184,6 +182,10 @@ class TrainingConfig:
     control_first_edge: bool = True  # if True, fix nodes (0, 1) to zero. if Flase, just the first
 
     rand_key_dataset: int = 7  # for random sampling of dataset, if dataset_sampling is True
+
+    convert_pos = 1000  # convert [m] to [mm]
+    convert_angle = 180/np.pi  # convert rad to deg
+    convert_F = 1  # already in [mN]
 
 
 # -----------------------------
