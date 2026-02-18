@@ -123,7 +123,7 @@ class StateClass:
     # Ingest from EquilibriumClass (JAX → NumPy)
     # ---------------------------------------------------------------
     def _save_data(self, t: int, Strctr: "StructureClass", pos_arr: jax.Array = None, buckle_arr: NDArray = None,
-                   Forces: jax.Array = None, control_tip_angle: bool = True) -> None:
+                   Forces: jax.Array = None) -> None:
         """
         Copy arrays from an EquilibriumClass equilibrium solve (JAX) into this (NumPy) state.
 
@@ -136,10 +136,6 @@ class StateClass:
         buckle_arr        - ndarray, optional. Buckle state from the equilibrium solver.
                             None =  initialized `helpers_builders._initiate_buckle`.
         Forces            - (2 * nodes,) jax.Array, optional. Force vector from the equilibrium solver. 
-                            Depending on the `control_tip_angle` flag, sum appropriate components to get net wall forces Fx, Fy.
-        control_tip_angle - bool, default True
-                            True = tip angle controlled and wall forces come from last *two* nodes. 
-                            False = wall forces come from tip node only.
         """
         # ------- positions -------
         if pos_arr is not None:
@@ -158,14 +154,11 @@ class StateClass:
 
         # ------- Force normal on wall -------
         if Forces is not None:
-            if control_tip_angle:  # tip is controlled, forces are sum over 2 final nodes, each axis on its own
-                self.Fx = Forces[-4] + Forces[-2]
-                self.Fy = Forces[-3] + Forces[-1]
-                # self.Fx = Forces[-4]  # only final node
-                # self.Fy = Forces[-3]  # only final node
-            else:  # tip is not controlled, forces are on last node
-                self.Fx = Forces[-2]
-                self.Fy = Forces[-1]
+            # forces are sum over 2 final nodes, each axis on its own
+            self.Fx = Forces[-4] + Forces[-2]
+            self.Fy = Forces[-3] + Forces[-1]
+            # self.Fx = Forces[-4]  # only final node
+            # self.Fy = Forces[-3]  # only final node
         else:
             Forces = np.array([0, 0, 0, 0])
             self.Fx = 0

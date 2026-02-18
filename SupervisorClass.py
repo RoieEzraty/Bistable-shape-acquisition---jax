@@ -34,29 +34,40 @@ class SupervisorClass:
 
     alpha              : float, Step size for updating the commanded tip pose.
     T                  : int, Number of training steps in the dataset.
-    desired_buckle_arr : ndarray[int] (H,S), desired buckle configuration .
-    sampling           : str, optional, Method for generating the command dataset. One of:
-                         'uniform'       = random uniform vals for x, y, angle
-                         'almost flat'   = flat piece, single measurement
-                         'stress strain' = immitate stress strain where compression is in x axis, incremental
-    control_tip_angle  : bool, default=True, control tip angle and includ in losses/updates. If False, only control tip position.
+    desired_buckle_arr : ndarray[int] (H,S), desired buckle configuration.
+    desired_pos_in_t   : ndarray (nodes, 2, T), whole chain configuration in desired buckle state, for every training measurement,
+                         not used for learning, just for forces.
+    desired_Fx/Fy_in_t : ndarray (T,), forces sensed in the desired buckle configuration for every training step measurement
+    tip_pos_in_t       : ndarray (T, 2), training dataset tip positions, Measurement modality.
+    tip_angle_in_t     : ndarray (T,), training dataset tip angles, Measurement modality.
+    loss_in_t          : ndarray (T, 2), loss (x and y) for every measurement during training.
+    loss_MSE_in_t      : ndarray (T,), Mean Squared Error of the x,y loss.
+    tip_pos_update_in_t: ndarray (T, 2), tip position in the Update modality, for every training step.
+    tip_angle_update_in_t : ndarray (T, ), tip angle in the Update modality, for every training step.
+    total_angle_update_in_t : ndarray (T, ), angle between tip and end of first link, in Update modality, for every training step
+    imposed_mask       : # (2*nodes,), boolean of whether a node (ends of edges/facets) is imposed or not
+                         True only at two final nodes, if control_tip==True
+    loss               : (2,), instantaneous loss
+    control_tip        : bool, default=True, control tip position and angle. If False, release tip, chain is free at end.
     control_first_edge : bool, default=True, nodes 0 and 1 are fixed.  If False, only node 0 is fixed.
     normalize_step     : bool, default=True. normalize Update position and angle step size so won't be too large or small
     update_scheme      : str, How tip commands are updated from the loss:
                          'one_to_one'      = direct normalized loss, equal to num of outputs
                          'BEASTAL'         = update using pseudoinverse of the incidence matrix.
                          'BEASTAL_no_pinv' = update using (y_j)(Loss_j), no psuedo inv of the incidence matrix.
-    loss_type          : str, Selects which physical quantities appear in the loss vector.
-                         'cartesian'         = uses (Fx, Fy, tip_torque (if tip angle is controlled)).
-                         'Fx_and_tip_torque' = uses (Fx, tip_torque (if tip angle is controlled))
+    R_free             : Maximal allowed radius [mm] of a taut chain from end of 1st link to beginning of last, up to some margin.
+                         To correct for stretch, tip position never surpasses it.
+    convert_pos        : conversion scale from [m] to [mm], for file exports
+    convert_angle      : conversion scale from [rad] to [deg], for file exports
+    convert_F          : coversion scale of forces needs no adjustment, it is in [mN], for file exports.
     """  
     # --- configuration / hyperparams ---
     T: int = eqx.field(static=True)
     alpha: float = eqx.field(static=True)
     update_scheme: str = eqx.field(static=True)
-    control_tip_angle: bool = eqx.field(static=True)
+    control_tip: bool = eqx.field(static=True)
     control_first_edge: bool = eqx.field(static=True)
-    normlize_step: bool = eqx.field(static=True)
+    normalize_step: bool = eqx.field(static=True)
     R_free: float = eqx.field(static=True)
     convert_pos: float = 1000  # convert [m] to [mm]
     convert_angle: float = 180/np.pi  # convert rad to deg
@@ -67,14 +78,13 @@ class SupervisorClass:
     desired_pos_in_t: NDArray[np.float32] = eqx.field(init=False, static=True)     # (nodes, 2, T)
     desired_Fx_in_t: NDArray[np.float32] = eqx.field(init=False, static=True)      # (T,)
     desired_Fy_in_t: NDArray[np.float32] = eqx.field(init=False, static=True)      # (T,)
-    desired_tau_in_t: Optional[NDArray[np.float32]] = eqx.field(default=None, init=False, static=True)  # (T,)
 
     # --- dataset inputs (what tip we command at each step) ---
     tip_pos_in_t: NDArray[np.float32] = eqx.field(init=False, static=True)         # (T, 2)
     tip_angle_in_t: Optional[NDArray[np.float32]] = eqx.field(default=None, init=False, static=True)    # (T,)
 
     # --- running logs / losses ---
-    loss_in_t: NDArray[np.float32] = eqx.field(init=False, static=True)            # (T, 2) or (T, 3)
+    loss_in_t: NDArray[np.float32] = eqx.field(init=False, static=True)            # (T, 2)
     loss_MSE_in_t: NDArray[np.float32] = eqx.field(init=False, static=True)        # (T,)
     tip_pos_update_in_t: NDArray[np.float32] = eqx.field(init=False, static=True)  # (T, 2)
     tip_angle_update_in_t: Optional[NDArray[np.float32]] = eqx.field(default=None, init=False, 
@@ -86,18 +96,17 @@ class SupervisorClass:
     imposed_mask: jax.ndarray[bool] = eqx.field(static=True)                       # (2*nodes,)
 
     # --- scratch (most recent loss vector) ---
-    loss: NDArray[np.float32] = eqx.field(init=False, static=True)                 # (1,), (2,) or (3,) 
+    loss: NDArray[np.float32] = eqx.field(init=False, static=True)                 # (2,) 
 
     def __init__(self, Strctr, CFG) -> None:
         self.T = int(CFG.Train.T)  # total training-set size (& algorithm time, not to confuse with time to equilib state)
         self.alpha = float(CFG.Train.alpha)
         self.update_scheme = str(CFG.Train.update_scheme)
-        self.control_tip_pos = bool(CFG.Train.control_tip_pos)
-        self.control_tip_angle = bool(CFG.Train.control_tip_angle)
+        self.control_tip = bool(CFG.Train.control_tip)
         self.control_first_edge = bool(CFG.Train.control_first_edge)  # if true, fix nodes (0, 1), else fix only node (0)
 
         # for equilibrium
-        self.imposed_mask = self._build_imposed_mask(Strctr, self.control_tip_pos, self.control_tip_angle)
+        self.imposed_mask = self._build_imposed_mask(Strctr, self.control_tip)
 
         # Desired/targets
         if CFG.Train.desired_buckle_type == 'random':  # uniformly distributed values of +1 and -1
@@ -117,32 +126,22 @@ class SupervisorClass:
         self.desired_pos_in_t = np.zeros((Strctr.nodes, 2, self.T), dtype=np.float32)
         self.desired_Fx_in_t = np.zeros((self.T), dtype=np.float32)
         self.desired_Fy_in_t = np.zeros((self.T), dtype=np.float32)
-        if self.control_tip_angle:
-            self.desired_tau_in_t = np.zeros((self.T), dtype=np.float32)
 
         # Dataset (commands)
         self.tip_pos_in_t = np.zeros((self.T, 2), dtype=np.float32)
-        if self.control_tip_angle:
-            self.tip_angle_in_t = np.zeros((self.T,), dtype=np.float32)
+        self.tip_angle_in_t = np.zeros((self.T,), dtype=np.float32)
 
         # Logs / updates
-        if self.control_tip_angle and CFG.Train.loss_type == 'cartesian':
-            loss_size = 2
-        elif not self.control_tip_angle and CFG.Train.loss_type == 'Fx_and_tip_torque':
-            loss_size = 1
-        else:
-            loss_size = 2
+        loss_size = 2
         self.loss_in_t = np.zeros((self.T, loss_size), dtype=np.float32)
         self.loss_MSE_in_t = np.zeros((self.T,), dtype=np.float32)
 
-        self.loss_type = CFG.Train.loss_type
         # Last loss vector (shape matches control mode)
         self.loss = np.zeros(loss_size, dtype=np.float32)
 
         self.tip_pos_update_in_t = np.zeros((self.T, 2), dtype=np.float32)
-        if self.control_tip_angle:
-            self.tip_angle_update_in_t = np.zeros((self.T,), dtype=np.float32)
-            self.total_angle_update_in_t = np.zeros((self.T,), dtype=np.float32)
+        self.tip_angle_update_in_t = np.zeros((self.T,), dtype=np.float32)
+        self.total_angle_update_in_t = np.zeros((self.T,), dtype=np.float32)
 
         self.normalize_step = bool(CFG.Train.normalize_step)  # whether to normalize the training step in [x, y, theta] space
 
@@ -153,7 +152,7 @@ class SupervisorClass:
         self.convert_angle = CFG.Train.convert_angle
         self.convert_F = CFG.Train.convert_F
 
-    def _build_imposed_mask(self, Strctr: "StructureClass", control_tip_pos: bool = True, control_tip_angle: bool = True):
+    def _build_imposed_mask(self, Strctr: "StructureClass", control_tip: bool = True):
         n_coords = Strctr.n_coords  # 2 * nodes
         N = Strctr.nodes  # number of nodes
         last = N - 1
@@ -162,21 +161,26 @@ class SupervisorClass:
         imposed_mask = jnp.zeros((n_coords,), dtype=bool)
 
         # -------- imposed tip position ----------
-        if control_tip_pos:
+        if control_tip:
             # set tip indices as true 
             idxs = jnp.array([helpers_builders.dof_idx(last, 0), helpers_builders.dof_idx(last, 1)])
-            if control_tip_angle:
-                before_last_idxs = jnp.array([helpers_builders.dof_idx(last - 1, 0), helpers_builders.dof_idx(last - 1, 1)])
-                idxs = jnp.concatenate([before_last_idxs, idxs])
+            before_last_idxs = jnp.array([helpers_builders.dof_idx(last - 1, 0), helpers_builders.dof_idx(last - 1, 1)])
+            idxs = jnp.concatenate([before_last_idxs, idxs])
             imposed_mask = imposed_mask.at[idxs].set(True)  
-        else:
-            if control_tip_angle:
-                print("no tip angle could be imposed without tip loc, skipping tip angle")
 
         return imposed_mask
 
     def create_dataset(self, Strctr: "StructureClass", CFG, sampling: str, tip_pos: Optional[NDArray] = None,
                        tip_angle: Optional[float] = None, dist_noise: float = 0.0, angle_noise: float = 0.0) -> None:
+        """
+        Fill in the tip positions and angles during Measurement modality.
+
+        inputs:
+        sampling     : str, optional, Method for generating the command dataset. One of:
+                     'uniform'       = random uniform vals for x, y, angle
+                     'almost flat'   = flat piece, single measurement
+                     'stress strain' = immitate stress strain where compression is in x axis, incremental
+        """
         # save as variable
         self.dataset_sampling = sampling
 
@@ -186,14 +190,12 @@ class SupervisorClass:
             x_pos_in_t = np.random.uniform((Strctr.edges-1)*Strctr.L, Strctr.edges*Strctr.L, size=self.T)
             y_pos_in_t = np.random.uniform(-Strctr.L/3, Strctr.L/3, size=self.T)
             self.tip_pos_in_t = np.stack(((x_pos_in_t), (y_pos_in_t.T)), axis=1)
-            if self.control_tip_angle and self.tip_angle_in_t is not None:
-                self.tip_angle_in_t[:] = np.random.uniform(-np.pi / 5, np.pi / 5, size=self.T).astype(np.float32)
+            self.tip_angle_in_t[:] = np.random.uniform(-np.pi / 5, np.pi / 5, size=self.T).astype(np.float32)
         elif sampling == 'flat':
             end = float(Strctr.edges)
             tip_pos = np.array([end, 0], dtype=np.float32)
             self.tip_pos_in_t[:] = np.tile(tip_pos, (self.T, 1))
-            if self.control_tip_angle and self.tip_angle_in_t is not None:
-                self.tip_angle_in_t[:] = 0.0
+            self.tip_angle_in_t[:] = 0.0
         elif sampling == 'almost flat':
             end = float(Strctr.edges*Strctr.L)
             tip_pos = np.array([end-0.1*Strctr.L,  0.0*Strctr.L], dtype=np.float32)  # flat arrangement
@@ -208,8 +210,7 @@ class SupervisorClass:
             # noise_angle = noise_scale * np.random.randn(self.T,).astype(np.float32)
             # noise_angle = np.pi/16
             noise_angle = 0
-            if self.control_tip_angle and self.tip_angle_in_t is not None:
-                self.tip_angle_in_t[:] = noise_angle
+            self.tip_angle_in_t[:] = noise_angle
         elif sampling == 'specified':
             self.tip_pos_in_t[:] = np.tile(tip_pos, (self.T, 1))
             self.tip_angle_in_t[:] = tip_angle
@@ -222,9 +223,7 @@ class SupervisorClass:
 
             noisy_zeros_arr = np.zeros_like(tip_arr) + dist_noise  # shape (N,)
             self.tip_pos_in_t[:] = np.column_stack((tip_arr, noisy_zeros_arr))  # shape (N, 2)
-
-            if self.control_tip_angle and self.tip_angle_in_t is not None:
-                self.tip_angle_in_t[:] = angle_noise
+            self.tip_angle_in_t[:] = angle_noise
         elif sampling == "tile":
             self.tip_pos_in_t[:] = np.tile(tip_pos, (self.T // len(tip_pos) + 1, 1))[:self.T]
             tip_angles_block = np.repeat(tip_angle, tip_pos.shape[0])
@@ -232,35 +231,17 @@ class SupervisorClass:
         else:
             raise ValueError(f"Incompatible sampling='{sampling}'")
 
-    def set_desired(self, pos_arr: jax.Array, Fx: float, Fy: float, t: int, tau: Optional[float] = None) -> None:
+    def set_desired(self, pos_arr: jax.Array, Fx: float, Fy: float, t: int) -> None:
         """Store ground-truth targets for step t."""
         self.desired_pos_in_t[:, :, t] = helpers_builders.jax2numpy(pos_arr)
         self.desired_Fx_in_t[t] = float(Fx)
         self.desired_Fy_in_t[t] = float(Fy)
-        if self.control_tip_angle and self.desired_tau_in_t is not None and tau is not None:
-            self.desired_tau_in_t[t] = float(tau)
 
-    def calc_loss(self, Variabs: "VariablesClass", t: int, Fx: float, Fy: float, tau: Optional[float] = None) -> None:
-        """Compute loss vector (Fx,Fy[,tau]) at step t and log it."""
-        if self.loss_type == 'cartesian':
-            # if self.control_tip_angle and tau is not None and self.desired_tau_in_t is not None:
-            #     self.loss = np.array([self.desired_Fx_in_t[t] - Fx, self.desired_Fy_in_t[t] - Fy,
-            #                           self.desired_tau_in_t[t] - tau], dtype=np.float32)
-            #     self.loss = self.loss / np.array([Variabs.norm_force, Variabs.norm_force, 
-            #                                       Variabs.norm_torque], dtype=np.float32)
-            # else:
-            self.loss = np.array([self.desired_Fx_in_t[t] - Fx,
-                                  self.desired_Fy_in_t[t] - Fy], dtype=np.float32)
-            self.loss = self.loss / Variabs.norm_force
-        elif self.loss_type == 'Fx_and_tip_torque':
-            if self.control_tip_angle and tau is not None and self.desired_tau_in_t is not None:
-                self.loss = np.array([self.desired_Fx_in_t[t] - Fx, self.desired_tau_in_t[t] - tau], dtype=np.float32)
-                # normalize, dimless
-                self.loss = self.loss / np.array([Variabs.norm_force, Variabs.norm_torque], dtype=np.float32)
-            else:
-                self.loss = np.array([self.desired_Fx_in_t[t] - Fx], dtype=np.float32)
-                # normalize, dimless
-                self.loss = self.loss / np.array([Variabs.norm_force], dtype=np.float32)
+    def calc_loss(self, Variabs: "VariablesClass", t: int, Fx: float, Fy: float) -> None:
+        """Compute loss vector (Fx,Fy) at step t and log it."""
+        self.loss = np.array([self.desired_Fx_in_t[t] - Fx,
+                              self.desired_Fy_in_t[t] - Fy], dtype=np.float32)
+        self.loss = self.loss / Variabs.norm_force
         self.loss_in_t[t, : self.loss.shape[0]] = self.loss
         self.loss_MSE = np.sqrt(np.sum(self.loss**2))
         self.loss_MSE_in_t[t] = self.loss_MSE
@@ -290,7 +271,7 @@ class SupervisorClass:
             update_vec = - self.alpha * np.matmul(Strctr.DM_dagger, grad_loss_vec)
             delta_tip_x = update_vec[0] * Variabs.norm_pos
             delta_tip_y = update_vec[1] * Variabs.norm_pos
-            delta_angle = -update_vec[2] * Variabs.norm_angle if self.control_tip_angle else 0.0
+            delta_angle = -update_vec[2] * Variabs.norm_angle
         elif self.update_scheme == 'radial_BEASTAL':
             if t == 1:
                 prev_total_angle = 0.0
@@ -347,44 +328,25 @@ class SupervisorClass:
                                                                                                          Strctr.hinges * 
                                                                                                          Strctr.L)
             delta_tip_y = - self.alpha * self.loss[1] / Variabs.norm_force * Strctr.hinges * Strctr.L * current_tip_pos[1]
-            if self.control_tip_angle and self.loss.size == 3:
+            if self.loss.size == 3:
                 delta_angle = + self.alpha * self.loss[2] / Variabs.norm_torque * np.pi/64 * current_tip_angle
             else:
                 delta_angle = 0.0
         elif self.update_scheme == 'one_to_one':
             # large_angle = np.arctan2(self.tip_pos_int_t[t, 1], self.tip_pos_in_t[t, 0])
             # R = np.sqrt(self.tip_pos_int_t[t, 1]**2 + self.tip_pos_int_t[t, 1]**2)
-
-            # delta_tip = - self.alpha * self.loss[:2] / Variabs.norm_force
-            # delta_tip_x = + self.alpha * self.loss[0] / Variabs.norm_force * Strctr.hinges * Strctr.L
-            delta_tip_x = 0.0
-            if self.loss_type == 'cartesian':
-                # delta_tip_y = - self.alpha * self.loss[1] / Variabs.norm_force * Strctr.hinges * Strctr.L
-                # delta_angle = + self.alpha * self.loss[2] / Variabs.norm_torque * np.pi/64 if (self.control_tip_angle and 
-                #                                                                                self.loss.size == 3) else 0.0
-                sgnx = np.sign(self.tip_pos_update_in_t[t-1, 0])
-                sgny = np.sign(self.tip_pos_update_in_t[t-1, 0])
-                # sgny = np.sign(self.tip_pos_update_in_t[t-1, 1])
-                if sgnx == 0.0:  # sign can't be 0
-                    sgnx = 1
-                if sgny == 0.0:
-                    sgny = 1
-                delta_tip_y = - self.alpha * self.loss[0] * Strctr.hinges * Variabs.norm_pos * sgnx
-                delta_tip_x = self.alpha * self.loss[0] * Strctr.hinges * Variabs.norm_pos * sgny
-                delta_angle = - self.alpha * self.loss[1] * Variabs.norm_angle * np.pi
-                print(f'delta_tip before corr {delta_tip_x},{delta_tip_y}')
-                print(f'delta_angle before corr {delta_angle}')
-            elif self.loss_type == 'Fx_and_tip_torque':
-                # norm_y = Variabs.norm_force * Strctr.hinges * Strctr.L
-                # norm_angle = Variabs.norm_torque * np.pi if (self.control_tip_angle and self.loss.size == 2) else 0.0
-                # delta_tip_y = - self.alpha * current_tip_pos[1] / Strctr.L * self.loss[0] / norm_y
-                # delta_angle = - self.alpha * current_tip_angle / (2*np.pi) * self.loss[1] / norm_angle
-                # delta_angle = - self.alpha * current_tip_angle * self.loss[1] * Variabs.norm_angle
-                # delta_tip_y = - self.alpha * np.sign(current_tip_pos[1]) * self.loss[0] * norm_y
-                # delta_angle = - self.alpha * np.sign(current_tip_angle) * self.loss[1] * norm_angle
-                delta_tip_y = - self.alpha * self.loss[0] * Strctr.hinges * Variabs.norm_pos
-                delta_tip_x = copy.copy(delta_tip_y)
-                delta_angle = - self.alpha * self.loss[1] * Variabs.norm_angle * np.pi
+            sgnx = np.sign(self.tip_pos_update_in_t[t-1, 0])
+            sgny = np.sign(self.tip_pos_update_in_t[t-1, 0])
+            # sgny = np.sign(self.tip_pos_update_in_t[t-1, 1])
+            if sgnx == 0.0:  # sign can't be 0
+                sgnx = 1
+            if sgny == 0.0:
+                sgny = 1
+            delta_tip_y = - self.alpha * self.loss[0] * Strctr.hinges * Variabs.norm_pos * sgnx
+            delta_tip_x = self.alpha * self.loss[0] * Strctr.hinges * Variabs.norm_pos * sgny
+            delta_angle = - self.alpha * self.loss[1] * Variabs.norm_angle * np.pi
+            print(f'delta_tip before corr {delta_tip_x},{delta_tip_y}')
+            print(f'delta_angle before corr {delta_angle}')
         elif self.update_scheme == 'radial_one_to_one':
             if t == 1:
                 prev_total_angle = 0.0
@@ -439,8 +401,7 @@ class SupervisorClass:
         #     delta_tip_x = + self.alpha * self.loss[0] / Variabs.norm_force * Strctr.hinges * Strctr.L
         #     delta_tip_y = - self.alpha * self.loss[1] / Variabs.norm_force * Strctr.hinges * Strctr.L
         #     delta_tip = np.array([delta_tip_x, delta_tip_y])
-        #     delta_angle = + self.alpha * self.loss[2] / Variabs.norm_torque * np.pi/64 if (self.control_tip_angle and 
-        #                                                                                    self.loss.size == 3) else 0.0
+        #     delta_angle = + self.alpha * self.loss[2] / Variabs.norm_torque * np.pi/64 if (self.loss.size == 3) else 0.0
         #     print('delta_tip=', delta_tip)
         #     print('delta_angle=', delta_angle)
         else:
@@ -474,12 +435,11 @@ class SupervisorClass:
         self.tip_pos_update_in_t[t, :] = prev_tip_update_pos + delta_tip
 
         # Angle update (only if enabled)
-        if self.control_tip_angle and self.tip_angle_update_in_t is not None:
-            if prev_tip_update_angle is None and t > 0:
-                prev_tip_update_angle = float(self.tip_angle_update_in_t[t - 1])
-            elif prev_tip_update_angle is None:
-                prev_tip_update_angle = current_tip_angle
-            self.tip_angle_update_in_t[t] = prev_tip_update_angle + float(delta_angle)
+        if prev_tip_update_angle is None and t > 0:
+            prev_tip_update_angle = float(self.tip_angle_update_in_t[t - 1])
+        elif prev_tip_update_angle is None:
+            prev_tip_update_angle = current_tip_angle
+        self.tip_angle_update_in_t[t] = prev_tip_update_angle + float(delta_angle)
 
         # add change in tip angle to the total angle from the origin
         if correct_for_total_angle:

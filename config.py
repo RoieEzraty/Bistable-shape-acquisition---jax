@@ -174,11 +174,7 @@ class TrainingConfig:
     else:
         alpha: float = 0.12  # learning rate
 
-    loss_type: str = 'cartesian'
-    # loss_type: str = 'Fx_and_tip_torque'
-
-    control_tip_pos: bool = True  # imposed tip position in measurement and update. If False, tip is free
-    control_tip_angle: bool = True  # impose tip angle in measurement and update. If False, imposed tip pos but free to ratoate
+    control_tip: bool = True  # imposed tip position in measurement and update. If False, tip is free
     control_first_edge: bool = True  # if True, fix nodes (0, 1) to zero. if Flase, just the first
 
     rand_key_dataset: int = 7  # for random sampling of dataset, if dataset_sampling is True

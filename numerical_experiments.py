@@ -49,11 +49,10 @@ def train(Strctr: StructureClass, Variabs: VariablesClass, Sprvsr: SupervisorCla
     #     print('edge lengths', helpers_builders.numpify(edge_lengths))
 
         # --- save sizes and plot - measured & desired ---
-        State_meas._save_data(t, Strctr, final_pos, State_meas.buckle_arr, F_theta, control_tip_angle=Sprvsr.control_tip_angle)
-        State_des._save_data(t, Strctr, final_pos_des, State_des.buckle_arr, F_theta_des,
-                             control_tip_angle=Sprvsr.control_tip_angle)
+        State_meas._save_data(t, Strctr, final_pos, State_meas.buckle_arr, F_theta)
+        State_des._save_data(t, Strctr, final_pos_des, State_des.buckle_arr, F_theta_des)
         
-        Sprvsr.set_desired(final_pos_des, State_des.Fx, State_des.Fy, t, tau=State_des.tip_torque)
+        Sprvsr.set_desired(final_pos_des, State_des.Fx, State_des.Fy, t)
         plot_funcs.plot_arm(final_pos, State_meas.buckle_arr, State_meas.theta_arr, Strctr.L, modality="measurement")
     #     print('potential F sum', F_theta)
         plot_funcs.plot_arm(final_pos_des, State_des.buckle_arr, State_des.theta_arr, Strctr.L, modality="measurement")
@@ -65,15 +64,11 @@ def train(Strctr: StructureClass, Variabs: VariablesClass, Sprvsr: SupervisorCla
     #     print('Fy on tip, desired', State_des.Fy)
     # #     plt.plot(potential_force_in_t[-1,:], '.')
     # #     plt.show()
-    #     print('torque on tip, measurement', State_meas.tip_torque)
-    #     print('torque on tip, desired', State_des.tip_torque)
         
         # ------- loss ------- 
-        Sprvsr.calc_loss(Variabs, t, State_meas.Fx, State_meas.Fy, tau=State_meas.tip_torque)
+        Sprvsr.calc_loss(Variabs, t, State_meas.Fx, State_meas.Fy)
         print('desired Fx=', Sprvsr.desired_Fx_in_t[t])
         print('measured Fx=', State_meas.Fx)
-        print('desired torque=', Sprvsr.desired_tau_in_t[t])
-        print('measured torque=', State_meas.tip_torque)
         print('loss', Sprvsr.loss)
         
         # ------- UPDATE ------- 
@@ -97,8 +92,7 @@ def train(Strctr: StructureClass, Variabs: VariablesClass, Sprvsr: SupervisorCla
                                                                          tip_angle=Sprvsr.tip_angle_update_in_t[t])
 
         # --- save sizes and plot ---
-        State_update._save_data(t, Strctr, final_pos, State_update.buckle_arr, F_theta,
-                                control_tip_angle=Sprvsr.control_tip_angle)
+        State_update._save_data(t, Strctr, final_pos, State_update.buckle_arr, F_theta)
         plot_funcs.plot_arm(final_pos, State_update.buckle_arr, State_update.theta_arr, Strctr.L, modality="update")
     #     print('pre buckle', State_update.buckle_arr.T)
         # print('energy', Eq.energy(Variabs, Strctr, final_pos)[-1])
@@ -270,7 +264,7 @@ def one_shot(Strctr: "StructureClass", Variabs: "VariablesClass", Sprvsr: "Super
         final_pos, pos_in_t, vel_in_t, final_F = Eq.calculate_state(Variabs, Strctr, Sprvsr, init_pos=init_pos,
                                                                     tip_pos=tip_pos, tip_angle=tip_angle)
     # ------ save, plot, print ------
-    State._save_data(t, Strctr, final_pos, State.buckle_arr, final_F, control_tip_angle=Sprvsr.control_tip_angle)
+    State._save_data(t, Strctr, final_pos, State.buckle_arr, final_F)
     print('pos_arr', final_pos)
     print('edge len', Strctr.all_edge_lengths(State.pos_arr))
     print('total edge error', np.sum((Strctr.all_edge_lengths(State.pos_arr)-Strctr.L)**2)/(Strctr.edges*Strctr.L**2))
@@ -356,8 +350,7 @@ def ADMET_stress_strain(Strctr: StructureClass, Variabs: VariablesClass, Sprvsr:
         State.buckle(Variabs, Strctr, i, State)
 
         # Save, plot, store
-        State._save_data(t=i, Strctr=Strctr, pos_arr=final_pos, buckle_arr=State.buckle_arr, Forces=potential_force_in_t,
-                         control_tip_angle=Sprvsr.control_tip_angle)
+        State._save_data(t=i, Strctr=Strctr, pos_arr=final_pos, buckle_arr=State.buckle_arr, Forces=potential_force_in_t)
         print("State tip forces ", [State.Fx, State.Fy])
         print("edge lengths ", State.edge_lengths)
         if plot_every > 0 and (i % plot_every == 0):
