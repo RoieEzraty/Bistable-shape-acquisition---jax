@@ -115,4 +115,4 @@ class VariablesClass(eqx.Module):
             raise ValueError(f"Unknown k_type: {CFG.Variabs.k_type}")
         # Broadcast scalar thresholds to full (H, S) arrays
         self.thresh = thresh_scalar * np.ones((H, S), np.float32)
-        self.norm_force = self.norm_torque / (self.norm_pos * CFG.Eq.scale_to_N)
+        self.norm_force = self.norm_torque / self.norm_pos

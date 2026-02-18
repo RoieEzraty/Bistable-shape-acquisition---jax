@@ -146,11 +146,11 @@ class TrainingConfig:
         # desired_buckle_pattern: tuple = (-1, 1, 1, 1)  # which shims should be buckled up, initially
 
     # init_buckle_pattern: tuple = (-1, -1, -1, -1, 1)  # which shims should be buckled up, initially
-    init_buckle_pattern: tuple = (-1, -1, -1, -1)  # which shims should be buckled up, initially
+    init_buckle_pattern: tuple = (-1, -1, -1, 1)  # which shims should be buckled up, initially
     # init_buckle_pattern: tuple = (1, 1, 1, -1)  # which shims should be buckled up, initially
 
-    # dataset_sampling: str = 'uniform'  # random uniform vals for x, y, angle
-    dataset_sampling: str = 'specified'  # constant
+    dataset_sampling: str = 'uniform'  # random uniform vals for x, y, angle
+    # dataset_sampling: str = 'specified'  # constant
     # dataset_sampling: str = 'tile'  # constant
     # dataset_sampling = 'almost flat'  # flat piece, single measurement
     # dataset_sampling = 'stress strain'
@@ -170,7 +170,7 @@ class TrainingConfig:
     if update_scheme == 'radial_BEASTAL' and not normalize_step:
         alpha: float = 1.0  # learning rate
     elif normalize_step:
-        alpha: float = 0.1
+        alpha: float = 0.8
     else:
         alpha: float = 0.12  # learning rate
 

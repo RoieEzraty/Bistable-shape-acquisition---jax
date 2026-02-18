@@ -240,7 +240,7 @@ def export_training_csv(path_csv: str, Strctr, Sprvsr, T=None, State_meas=None, 
     # ---- header ----
     header = ["t",
               "x_tip", "y_tip"]
-    header += ["tip_angle"]
+    header += ["tip_angle_deg"]
     header += ["upd_x_tip", "upd_y_tip"]
     header += ["upd_tip_angle"]
 
