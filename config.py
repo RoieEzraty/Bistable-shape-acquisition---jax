@@ -63,9 +63,11 @@ class VariablesConfig:
             object.__setattr__(self, "k_stiff", None)
         elif self.material == "Roie_metal":
             object.__setattr__(self, "k_type", "Roie_metal_csv")
-            object.__setattr__(self, "tau_file", "Roie_metal_singleMylar_short.csv")
+            # object.__setattr__(self, "tau_file", "Roie_metal_singleMylar_short.csv")
+            object.__setattr__(self, "tau_file", "Stress_Strain_steel_1myl1tp_short.csv")
             object.__setattr__(self, "thetas_ss", 0.91)  # not used in experimental
-            object.__setattr__(self, "thresh", 1.58)
+            # object.__setattr__(self, "thresh", 1.58)
+            object.__setattr__(self, "thresh", 1.9)
             object.__setattr__(self, "k_soft", None)
             object.__setattr__(self, "k_stiff", None)
         elif self.material == "numerical":

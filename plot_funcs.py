@@ -230,21 +230,23 @@ def loss_and_buckle_in_t(loss_MSE_in_t, buckle_in_t, F_meas_in_t, F_des_in_t, st
 
     # -------- subplot 0: forces --------
     # measured (solid)
-    axes[0].plot(t, F_meas_in_t[0, start:end]/1000, color=colors_lst[1], linestyle='-', label=r"$F_x$ meas")
-    axes[0].plot(t, F_meas_in_t[1, start:end]/1000, color=colors_lst[2], linestyle='-', label=r"$F_y$ meas")
+    axes[0].plot(t, F_meas_in_t[0, start:end], color=colors_lst[1], linestyle='-', label=r"$F_x$ meas")
+    axes[0].plot(t, F_meas_in_t[1, start:end], color=colors_lst[2], linestyle='-', label=r"$F_y$ meas")
 
     # desired (dotted)
-    axes[0].plot(t, F_des_in_t[0, start:end]/1000, color=colors_lst[1], linestyle=':', label=r"$F_x$ des")
-    axes[0].plot(t, F_des_in_t[1, start:end]/1000, color=colors_lst[2], linestyle=':', label=r"$F_y$ des")
+    axes[0].plot(t, F_des_in_t[0, start:end], color=colors_lst[1], linestyle=':', label=r"$F_x$ des")
+    axes[0].plot(t, F_des_in_t[1, start:end], color=colors_lst[2], linestyle=':', label=r"$F_y$ des")
 
-    axes[0].set_ylabel("Force [N]")
+    axes[0].set_ylabel("Force [mN]")
     axes[0].legend(ncol=2)
     axes[0].xaxis.set_major_locator(MaxNLocator(integer=True))
+    axes[0].set_ylim([-130, 330])
 
     # -------- subplot 1: loss --------
     axes[1].plot(t, loss_MSE_in_t[start:end])
     axes[1].set_ylabel("Loss")
     axes[1].xaxis.set_major_locator(MaxNLocator(integer=True))
+    axes[1].set_ylim([-0.02, 5.2])
 
     # -------- subplot 2: buckle states --------
     H = buckle_in_t.shape[0]

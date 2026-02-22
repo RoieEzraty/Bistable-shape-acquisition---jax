@@ -187,8 +187,8 @@ class SupervisorClass:
         # tip positions and angles for specified tip dataset
         if sampling == 'uniform':
             np.random.seed(CFG.Train.rand_key_dataset)
-            x_pos_in_t = np.random.uniform((Strctr.edges-1)*Strctr.L, Strctr.edges*Strctr.L, size=self.T)
-            y_pos_in_t = np.random.uniform(-Strctr.L/3, Strctr.L/3, size=self.T)
+            x_pos_in_t = np.random.uniform((Strctr.edges-1.5)*Strctr.L, (Strctr.edges-0.5)*Strctr.L, size=self.T)
+            y_pos_in_t = np.random.uniform(-Strctr.L/2, Strctr.L/2, size=self.T)
             self.tip_pos_in_t = np.stack(((x_pos_in_t), (y_pos_in_t.T)), axis=1)
             self.tip_angle_in_t[:] = np.random.uniform(-np.pi / 5, np.pi / 5, size=self.T).astype(np.float32)
         elif sampling == 'flat':

@@ -153,7 +153,7 @@ def build_torque_and_k_from_file(path: str, *, contact: bool = True, angles_in_d
     theta = data[:, 0]
     tau = data[:, 1]
 
-    if path == "Roie_metal_singleMylar_short.csv":  # flip axes
+    if path in {"Roie_metal_singleMylar_short.csv", "Stress_Strain_steel_1myl1tp_short.csv", "Stress_Strain_steel_1myl1tp_otherEnd_short.csv"}:  # flip axes
         tau = -tau
 
     # degrees -> radians if needed
