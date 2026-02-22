@@ -49,14 +49,14 @@ class VariablesConfig:
     def __post_init__(self):
         if self.material == "Leon_plastic":
             object.__setattr__(self, "k_type", "Leon_plastic_txt")
-            object.__setattr__(self, "tau_file", "Roee_offset3mm_dl75.txt")
+            object.__setattr__(self, "tau_file", "single_hinge_files/Roee_offset3mm_dl75.txt")
             object.__setattr__(self, "thetas_ss", 1.03312)  # not used in experimental
             object.__setattr__(self, "thresh", 1.96257)
             object.__setattr__(self, "k_soft", None)
             object.__setattr__(self, "k_stiff", None)
         elif self.material == "Leon_metal":
             object.__setattr__(self, "k_type", "Leon_metal_txt")
-            object.__setattr__(self, "tau_file", "Roee_metal_offset3mm_dl75.txt")
+            object.__setattr__(self, "tau_file", "single_hinge_files/Roee_metal_offset3mm_dl75.txt")
             object.__setattr__(self, "thetas_ss", 1.227)  # not used in experimental
             object.__setattr__(self, "thresh", 1.693)
             object.__setattr__(self, "k_soft", None)
@@ -64,7 +64,7 @@ class VariablesConfig:
         elif self.material == "Roie_metal":
             object.__setattr__(self, "k_type", "Roie_metal_csv")
             # object.__setattr__(self, "tau_file", "Roie_metal_singleMylar_short.csv")
-            object.__setattr__(self, "tau_file", "Stress_Strain_steel_1myl1tp_short.csv")
+            object.__setattr__(self, "tau_file", "single_hinge_files/Stress_Strain_steel_1myl1tp_short.csv")
             object.__setattr__(self, "thetas_ss", 0.91)  # not used in experimental
             # object.__setattr__(self, "thresh", 1.58)
             object.__setattr__(self, "thresh", 1.9)
@@ -179,7 +179,7 @@ class TrainingConfig:
     control_tip: bool = True  # imposed tip position in measurement and update. If False, tip is free
     control_first_edge: bool = True  # if True, fix nodes (0, 1) to zero. if Flase, just the first
 
-    rand_key_dataset: int = 7  # for random sampling of dataset, if dataset_sampling is True
+    rand_key_dataset: int = 8  # for random sampling of dataset, if dataset_sampling is True
 
     convert_pos = 1000  # convert [m] to [mm]
     convert_angle = 180/np.pi  # convert rad to deg

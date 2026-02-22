@@ -110,7 +110,7 @@ class SupervisorClass:
 
         # Desired/targets
         if CFG.Train.desired_buckle_type == 'random':  # uniformly distributed values of +1 and -1
-            key = jax.random.PRNGKey(CFG.Traindesired_buckle_rand_key)   # seed
+            key = jax.random.PRNGKey(CFG.Train.desired_buckle_rand_key)   # seed
             desired_buckle = jax.random.randint(key, (Strctr.hinges, Strctr.shims), minval=-1, maxval=2)  # +1, 0 or -1
             desired_buckle = desired_buckle.at[desired_buckle == 0].set(-1)  # replace 0 w/ -1
         elif CFG.Train.desired_buckle_type == 'opposite':  # opposite than initial buckle, requires creating the initial buckle
@@ -345,8 +345,6 @@ class SupervisorClass:
             delta_tip_y = - self.alpha * self.loss[0] * Strctr.hinges * Variabs.norm_pos * sgnx
             delta_tip_x = self.alpha * self.loss[0] * Strctr.hinges * Variabs.norm_pos * sgny
             delta_angle = - self.alpha * self.loss[1] * Variabs.norm_angle * np.pi
-            print(f'delta_tip before corr {delta_tip_x},{delta_tip_y}')
-            print(f'delta_angle before corr {delta_angle}')
         elif self.update_scheme == 'radial_one_to_one':
             if t == 1:
                 prev_total_angle = 0.0
@@ -407,8 +405,8 @@ class SupervisorClass:
         else:
             raise ValueError(f"Unknown update_scheme='{self.update_scheme}'")
         delta_tip = np.array([delta_tip_x, delta_tip_y])
-        # print('delta_tip=', delta_tip)
-        # print('delta_angle=', delta_angle)
+        print(f'delta_tip before corr {delta_tip}')
+        print(f'delta_angle before corr {delta_angle}')
 
         if self.normalize_step and np.linalg.norm(np.append(delta_tip, delta_angle)) > 10**(-12):  # normalize if non-zero update
             step_size = np.linalg.norm(np.append(delta_tip, delta_angle))
@@ -422,15 +420,16 @@ class SupervisorClass:
             # print(f'delta_angle after normalization={delta_angle}')
             # self.tip_pos_update_in_t[t, :] = prev_tip_update_pos + self.alpha*delta_tip/step_size
             # self.tip_angle_update_in_t[t] = prev_tip_update_angle + self.alpha*(float(delta_angle) + delta_total_angle)/step_size
-            # print(f'normalized position step from {delta_tip} to {self.alpha*delta_tip/step_size}')
-            # print(f'normalized angle step from {float(delta_angle) + delta_total_angle}')
+            print(f'normalized position to {delta_tip}')
+            print(f'normalized angle to {float(delta_angle)}')
             # print(f'to {self.alpha*(float(delta_angle) + delta_total_angle)/step_size}')
 
         # insert into tip_pos_update
         if prev_tip_update_pos is None:
             prev_tip_update_pos = self.tip_pos_update_in_t[t-1, :]
         # delta_tip = self.alpha*(np.array([Fx, Fy]) - current_tip_pos)*(self.loss) * ([2, 0.5])  # not BEASTAL
-        # print(f'prev_tip_update_pos{prev_tip_update_pos}')
+        print(f'prev_tip_update_pos{prev_tip_update_pos}')
+        print(f'prev_tip_update_angle{prev_tip_update_angle}')
         # print(f'delta_tip{delta_tip}')
         self.tip_pos_update_in_t[t, :] = prev_tip_update_pos + delta_tip
 
