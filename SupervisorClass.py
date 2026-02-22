@@ -411,17 +411,23 @@ class SupervisorClass:
             print(f'delta_angle before corr {delta_angle}')
 
         if self.normalize_step and np.linalg.norm(np.append(delta_tip, delta_angle)) > 10**(-12):  # normalize if non-zero update
+            
+            # old version up to Feb22
             step_size = np.linalg.norm(np.append(delta_tip, delta_angle))
             # print(f'step_size={step_size}')
-            tradeoff_pos_angle = 1/2
-            delta_tip = copy.copy(delta_tip)/step_size*self.alpha
-            delta_angle = copy.copy(delta_angle)/step_size*self.alpha * tradeoff_pos_angle
-            # step_size = 1
-            # self.tip_pos_update_in_t[t, :] = prev_tip_update_pos + delta_tip
+            # tradeoff_pos_angle = 1/2
+            # delta_tip = copy.copy(delta_tip)/step_size*self.alpha
+            # delta_angle = copy.copy(delta_angle)/step_size*self.alpha * tradeoff_pos_angle
+            
+            # new version from Feb22
+            pos_step_size = np.linalg.norm(delta_tip)
+            angle_step_size = np.linalg.norm(delta_angle)
+            tradeoff_pos_angle = 6
+            delta_tip = copy.copy(delta_tip)/pos_step_size*self.alpha
+            delta_angle = copy.copy(delta_angle)*(angle_step_size/step_size)*self.alpha * tradeoff_pos_angle 
+            
             # print(f'delta_tip after normalization={delta_tip}')
             # print(f'delta_angle after normalization={delta_angle}')
-            # self.tip_pos_update_in_t[t, :] = prev_tip_update_pos + self.alpha*delta_tip/step_size
-            # self.tip_angle_update_in_t[t] = prev_tip_update_angle + self.alpha*(float(delta_angle) + delta_total_angle)/step_size
             if not self.supress_prints:
                 print(f'normalized position to {delta_tip}')
                 print(f'normalized angle to {float(delta_angle)}')

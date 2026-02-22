@@ -172,7 +172,7 @@ class TrainingConfig:
     if update_scheme == 'radial_BEASTAL' and not normalize_step:
         alpha: float = 1.0  # learning rate
     elif normalize_step:
-        alpha: float = 1.0
+        alpha: float = 0.05
     else:
         alpha: float = 0.12  # learning rate
 
