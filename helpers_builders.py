@@ -370,17 +370,16 @@ def _correct_big_stretch(tip_pos: NDArray[np.float_], tip_angle: float, total_an
     if actual_stretch > max_stretch:
         ratio = max_stretch / actual_stretch
         corrected = (before_last - second_node) * ratio + (second_node + tip_pos - before_last)
-        # print('corrected tip_pos_update_in_t[t, :]=', corrected)
-        # print('with maximal stretch', max_stretch)
         return corrected
 
     # Otherwise nothing to correct
     return tip_pos
 
 
-def _correct_big_stretch_robot_style(tip_pos, tip_angle, total_angle, R_free, L, margin=0.0):
+def _correct_big_stretch_robot_style(tip_pos, tip_angle, total_angle, R_free, L, margin=0.0, supress_prints: bool = True):
     
-    print(f'update vals before correction={tip_pos},{tip_angle}')
+    if not supress_prints:
+        print(f'update vals before correction={tip_pos},{tip_angle}')
     # Compute the location of the node before the tip
     before_last = np.array([tip_pos[0] - L * np.cos(tip_angle), tip_pos[1] - L * np.sin(tip_angle)])
 
@@ -390,11 +389,11 @@ def _correct_big_stretch_robot_style(tip_pos, tip_angle, total_angle, R_free, L,
     # chain current radius
     disp = before_last - second_node
     r_chain = np.hypot(disp[0], disp[1])
-    print(f'r_chain{r_chain}')
-
     R_eff = effective_radius(R_free, L, total_angle, tip_angle)
-    print(f'R_eff{R_eff}')
-    # print(f'R_free{R_free}')
+
+    if not supress_prints:
+        print(f'r_chain{r_chain}')
+        print(f'R_eff{R_eff}')
 
     x2, y2 = None, None
 
@@ -402,25 +401,27 @@ def _correct_big_stretch_robot_style(tip_pos, tip_angle, total_angle, R_free, L,
         scale = (R_eff - margin*L) / r_chain
         x2 = second_node[0] + (tip_pos[0]-second_node[0]) * scale
         y2 = second_node[1] + (tip_pos[1]-second_node[1]) * scale
-        print(f'clamped from x={tip_pos[0]},y={tip_pos[1]} to x={x2},y={y2}')
+        if not supress_prints:
+            print(f'clamped from x={tip_pos[0]},y={tip_pos[1]} to x={x2},y={y2}')
         return np.array([x2, y2])
     else:
         return tip_pos
 
 
-def effective_radius(R, L, total_angle, tip_angle, margin=0.0) -> float:
+def effective_radius(R, L, total_angle, tip_angle, margin=0.0, supress_prints: bool = True) -> float:
     # total_angle should be *unwrapped* (can exceed 360)
-    # print(f'total_angle={total_angle:.2f}, tip_angle={tip_angle:.2f}')
     delta = float(np.abs(total_angle - tip_angle))  # radians, unwrapped
     two_pi = 2.0 * np.pi
     n_rev = int(np.floor(delta / two_pi))
     rem = delta - n_rev * two_pi  # in [0, 2π)
 
     shrink_full = (2.0 * L) * n_rev
-    print('shrink due to revolutions', shrink_full)
+    
     shrink_partial = L * (1.0 - np.cos(rem / 2.0))  # in [0, 2L)
     # shrink_partial = L * (1.0 - np.cos(rem))  # in [0, 2L)
-    print('shrink remainder in [mm]', shrink_partial)
+    if not supress_prints:
+        print('shrink due to revolutions', shrink_full)
+        print('shrink remainder in [mm]', shrink_partial)
 
     shrink = shrink_full + shrink_partial
     return max(0.0, (R - margin) - shrink)

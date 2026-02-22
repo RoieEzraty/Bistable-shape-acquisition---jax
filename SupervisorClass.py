@@ -98,7 +98,7 @@ class SupervisorClass:
     # --- scratch (most recent loss vector) ---
     loss: NDArray[np.float32] = eqx.field(init=False, static=True)                 # (2,) 
 
-    def __init__(self, Strctr, CFG) -> None:
+    def __init__(self, Strctr, CFG, supress_prints: bool = True) -> None:
         self.T = int(CFG.Train.T)  # total training-set size (& algorithm time, not to confuse with time to equilib state)
         self.alpha = float(CFG.Train.alpha)
         self.update_scheme = str(CFG.Train.update_scheme)
@@ -151,6 +151,8 @@ class SupervisorClass:
         self.convert_pos = CFG.Train.convert_pos
         self.convert_angle = CFG.Train.convert_angle
         self.convert_F = CFG.Train.convert_F
+
+        self.supress_prints = supress_prints
 
     def _build_imposed_mask(self, Strctr: "StructureClass", control_tip: bool = True):
         n_coords = Strctr.n_coords  # 2 * nodes
@@ -267,7 +269,6 @@ class SupervisorClass:
             outputs_normalized = np.array([State.Fx/Variabs.norm_force, State.Fy/Variabs.norm_force], dtype=np.float32)
             grad_loss_vec = learning_funcs.grad_loss_FC(Strctr.NE, inputs_normalized, outputs_normalized,
                                                         Strctr.DM, Strctr.output_nodes_arr, self.loss)
-            print('grad_loss_vec', grad_loss_vec)
             update_vec = - self.alpha * np.matmul(Strctr.DM_dagger, grad_loss_vec)
             delta_tip_x = update_vec[0] * Variabs.norm_pos
             delta_tip_y = update_vec[1] * Variabs.norm_pos
@@ -405,8 +406,9 @@ class SupervisorClass:
         else:
             raise ValueError(f"Unknown update_scheme='{self.update_scheme}'")
         delta_tip = np.array([delta_tip_x, delta_tip_y])
-        print(f'delta_tip before corr {delta_tip}')
-        print(f'delta_angle before corr {delta_angle}')
+        if not self.supress_prints:
+            print(f'delta_tip before corr {delta_tip}')
+            print(f'delta_angle before corr {delta_angle}')
 
         if self.normalize_step and np.linalg.norm(np.append(delta_tip, delta_angle)) > 10**(-12):  # normalize if non-zero update
             step_size = np.linalg.norm(np.append(delta_tip, delta_angle))
@@ -420,16 +422,18 @@ class SupervisorClass:
             # print(f'delta_angle after normalization={delta_angle}')
             # self.tip_pos_update_in_t[t, :] = prev_tip_update_pos + self.alpha*delta_tip/step_size
             # self.tip_angle_update_in_t[t] = prev_tip_update_angle + self.alpha*(float(delta_angle) + delta_total_angle)/step_size
-            print(f'normalized position to {delta_tip}')
-            print(f'normalized angle to {float(delta_angle)}')
+            if not self.supress_prints:
+                print(f'normalized position to {delta_tip}')
+                print(f'normalized angle to {float(delta_angle)}')
             # print(f'to {self.alpha*(float(delta_angle) + delta_total_angle)/step_size}')
 
         # insert into tip_pos_update
         if prev_tip_update_pos is None:
             prev_tip_update_pos = self.tip_pos_update_in_t[t-1, :]
         # delta_tip = self.alpha*(np.array([Fx, Fy]) - current_tip_pos)*(self.loss) * ([2, 0.5])  # not BEASTAL
-        print(f'prev_tip_update_pos{prev_tip_update_pos}')
-        print(f'prev_tip_update_angle{prev_tip_update_angle}')
+        if not self.supress_prints:
+            print(f'prev_tip_update_pos{prev_tip_update_pos}')
+            print(f'prev_tip_update_angle{prev_tip_update_angle}')
         # print(f'delta_tip{delta_tip}')
         self.tip_pos_update_in_t[t, :] = prev_tip_update_pos + delta_tip
 
@@ -459,13 +463,11 @@ class SupervisorClass:
         # print('update angle change', self.tip_angle_update_in_t[t]-self.tip_angle_update_in_t[t-1])
 
         # correct for to big a stretch
-        # self.tip_pos_update_in_t[t, :] = helpers_builders._correct_big_stretch(self.tip_pos_update_in_t[t],
-        #                                                                        self.tip_angle_update_in_t[t], total_angle,
-        #                                                                        Strctr.L, Strctr.edges)
         self.tip_pos_update_in_t[t, :] = helpers_builders._correct_big_stretch_robot_style(self.tip_pos_update_in_t[t], 
                                                                                            self.tip_angle_update_in_t[t],
                                                                                            total_angle, self.R_free, Strctr.L,
-                                                                                           margin=0.1)
+                                                                                           margin=0.1, 
+                                                                                           supress_prints=self.supress_prints)
 
         cond_coil = np.abs(self.tip_angle_update_in_t[t]) > 3.5*np.pi
         cond_cut_origin = np.linalg.norm(self.tip_pos_update_in_t[t, :]) < Strctr.L
@@ -481,8 +483,9 @@ class SupervisorClass:
 
         delta_tip_after_corr = self.tip_pos_update_in_t[t, :] - self.tip_pos_update_in_t[t-1, :]
         delta_angle_after_corr = self.tip_angle_update_in_t[t] - self.tip_angle_update_in_t[t-1]
-        print(f'delta_tip after corr {delta_tip_after_corr}')
-        print(f'delta_angle after corr {delta_angle_after_corr}')
+        if not self.supress_prints:
+            print(f'delta_tip after corr {delta_tip_after_corr}')
+            print(f'delta_angle after corr {delta_angle_after_corr}')
 
         # if correct_for_cut_origin:
             # self.tip_pos_update_in_t[t] = helpers_builders.clamp_tip_no_cross(self.tip_pos_update_in_t[t, :],
