@@ -152,6 +152,35 @@ def _initiate_buckle(hinges: int, shims: int, buckle_pattern: tuple = (), numpif
         return buckle
 
 
+def _circle_circle_intersections_np(c0, r0, c1, r1, eps=1e-12):
+    c0 = np.asarray(c0, float).reshape(2,)
+    c1 = np.asarray(c1, float).reshape(2,)
+    r0 = float(r0); r1 = float(r1)
+
+    dvec = c1 - c0
+    d = np.linalg.norm(dvec)
+
+    if d > r0 + r1 + eps:
+        return []
+    if d < abs(r0 - r1) - eps:
+        return []
+    if d < eps:  # coincident centers / degenerate
+        return []
+
+    a = (r0*r0 - r1*r1 + d*d) / (2*d)
+    h2 = r0*r0 - a*a
+    if h2 < 0:
+        h2 = 0.0
+    h = np.sqrt(h2)
+
+    p2 = c0 + a * dvec / d
+    perp = np.array([-dvec[1], dvec[0]]) / d
+
+    if h <= eps:
+        return [p2]
+    return [p2 + h*perp, p2 - h*perp]
+
+
 # ------ DOFs - free and essential ------
 def _assemble_full_from_free(free_mask: jax.Array,       # bool (n_coords,)
                              fixed_mask: jax.Array,      # bool (n_coords,)
@@ -241,21 +270,31 @@ def _get_state_free_from_full(state_0, fixed_mask, imposed_mask):
     return free_mask, n_free_DOFs, jnp.concatenate([state_0_x_free, state_0_x_dot_free])
 
 
-def _get_before_tip(tip_pos: jnp.ndarray,
-                    tip_angle: jnp.ndarray,
+def _get_before_tip(tip_pos,
+                    tip_angle,
                     L: float,
                     *,
-                    dtype=jnp.float32) -> jnp.ndarray:
-    """Return coordinates of the node that is one before the tip.
-
-    tip_pos: (2,) tip [x, y]
-    tip_angle: scalar (radians), CCW from +x
-    L: edge length of last link
+                    xp=jnp,
+                    dtype=None):
     """
-    tip_pos = jnp.asarray(tip_pos, dtype=dtype).reshape((2,))
-    dx = L * jnp.cos(tip_angle)
-    dy = L * jnp.sin(tip_angle)
-    return tip_pos - jnp.array([dx, dy], dtype=dtype)
+    Return coordinates of the node that is one before the tip.
+
+    Works with numpy (xp=np) or jax.numpy (xp=jnp).
+    tip_pos: (2,)
+    tip_angle: scalar
+    L: float
+    """
+    if dtype is None:
+        tip_pos = xp.asarray(tip_pos).reshape((2,))
+    else:
+        tip_pos = xp.asarray(tip_pos, dtype=dtype).reshape((2,))
+
+    dx = L * xp.cos(tip_angle)
+    dy = L * xp.sin(tip_angle)
+
+    if dtype is None:
+        return tip_pos - xp.array([dx, dy])
+    return tip_pos - xp.array([dx, dy], dtype=dtype)
 
 
 def _get_tip_angle(pos_arr: np.array) -> np.array:
@@ -317,6 +356,55 @@ def _get_total_angle(tip_pos: np.array, prev_total_angle, L: float) -> np.array:
     total_angle = prev_total_angle + delta
 
     return total_angle
+
+
+def clamp_preserve_before_step_np(
+    *,
+    tip_prev,            # (2,)
+    before_prev,         # (2,)
+    tip_angle_new,       # scalar (already updated)
+    tip_raw,             # (2,) proposed tip after your normalized step
+    second_node,         # (2,) usually [L, 0]
+    R_lim,               # scalar
+    L: float,
+    eps=1e-12,
+):
+    """
+    Enforce ||before - second_node|| <= R_lim
+    while preserving ||before_new - before_prev|| = ||before_raw - before_prev|| (when possible).
+    """
+    tip_prev = np.asarray(tip_prev, float).reshape(2,)
+    before_prev = np.asarray(before_prev, float).reshape(2,)
+    tip_raw = np.asarray(tip_raw, float).reshape(2,)
+    second_node = np.asarray(second_node, float).reshape(2,)
+    R_lim = float(R_lim)
+
+    # raw before-tip implied by tip_raw and tip_angle_new
+    before_raw = tip_raw - L*np.array([np.cos(tip_angle_new), np.sin(tip_angle_new)], float)
+
+    disp_raw = before_raw - second_node
+    r_raw = np.linalg.norm(disp_raw)
+
+    if r_raw <= R_lim + eps:
+        return tip_raw, before_raw, False  # no clamp
+
+    step = np.linalg.norm(before_raw - before_prev)
+
+    # circle-circle intersection: constraint circle & step circle
+    pts = _circle_circle_intersections_np(second_node, R_lim, before_prev, step, eps=eps)
+
+    if len(pts) == 0:
+        # fallback: radial clamp in before-space
+        if r_raw < eps:
+            before_new = second_node + np.array([R_lim, 0.0])
+        else:
+            before_new = second_node + disp_raw * (R_lim / r_raw)
+    else:
+        # pick intersection closest to raw proposal
+        before_new = min(pts, key=lambda p: np.sum((p - before_raw)**2))
+
+    tip_new = before_new + L*np.array([np.cos(tip_angle_new), np.sin(tip_angle_new)], float)
+    return tip_new, before_new, True
 
 
 # def _correct_big_stretch(tip_pos: NDArray[np.float_], tip_angle: float, total_angle: float, L: float,
@@ -417,8 +505,8 @@ def effective_radius(R, L, total_angle, tip_angle, margin=0.0, supress_prints: b
 
     shrink_full = (2.0 * L) * n_rev
     
-    # shrink_partial = L * (1.0 - np.cos(rem / 2.0))  # in [0, 2L)
-    shrink_partial = L * (1.0 - np.cos(rem))  # in [0, 2L)
+    shrink_partial = L * (1.0 - np.cos(rem / 2.0))  # in [0, 2L)
+    # shrink_partial = L * (1.0 - np.cos(rem))  # in [0, 2L)
     if not supress_prints:
         print('shrink due to revolutions', shrink_full)
         print('shrink remainder in [mm]', shrink_partial)

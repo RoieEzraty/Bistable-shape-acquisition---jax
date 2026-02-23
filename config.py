@@ -67,7 +67,8 @@ class VariablesConfig:
             object.__setattr__(self, "tau_file", "single_hinge_files/Stress_Strain_steel_1myl1tp_short.csv")
             object.__setattr__(self, "thetas_ss", 0.91)  # not used in experimental
             # object.__setattr__(self, "thresh", 1.58)
-            object.__setattr__(self, "thresh", 1.9)
+            # object.__setattr__(self, "thresh", 1.9)  # Feb22 measurements from just before Red South
+            object.__setattr__(self, "thresh", 1.53)  # Feb23 realistically from just before red south
             object.__setattr__(self, "k_soft", None)
             object.__setattr__(self, "k_stiff", None)
         elif self.material == "numerical":
@@ -172,14 +173,14 @@ class TrainingConfig:
     if update_scheme == 'radial_BEASTAL' and not normalize_step:
         alpha: float = 1.0  # learning rate
     elif normalize_step:
-        alpha: float = 0.05
+        alpha: float = 0.9
     else:
         alpha: float = 0.12  # learning rate
 
     control_tip: bool = True  # imposed tip position in measurement and update. If False, tip is free
     control_first_edge: bool = True  # if True, fix nodes (0, 1) to zero. if Flase, just the first
 
-    rand_key_dataset: int = 8  # for random sampling of dataset, if dataset_sampling is True
+    rand_key_dataset: int = 7  # for random sampling of dataset, if dataset_sampling is True
 
     convert_pos = 1000  # convert [m] to [mm]
     convert_angle = 180/np.pi  # convert rad to deg

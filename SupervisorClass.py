@@ -188,11 +188,29 @@ class SupervisorClass:
 
         # tip positions and angles for specified tip dataset
         if sampling == 'uniform':
-            np.random.seed(CFG.Train.rand_key_dataset)
-            x_pos_in_t = np.random.uniform((Strctr.edges-1.5)*Strctr.L, (Strctr.edges-0.5)*Strctr.L, size=self.T)
-            y_pos_in_t = np.random.uniform(-Strctr.L/2, Strctr.L/2, size=self.T)
-            self.tip_pos_in_t = np.stack(((x_pos_in_t), (y_pos_in_t.T)), axis=1)
-            self.tip_angle_in_t[:] = np.random.uniform(-np.pi / 5, np.pi / 5, size=self.T).astype(np.float32)
+            # np.random.seed(CFG.Train.rand_key_dataset)
+            # x_pos_in_t = np.random.uniform((Strctr.edges-1.5)*Strctr.L, (Strctr.edges-0.5)*Strctr.L, size=self.T)
+            # y_pos_in_t = np.random.uniform(-Strctr.L/2, Strctr.L/2, size=self.T)
+            # self.tip_pos_in_t = np.stack(((x_pos_in_t), (y_pos_in_t.T)), axis=1)
+            # self.tip_angle_in_t[:] = np.random.uniform(-np.pi / 5, np.pi / 5, size=self.T).astype(np.float32)
+            rng = np.random.default_rng(CFG.Train.rand_key_dataset)
+
+            low = np.array([
+                (Strctr.edges - 1.5) * Strctr.L,   # x
+                -Strctr.L / 2,                     # y
+                -np.pi / 5                         # angle
+            ])
+
+            high = np.array([
+                (Strctr.edges - 0.5) * Strctr.L,   # x
+                Strctr.L / 2,                      # y
+                np.pi / 5                          # angle
+            ])
+
+            samples = rng.uniform(low, high, size=(self.T, 3)).astype(np.float32)
+
+            self.tip_pos_in_t = samples[:, :2]
+            self.tip_angle_in_t = samples[:, 2]
         elif sampling == 'flat':
             end = float(Strctr.edges)
             tip_pos = np.array([end, 0], dtype=np.float32)
@@ -414,17 +432,17 @@ class SupervisorClass:
             
             # old version up to Feb22
             step_size = np.linalg.norm(np.append(delta_tip, delta_angle))
-            # print(f'step_size={step_size}')
-            # tradeoff_pos_angle = 1/2
-            # delta_tip = copy.copy(delta_tip)/step_size*self.alpha
-            # delta_angle = copy.copy(delta_angle)/step_size*self.alpha * tradeoff_pos_angle
+            print(f'step_size={step_size}')
+            tradeoff_pos_angle = 1/2
+            delta_tip = copy.copy(delta_tip)/step_size*self.alpha
+            delta_angle = copy.copy(delta_angle)/step_size*self.alpha * tradeoff_pos_angle
             
             # new version from Feb22
-            pos_step_size = np.linalg.norm(delta_tip)
-            angle_step_size = np.linalg.norm(delta_angle)
-            tradeoff_pos_angle = 6
-            delta_tip = copy.copy(delta_tip)/pos_step_size*self.alpha
-            delta_angle = copy.copy(delta_angle)*(angle_step_size/step_size)*self.alpha * tradeoff_pos_angle 
+            # pos_step_size = np.linalg.norm(delta_tip)
+            # angle_step_size = np.linalg.norm(delta_angle)
+            # tradeoff_pos_angle = 1
+            # delta_tip = copy.copy(delta_tip)/pos_step_size*self.alpha
+            # delta_angle = copy.copy(delta_angle)*(angle_step_size/pos_step_size)*self.alpha * tradeoff_pos_angle 
             
             # print(f'delta_tip after normalization={delta_tip}')
             # print(f'delta_angle after normalization={delta_angle}')
