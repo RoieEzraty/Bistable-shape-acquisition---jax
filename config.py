@@ -145,7 +145,7 @@ class TrainingConfig:
         desired_buckle_rand_key: int = 169  # key for seed of random sampling of buckle pattern
     elif desired_buckle_type == 'specified':
         # desired_buckle_pattern: tuple = (1, -1, -1, -1, -1)  # which shims should be buckled up, initially
-        desired_buckle_pattern: tuple = (1, -1, -1, -1)  # which shims should be buckled up, initially
+        desired_buckle_pattern: tuple = (-1, -1, -1, -1)  # which shims should be buckled up, initially
         # desired_buckle_pattern: tuple = (-1, 1, 1, 1)  # which shims should be buckled up, initially
 
     # init_buckle_pattern: tuple = (-1, -1, -1, -1, 1)  # which shims should be buckled up, initially
@@ -173,7 +173,7 @@ class TrainingConfig:
     if update_scheme == 'radial_BEASTAL' and not normalize_step:
         alpha: float = 1.0  # learning rate
     elif normalize_step:
-        alpha: float = 0.9
+        alpha: float = 1.0
     else:
         alpha: float = 0.12  # learning rate
 

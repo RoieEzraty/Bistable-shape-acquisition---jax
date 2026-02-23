@@ -428,6 +428,12 @@ class SupervisorClass:
             print(f'delta_tip before corr {delta_tip}')
             print(f'delta_angle before corr {delta_angle}')
 
+        # insert into tip_pos_update
+        if prev_tip_update_pos is None:
+            prev_tip_update_pos = self.tip_pos_update_in_t[t-1, :]
+        if prev_tip_update_angle is None:
+            prev_tip_update_angle = self.tip_angle_update_in_t[t-1]
+
         if self.normalize_step and np.linalg.norm(np.append(delta_tip, delta_angle)) > 10**(-12):  # normalize if non-zero update
             
             # old version up to Feb22
@@ -436,7 +442,7 @@ class SupervisorClass:
             tradeoff_pos_angle = 1/2
             delta_tip = copy.copy(delta_tip)/step_size*self.alpha
             delta_angle = copy.copy(delta_angle)/step_size*self.alpha * tradeoff_pos_angle
-            
+
             # new version from Feb22
             # pos_step_size = np.linalg.norm(delta_tip)
             # angle_step_size = np.linalg.norm(delta_angle)
@@ -451,9 +457,6 @@ class SupervisorClass:
                 print(f'normalized angle to {float(delta_angle)}')
             # print(f'to {self.alpha*(float(delta_angle) + delta_total_angle)/step_size}')
 
-        # insert into tip_pos_update
-        if prev_tip_update_pos is None:
-            prev_tip_update_pos = self.tip_pos_update_in_t[t-1, :]
         # delta_tip = self.alpha*(np.array([Fx, Fy]) - current_tip_pos)*(self.loss) * ([2, 0.5])  # not BEASTAL
         if not self.supress_prints:
             print(f'prev_tip_update_pos{prev_tip_update_pos}')
@@ -487,11 +490,24 @@ class SupervisorClass:
         # print('update angle change', self.tip_angle_update_in_t[t]-self.tip_angle_update_in_t[t-1])
 
         # correct for to big a stretch
-        self.tip_pos_update_in_t[t, :] = helpers_builders._correct_big_stretch_robot_style(self.tip_pos_update_in_t[t], 
-                                                                                           self.tip_angle_update_in_t[t],
-                                                                                           total_angle, self.R_free, Strctr.L,
-                                                                                           margin=0.1, 
-                                                                                           supress_prints=self.supress_prints)
+        # self.tip_pos_update_in_t[t, :] = helpers_builders._correct_big_stretch_robot_style(self.tip_pos_update_in_t[t], 
+        #                                                                                    self.tip_angle_update_in_t[t],
+        #                                                                                    total_angle, self.R_free, Strctr.L,
+        #                                                                                    margin=0.1, 
+        #                                                                                    supress_prints=self.supress_prints)
+        before_tip = helpers_builders._get_before_tip(prev_tip_update_pos, prev_tip_update_angle, Strctr.L, xp=np)
+        R_eff = helpers_builders.effective_radius(self.R_free, Strctr.L, total_angle, prev_tip_update_angle, 
+                                                  supress_prints=self.supress_prints)
+        tip_new, before_new, clamped = helpers_builders.clamp_preserve_before_step_np(tip_prev=prev_tip_update_pos,
+                                                                                      before_prev=before_tip,
+                                                                                      tip_angle_new=prev_tip_update_angle + delta_angle,
+                                                                                      tip_raw=prev_tip_update_pos + delta_tip,
+                                                                                      second_node=np.array([Strctr.L, 0.0]),
+                                                                                      R_lim=R_eff, L=Strctr.L)
+        self.tip_pos_update_in_t[t, :] = tip_new
+        print(f'tip_new={tip_new}')
+        print(f'before_new={before_new}')
+        print(f'clamped={clamped}')
 
         cond_coil = np.abs(self.tip_angle_update_in_t[t]) > 3.5*np.pi
         cond_cut_origin = np.linalg.norm(self.tip_pos_update_in_t[t, :]) < Strctr.L
