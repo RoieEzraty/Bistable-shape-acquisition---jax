@@ -319,61 +319,61 @@ def _get_total_angle(tip_pos: np.array, prev_total_angle, L: float) -> np.array:
     return total_angle
 
 
-def _correct_big_stretch(tip_pos: NDArray[np.float_], tip_angle: float, total_angle: float, L: float,
-                         edges: int) -> NDArray[np.float_]:
-    """
-    Physical upper bound on total chain stretch by correcting tip position to not exceed  maximal possible length.
+# def _correct_big_stretch(tip_pos: NDArray[np.float_], tip_angle: float, total_angle: float, L: float,
+#                          edges: int) -> NDArray[np.float_]:
+#     """
+#     Physical upper bound on total chain stretch by correcting tip position to not exceed  maximal possible length.
 
-    Parameters
-    ----------
-    tip_pos : ndarray of shape (2,) previous tip position
+#     Parameters
+#     ----------
+#     tip_pos : ndarray of shape (2,) previous tip position
     
-    tip_angle : float
+#     tip_angle : float
 
-    Returns
-    -------
-    corrected_tip_pos : ndarray of shape (2,)
-        If the suggested tip position exceeds the chain's maximum reach, returns corrected position, scaled to maximal
-        physical stretch. Otherwise, the original tip_pos is returned.
+#     Returns
+#     -------
+#     corrected_tip_pos : ndarray of shape (2,)
+#         If the suggested tip position exceeds the chain's maximum reach, returns corrected position, scaled to maximal
+#         physical stretch. Otherwise, the original tip_pos is returned.
 
-    Notes
-    -----
-    - before last node is located at:
-          before = tip_pos - L * [cos(theta), sin(theta)]
-    - Node 2 (second node) is located at (L, 0) in the reference frame.
-    - The correction preserves the direction of the displacement but 
-      rescales its magnitude down to the physical limit.
-    """
+#     Notes
+#     -----
+#     - before last node is located at:
+#           before = tip_pos - L * [cos(theta), sin(theta)]
+#     - Node 2 (second node) is located at (L, 0) in the reference frame.
+#     - The correction preserves the direction of the displacement but 
+#       rescales its magnitude down to the physical limit.
+#     """
 
-    # Compute the location of the node before the tip
-    before_last = np.array([tip_pos[0] - L * np.cos(tip_angle), tip_pos[1] - L * np.sin(tip_angle)])
+#     # Compute the location of the node before the tip
+#     before_last = np.array([tip_pos[0] - L * np.cos(tip_angle), tip_pos[1] - L * np.sin(tip_angle)])
 
-    # Second node from the base sits at (L, 0)
-    second_node = np.array([L, 0.0], dtype=float)
+#     # Second node from the base sits at (L, 0)
+#     second_node = np.array([L, 0.0], dtype=float)
 
-    # Actual stretch beyond the first two edges
-    vec = before_last - second_node
-    actual_stretch = np.linalg.norm(vec)
+#     # Actual stretch beyond the first two edges
+#     vec = before_last - second_node
+#     actual_stretch = np.linalg.norm(vec)
 
-    # Maximum physically possible stretch (remaining edges)
-    epsilon = 0.1*L  # add some breathing room
+#     # Maximum physically possible stretch (remaining edges)
+#     epsilon = 0.1*L  # add some breathing room
 
-    # wrap_tip = np.floor(np.abs(tip_angle) / np.pi)
-    wrap_tip = np.floor(np.abs(tip_angle-total_angle) / np.pi)
-    wrap_total = np.floor(np.abs(total_angle) / np.pi)
-    n_wrap = wrap_tip + wrap_total + 2
+#     # wrap_tip = np.floor(np.abs(tip_angle) / np.pi)
+#     wrap_tip = np.floor(np.abs(tip_angle-total_angle) / np.pi)
+#     wrap_total = np.floor(np.abs(total_angle) / np.pi)
+#     n_wrap = wrap_tip + wrap_total + 2
 
-    max_stretch = edges * L - n_wrap * L - epsilon
-    max_stretch = max(max_stretch, 0.0)
+#     max_stretch = edges * L - n_wrap * L - epsilon
+#     max_stretch = max(max_stretch, 0.0)
 
-    # If unphysical → scale back
-    if actual_stretch > max_stretch:
-        ratio = max_stretch / actual_stretch
-        corrected = (before_last - second_node) * ratio + (second_node + tip_pos - before_last)
-        return corrected
+#     # If unphysical → scale back
+#     if actual_stretch > max_stretch:
+#         ratio = max_stretch / actual_stretch
+#         corrected = (before_last - second_node) * ratio + (second_node + tip_pos - before_last)
+#         return corrected
 
-    # Otherwise nothing to correct
-    return tip_pos
+#     # Otherwise nothing to correct
+#     return tip_pos
 
 
 def _correct_big_stretch_robot_style(tip_pos, tip_angle, total_angle, R_free, L, margin=0.0, supress_prints: bool = True):
@@ -389,7 +389,7 @@ def _correct_big_stretch_robot_style(tip_pos, tip_angle, total_angle, R_free, L,
     # chain current radius
     disp = before_last - second_node
     r_chain = np.hypot(disp[0], disp[1])
-    R_eff = effective_radius(R_free, L, total_angle, tip_angle)
+    R_eff = effective_radius(R_free, L, total_angle, tip_angle, supress_prints = supress_prints)
 
     if not supress_prints:
         print(f'r_chain{r_chain}')
@@ -417,8 +417,8 @@ def effective_radius(R, L, total_angle, tip_angle, margin=0.0, supress_prints: b
 
     shrink_full = (2.0 * L) * n_rev
     
-    shrink_partial = L * (1.0 - np.cos(rem / 2.0))  # in [0, 2L)
-    # shrink_partial = L * (1.0 - np.cos(rem))  # in [0, 2L)
+    # shrink_partial = L * (1.0 - np.cos(rem / 2.0))  # in [0, 2L)
+    shrink_partial = L * (1.0 - np.cos(rem))  # in [0, 2L)
     if not supress_prints:
         print('shrink due to revolutions', shrink_full)
         print('shrink remainder in [mm]', shrink_partial)

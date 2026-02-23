@@ -145,7 +145,7 @@ class SupervisorClass:
 
         self.normalize_step = bool(CFG.Train.normalize_step)  # whether to normalize the training step in [x, y, theta] space
 
-        self.R_free = (Strctr.edges - 2*0.9)*Strctr.L  # maximal radius the chain could have, up to some margin
+        self.R_free = (Strctr.edges - 2*0.98)*Strctr.L  # maximal radius the chain could have, up to some margin
 
         # for output files
         self.convert_pos = CFG.Train.convert_pos
