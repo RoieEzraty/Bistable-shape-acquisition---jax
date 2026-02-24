@@ -105,7 +105,7 @@ def load_pos_force(path: str, mod: Literal["dict", "arrays"] = "dict", stretch_f
                 # ---- position / tip pose ----
                 x = helpers_builders._get_first_in_file(r, ["pos_x", "x_tip", "Px"], name="x")
                 y = helpers_builders._get_first_in_file(r, ["pos_y", "y_tip", "Py"], name="y")
-                theta = helpers_builders._get_first_in_file(r, ["theta", "tip_angle_rad", "tip_angle_deg"], name="theta")
+                theta = helpers_builders._get_first_in_file(r, ["theta", "tip_angle_rad", "tip_angle_deg", "pos_z"], name="theta")
 
                 if stretch_factor is not None:
                     x *= stretch_factor
