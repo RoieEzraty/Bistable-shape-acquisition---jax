@@ -155,8 +155,15 @@ class StateClass:
         # ------- Force normal on wall -------
         if Forces is not None:
             # forces are sum over 2 final nodes, each axis on its own
-            self.Fx = Forces[-4] + Forces[-2]
-            self.Fy = Forces[-3] + Forces[-1]
+            if Strctr.hinges > 1:
+                self.Fx = Forces[-4] + Forces[-2]
+                self.Fy = Forces[-3] + Forces[-1]
+                # self.Fx = Forces[-4]
+                # self.Fy = Forces[-3]
+                # print('new force calculated')
+            else:
+                self.Fx = Forces[-2]
+                self.Fy = Forces[-1]
             # self.Fx = Forces[-4]  # only final node
             # self.Fy = Forces[-3]  # only final node
         else:
@@ -173,7 +180,7 @@ class StateClass:
         
         # ------- torque -------
         tip_angle = float(helpers_builders._get_tip_angle(self.pos_arr))  # measured from -x
-        self.tot_torque = float(helpers_builders.torque(tip_angle, self.Fx, self.Fy))
+        self.tot_torque = float(helpers_builders.torque(tip_angle, self.Fx, self.Fy, Strctr.L))
         self.tot_torque_in_t[t] = self.tot_torque
         self.tip_torque = float(helpers_builders.tip_torque(tip_angle, Forces))
         self.tip_torque_in_t[t] = self.tip_torque

@@ -208,6 +208,7 @@ def measure_determined_pos_from_file(Strctr: "StructureClass", Variabs: "Variabl
         else:
             init_pos = pos_in_t[-1]
         tip_pos = pos[:2]
+        # tip_pos = pos[:2] + np.array([0, 0.01])
         tip_angle = pos[2]
         pos_in_t, final_F = one_shot(Strctr, Variabs, Sprvsr, State, CFG, buckle, tip_pos, tip_angle, init_pos=init_pos, t=i)
         F_x_vec[i], F_y_vec[i] = State.Fx, State.Fy

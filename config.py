@@ -9,8 +9,8 @@ import numpy as np
 
 # MATERIAL = "numerical"
 # MATERIAL = "Leon_plastic"
-# MATERIAL = "Leon_metal"
-MATERIAL = "Roie_metal"
+MATERIAL = "Leon_metal"
+# MATERIAL = "Roie_metal"
 
 
 # -----------------------------
@@ -64,11 +64,13 @@ class VariablesConfig:
         elif self.material == "Roie_metal":
             object.__setattr__(self, "k_type", "Roie_metal_csv")
             # object.__setattr__(self, "tau_file", "Roie_metal_singleMylar_short.csv")
-            object.__setattr__(self, "tau_file", "single_hinge_files/Stress_Strain_steel_1myl1tp_short.csv")
-            object.__setattr__(self, "thetas_ss", 0.91)  # not used in experimental
+            # object.__setattr__(self, "tau_file", "single_hinge_files/Stress_Strain_steel_1myl1tp_short.csv")
+            # object.__setattr__(self, "thresh", 1.53)  # Feb23 realistically from just before red south
+            object.__setattr__(self, "tau_file", "single_hinge_files/Stress_Strain_1myl1tp_otherEnd_short.csv")
+            object.__setattr__(self, "thresh", 1.99)
             # object.__setattr__(self, "thresh", 1.58)
             # object.__setattr__(self, "thresh", 1.9)  # Feb22 measurements from just before Red South
-            object.__setattr__(self, "thresh", 1.53)  # Feb23 realistically from just before red south
+            object.__setattr__(self, "thetas_ss", 0.91)  # not used in experimental
             object.__setattr__(self, "k_soft", None)
             object.__setattr__(self, "k_stiff", None)
         elif self.material == "numerical":
@@ -88,6 +90,7 @@ class VariablesConfig:
 
     # numerical stability
     contact_scale: float = 100  # max experimental torque and torque upon edge contact ratio, for numerical stability
+    # contact_scale: float = 4  # max experimental torque and torque upon edge contact ratio, for numerical stability
 
 
 # -----------------------------
@@ -134,7 +137,7 @@ class EquilibriumConfig:
 # -----------------------------
 @dataclass(frozen=True)
 class TrainingConfig:
-    T: int = 46  # total training set time (not time to reach equilibrium during every step)
+    T: int = 26  # total training set time (not time to reach equilibrium during every step)
 
     # desired_buckle_type: str = 'random'
     # desired_buckle_type: str = 'opposite'
@@ -149,8 +152,9 @@ class TrainingConfig:
         # desired_buckle_pattern: tuple = (-1, 1, 1, 1)  # which shims should be buckled up, initially
 
     # init_buckle_pattern: tuple = (-1, -1, -1, -1, 1)  # which shims should be buckled up, initially
-    init_buckle_pattern: tuple = (-1, -1, -1, 1)  # which shims should be buckled up, initially
+    init_buckle_pattern: tuple = (1, 1, -1, 1)  # which shims should be buckled up, initially
     # init_buckle_pattern: tuple = (1, 1, 1, -1)  # which shims should be buckled up, initially
+    # init_buckle_pattern: tuple = (1)  # which shims should be buckled up, initially
 
     dataset_sampling: str = 'uniform'  # random uniform vals for x, y, angle
     # dataset_sampling: str = 'specified'  # constant

@@ -133,19 +133,15 @@ def _initiate_buckle(hinges: int, shims: int, buckle_pattern: tuple = (), numpif
         [[0,0], [1,0], [2,0], [3,0]]
     """
     buckle = -jnp.ones((hinges, shims))
-    # buckle = buckle.at[(buckle_pattern, 0)].set(1)
-    # buckle = -jnp.ones((CFG.Strctr.H, CFG.Strctr.S))
-
     pattern = jnp.array(buckle_pattern)   # shape (H,)
 
-    # top shim = index 0
-    # buckle = buckle.at[jnp.where(pattern == -1)[0], 0].set(1)
-
     # bottom shim = index 1
-    buckle = buckle.at[jnp.where(pattern == +1)[0], 0].set(1)
+    if jnp.shape(pattern) == ():
+        if pattern == 1:
+            buckle.at[0, 0].set(1)
+    else:
+        buckle = buckle.at[jnp.where(pattern == +1)[0], 0].set(1)
 
-    # pos_arr_in_t = copy.copy(pos_arr)
-    # return pos_arr, pos_arr_in_t
     if numpify:
         return jax2numpy(buckle)
     else:
@@ -581,8 +577,13 @@ def _get_scalar_in_orthogonal_dir(vec, angle):
     return -vec[0]*np.sin(angle) + vec[1]*np.cos(angle)
 
 
-def torque(tip_angle: float, Fx: float, Fy: float) -> float:
-    return np.cos(tip_angle)*Fy-np.sin(tip_angle)*Fx
+def torque(tip_angle: float, Fx: float, Fy: float, L: float) -> float:
+    """
+    tip_angle: rad
+    Fx: mN
+    Fy: mN
+    """
+    return L*np.cos(tip_angle)*Fy-L*np.sin(tip_angle)*Fx
 
 
 def tip_torque(tip_angle: float, Forces: NDArray) -> float:
