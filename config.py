@@ -166,7 +166,8 @@ class TrainingConfig:
     dataset_sampling: str = 'uniform'  # random uniform vals for x, y, angle
     # dataset_sampling: str = 'specified'  # constant
     # dataset_sampling: str = 'tile'  # constant
-    # dataset_sampling = 'almost flat'  # flat piece, single measurement
+    # dataset_sampling = 'almost_flat'  # flat piece w a bit of constant noise, single measurement
+    # dataset_sampling = 'flat'  # flat piece, single measurement
     # dataset_sampling = 'stress strain'
 
     # # tip values to buckle shims - 'BEASTAL' for the BEASTAL scheme, else 'one_to_one'

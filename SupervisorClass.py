@@ -155,6 +155,20 @@ class SupervisorClass:
         self.supress_prints = supress_prints
 
     def _build_imposed_mask(self, Strctr: "StructureClass", control_tip: bool = True):
+        """
+        Boolean mask marking imposed (prescribed) degrees of freedom. These are prescribed position, generally tip control.
+
+        Parameters
+        ----------
+        Strctr      : StructureClass Structural definition containing:
+                      nodes    : number of nodes (H+2)
+                      n_coords : total number of coordinates (= 2 * nodes)
+        control_tip : bool, default=True. if True, tip node and the one immediately before it are imposed. Else free tip
+
+        Returns
+        -------
+        imposed_mask : jnp.ndarray, shape (2 * nodes,), dtype=bool, [x0, y0, x1, y1, ..., x_last, y_last]
+        """
         n_coords = Strctr.n_coords  # 2 * nodes
         N = Strctr.nodes  # number of nodes
         last = N - 1
@@ -169,61 +183,71 @@ class SupervisorClass:
             before_last_idxs = jnp.array([helpers_builders.dof_idx(last - 1, 0), helpers_builders.dof_idx(last - 1, 1)])
             idxs = jnp.concatenate([before_last_idxs, idxs])
             imposed_mask = imposed_mask.at[idxs].set(True)  
-
         return imposed_mask
 
     def create_dataset(self, Strctr: "StructureClass", CFG, sampling: str, tip_pos: Optional[NDArray] = None,
-                       tip_angle: Optional[float] = None, dist_noise: float = 0.0, angle_noise: float = 0.0) -> None:
+                       tip_angle: Optional[float] = None, dist_noise: float = 0.01, angle_noise: float = 0.1) -> None:
         """
-        Fill in the tip positions and angles during Measurement modality.
+        Generate and store commanded tip positions and angles for the supervisor.
+        according to sampling strategy. These trajectories are used in measurement, update, or stress–strain protocols.
 
-        inputs:
-        sampling     : str, optional, Method for generating the command dataset. One of:
-                     'uniform'       = random uniform vals for x, y, angle
-                     'almost flat'   = flat piece, single measurement
-                     'stress strain' = immitate stress strain where compression is in x axis, incremental
+        Parameters
+        ----------
+        Strctr     : StructureClass
+        CFG        : ExperimentConfig. Uses:
+                     CFG.Train.rand_key_dataset  - random seed for reproducible datasets
+                     CFG.Variabs.exp_start       - start position for ADMET stress–strain from Harvard
+                     CFG.Variabs.distance        - compression distance for stress–strain
+        sampling   : str. Dataset generation mode. One of:
+                    "uniform": Random uniform sampling in a bounded box:
+                               x ∈ [(edges - 1.5)L , (edges - 0.5)L]
+                              y ∈ [-L/2 , L/2]
+                              θ ∈ [-π/5 , π/5]
+                              Uses numpy Generator seeded with CFG.Train.rand_key_dataset.
+                    "flat": Fully flat configuration over all T:
+                            tip_pos = [edges, 0]
+                            tip_angle = 0
+                    "almost flat": Tip is placed slightly compressed relative to flat state.
+                    "specified": User-provided fixed (tip_pos, tip_angle) repeated over T.
+                    "stress strain": compression–decompression trajectory along x-axis:
+                                     start → end → start over T steps (triangular waveform), for ADMET Harvard experiment
+                                     Optional:
+                                     dist_noise  - constant y-offset
+                                     angle_noise - constant angle offset
+                     "tile" - Repeats blocks of tip_pos and tip_angle to fill T.
+        tip_pos     : ndarray of shape (2,), optional, only for "specified" or "tile"
+        tip_angle   : float, optional, optional, only for "specified" or "tile"
+        dist_noise  : float, default 0.0. Only for "stress strain". Constant y-offset.
+        angle_noise : float, default 0.0. Only for "stress strain".
+
+        Returns:
+        --------
+        self.tip_pos_in_t   : (T, 2 )tip position [mm] in dataset, not Update
+        self.tip_angle_in_t : (T,) tip angle [rad] in dataset, not Update
         """
         # save as variable
         self.dataset_sampling = sampling
 
         # tip positions and angles for specified tip dataset
         if sampling == 'uniform':
-            # np.random.seed(CFG.Train.rand_key_dataset)
-            # x_pos_in_t = np.random.uniform((Strctr.edges-1.5)*Strctr.L, (Strctr.edges-0.5)*Strctr.L, size=self.T)
-            # y_pos_in_t = np.random.uniform(-Strctr.L/2, Strctr.L/2, size=self.T)
-            # self.tip_pos_in_t = np.stack(((x_pos_in_t), (y_pos_in_t.T)), axis=1)
-            # self.tip_angle_in_t[:] = np.random.uniform(-np.pi / 5, np.pi / 5, size=self.T).astype(np.float32)
             rng = np.random.default_rng(CFG.Train.rand_key_dataset)
-
-            low = array([(Strctr.edges - 1.5) * Strctr.L, -Strctr.L / 2, -np.pi / 5])
-            high = array([(Strctr.edges - 0.5) * Strctr.L, Strctr.L / 2, np.pi / 5])
-
-            samples = rng.uniform(low, high, size=(self.T, 3)).astype(np.float32)
-
-            self.tip_pos_in_t = samples[:, :2]
-            self.tip_angle_in_t = samples[:, 2]
-        elif sampling == 'flat':
-            end = float(Strctr.edges)
-            tip_pos = array([end, 0], dtype=np.float32)
-            self.tip_pos_in_t[:] = np.tile(tip_pos, (self.T, 1))
-            self.tip_angle_in_t[:] = 0.0
-        elif sampling == 'almost flat':
+            low = array([(Strctr.edges - 1.5) * Strctr.L, -Strctr.L / 2, -np.pi / 5])  # lowest allowed value
+            high = array([(Strctr.edges - 0.5) * Strctr.L, Strctr.L / 2, np.pi / 5])  # highest allowed value
+            samples = rng.uniform(low, high, size=(self.T, 3)).astype(np.float32)  # (T, 3) sample size
+            self.tip_pos_in_t = samples[:, :2]  # (T, 2)
+            self.tip_angle_in_t = samples[:, 2]  # (T,)
+        elif sampling in {'flat', 'almost_flat', 'specified'}:
             end = float(Strctr.edges*Strctr.L)
-            tip_pos = np.array([end-0.1*Strctr.L,  0.0*Strctr.L], dtype=np.float32)  # flat arrangement
-
-            # tiny noise around each position (tune scale as you like)
-            noise_scale = 0.0 * Strctr.L
-            noise_pos = noise_scale * np.random.randn(self.T, 2).astype(np.float32)
-            noise_pos[:, 0] = -np.abs(noise_pos[:, 0])
-            self.tip_pos_in_t[:] = tip_pos + noise_pos
-
-            # noise_angle = noise_scale * np.random.randn(self.T,).astype(np.float32)
-            # noise_angle = np.pi/16
-            noise_angle = 0
-            self.tip_angle_in_t[:] = noise_angle
-        elif sampling == 'specified':
+            if sampling == 'flat':
+                tip_pos = array([end, 0], dtype=np.float32)
+                tip_angle = 0.0
+            elif sampling == 'almost_flat':
+                tip_pos = np.array([end-dist_noise, +dist_noise], dtype=np.float32)  # flat arrangement
+                tip_angle = angle_noise
+            else:  # == 'specified'
+                pass
             self.tip_pos_in_t[:] = np.tile(tip_pos, (self.T, 1))
-            self.tip_angle_in_t[:] = tip_angle
+            self.tip_angle_in_t[:] = np.tile(tip_angle, (self.T, ))
         elif sampling == 'stress strain':
             start = 2*Strctr.L + CFG.Variabs.exp_start
             end = start - CFG.Variabs.distance
@@ -231,8 +255,8 @@ class SupervisorClass:
             tip_out = np.linspace(end, start, self.T - self.T // 2, endpoint=False)  # increasing: end -> start
             tip_arr = np.concatenate([tip_in, tip_out])  # shape (self.T,),  back-and-forth trajectory
 
-            noisy_zeros_arr = np.zeros_like(tip_arr) + dist_noise  # shape (N,)
-            self.tip_pos_in_t[:] = np.column_stack((tip_arr, noisy_zeros_arr))  # shape (N, 2)
+            noisy_zeros_arr = np.zeros_like(tip_arr) + dist_noise  # shape (T,)
+            self.tip_pos_in_t[:] = np.column_stack((tip_arr, noisy_zeros_arr))  # shape (T, 2)
             self.tip_angle_in_t[:] = angle_noise
         elif sampling == "tile":
             self.tip_pos_in_t[:] = np.tile(tip_pos, (self.T // len(tip_pos) + 1, 1))[:self.T]
@@ -242,16 +266,44 @@ class SupervisorClass:
             raise ValueError(f"Incompatible sampling='{sampling}'")
 
     def set_desired(self, pos_arr: jax.Array, Fx: float, Fy: float, t: int) -> None:
-        """Store ground-truth targets for step t."""
+        """Store ground-truth targets for step t.
+
+        Parameters:
+        -----------
+        pos_arr : (T, 2*N) node positions in x and y [mm]
+        Fx      : float force in global x direction
+        Fy      : float force in global y direction
+        t       : {0:self.T} current time step
+        """
         self.desired_pos_in_t[:, :, t] = helpers_builders.jax2numpy(pos_arr)
         self.desired_Fx_in_t[t] = float(Fx)
         self.desired_Fy_in_t[t] = float(Fy)
 
     def calc_loss(self, Variabs: "VariablesClass", t: int, Fx: float, Fy: float) -> None:
-        """Compute loss vector (Fx,Fy) at step t and log it."""
+        """Compute loss vector (Fx,Fy) at step t and log it.
+
+        Parameters:
+        -----------
+        Variabs : VariablesClass, using: 
+                  - norm_force: float typical force calculated in Variabs.init
+        t       : {0:self.T} current time step
+        Fx      : float force in global x direction
+        Fy      : float force in global y direction
+
+        Returns:
+        --------
+        loss     - float, F_hat-F in 2d
+        loss_MSE - float, mean squared loss
+        """
         self.loss = array([self.desired_Fx_in_t[t] - Fx, self.desired_Fy_in_t[t] - Fy], dtype=np.float32)
+
+        # normalize loss
         self.loss = self.loss / Variabs.norm_force
+
+        # put in loss vec
         self.loss_in_t[t, : self.loss.shape[0]] = self.loss
+
+        # same for Mean Squared Error
         self.loss_MSE = np.sqrt(np.sum(self.loss**2))
         self.loss_MSE_in_t[t] = self.loss_MSE
 
@@ -268,9 +320,6 @@ class SupervisorClass:
 
         # --- BEASTAL or one_to_one ---
         if self.update_scheme == 'BEASTAL':
-            # inputs_normalized = np.array([0, 0, 0], dtype=np.float32)
-            # outputs_normalized = np.array([current_tip_pos[0]/Variabs.norm_pos, current_tip_pos[1]/Variabs.norm_pos,
-            #                               current_tip_angle/Variabs.norm_angle], dtype=np.float32)
             inputs_normalized = array([current_tip_pos[0]/Variabs.norm_pos, current_tip_pos[1]/Variabs.norm_pos,
                                        current_tip_angle/Variabs.norm_angle], dtype=np.float32)
             outputs_normalized = array([State.Fx/Variabs.norm_force, State.Fy/Variabs.norm_force], dtype=np.float32)
@@ -515,32 +564,3 @@ class SupervisorClass:
         if not self.supress_prints:
             print(f'delta_tip after corr {delta_tip_after_corr}')
             print(f'delta_angle after corr {delta_angle_after_corr}')
-
-        # if correct_for_cut_origin:
-            # self.tip_pos_update_in_t[t] = helpers_builders.clamp_tip_no_cross(self.tip_pos_update_in_t[t, :],
-            #                                                                   self.tip_angle_update_in_t[t], Strctr.L)
-
-    # def clamp_to_circle_xy(self, Strctr: "StructureClass", tip_pos_update, tip_angle, margin=2.0):
-    #     """
-    #     If (x,y) is outside the circle of radius (R-margin), project it to the nearest point on the circle.
-    #     """
-    #     # account for previous total angle to calculate current total angle, in [deg]
-
-    #     # effective radius of chain
-    #     R_eff = helpers_builders.effective_radius(self.R_chain, self.L, self.total_angle, tip_angle)
-    #     print(f'effective Radius inside clamp_to_circle_xy = {R_eff}')
-
-    #     r_chain = np.hypot(tip_pos_update[0], tip_pos_update[1])
-
-    #     x2, y2 = None, None, None, None
-
-    #     if r_chain >= (R_eff - margin):
-    #         scale = (R_eff - margin) / r_chain
-    #         x2 = tip_pos_update[0] * scale
-    #         y2 = tip_pos_update[1] * scale
-    #         print(f'clamped from x={tip_pos_update[0]},y={tip_pos_update[1]} to x={x2},y={y2} due to chain revolusions')
-
-    #     x_clamp = np.nanmin(np.array([tip_pos_update[0], x2], dtype=float))
-    #     y_clamp = np.nanmin(np.array([tip_pos_update[1], y2], dtype=float))
-
-    #     return float(x_clamp), float(y_clamp)
