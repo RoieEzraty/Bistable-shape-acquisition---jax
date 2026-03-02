@@ -116,7 +116,7 @@ class StructureClass(eqx.Module):
         self.shims = int(CFG.Strctr.S)
         if CFG.Variabs.k_type in {"Leon_metal_txt", "Leon_plastic_txt", "Roie_metal_csv"}:
             # self.L = 0.045  # Leon's shims are ~45mm
-            self.L = 0.046  # Leon's shims are ~45mm
+            self.L = 0.047  # tape adds 1-2mm to edges shims are ~45mm
         else:
             self.L = 1.0
 

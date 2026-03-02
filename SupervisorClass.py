@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import numpy as np
-np.set_printoptions(precision=4, suppress=True)
-
 import copy
 import jax
 import jax.numpy as jnp
@@ -21,6 +19,8 @@ if TYPE_CHECKING:
     from StateClass import StateClass
     from EquilibriumClass import EquilibriumClass
     from VariablesClass import VariablesClass
+
+np.set_printoptions(precision=4, suppress=True)
 
 
 # ===================================================
@@ -195,17 +195,8 @@ class SupervisorClass:
             # self.tip_angle_in_t[:] = np.random.uniform(-np.pi / 5, np.pi / 5, size=self.T).astype(np.float32)
             rng = np.random.default_rng(CFG.Train.rand_key_dataset)
 
-            low = np.array([
-                (Strctr.edges - 1.5) * Strctr.L,   # x
-                -Strctr.L / 2,                     # y
-                -np.pi / 5                         # angle
-            ])
-
-            high = np.array([
-                (Strctr.edges - 0.5) * Strctr.L,   # x
-                Strctr.L / 2,                      # y
-                np.pi / 5                          # angle
-            ])
+            low = array([(Strctr.edges - 1.5) * Strctr.L, -Strctr.L / 2, -np.pi / 5])
+            high = array([(Strctr.edges - 0.5) * Strctr.L, Strctr.L / 2, np.pi / 5])
 
             samples = rng.uniform(low, high, size=(self.T, 3)).astype(np.float32)
 
@@ -213,13 +204,12 @@ class SupervisorClass:
             self.tip_angle_in_t = samples[:, 2]
         elif sampling == 'flat':
             end = float(Strctr.edges)
-            tip_pos = np.array([end, 0], dtype=np.float32)
+            tip_pos = array([end, 0], dtype=np.float32)
             self.tip_pos_in_t[:] = np.tile(tip_pos, (self.T, 1))
             self.tip_angle_in_t[:] = 0.0
         elif sampling == 'almost flat':
             end = float(Strctr.edges*Strctr.L)
             tip_pos = np.array([end-0.1*Strctr.L,  0.0*Strctr.L], dtype=np.float32)  # flat arrangement
-            # tip_pos = np.array([end-0.4*Strctr.L,  0.4*Strctr.L], dtype=np.float32)  # flat arrangement
 
             # tiny noise around each position (tune scale as you like)
             noise_scale = 0.0 * Strctr.L
@@ -259,8 +249,7 @@ class SupervisorClass:
 
     def calc_loss(self, Variabs: "VariablesClass", t: int, Fx: float, Fy: float) -> None:
         """Compute loss vector (Fx,Fy) at step t and log it."""
-        self.loss = np.array([self.desired_Fx_in_t[t] - Fx,
-                              self.desired_Fy_in_t[t] - Fy], dtype=np.float32)
+        self.loss = array([self.desired_Fx_in_t[t] - Fx, self.desired_Fy_in_t[t] - Fy], dtype=np.float32)
         self.loss = self.loss / Variabs.norm_force
         self.loss_in_t[t, : self.loss.shape[0]] = self.loss
         self.loss_MSE = np.sqrt(np.sum(self.loss**2))
@@ -282,9 +271,9 @@ class SupervisorClass:
             # inputs_normalized = np.array([0, 0, 0], dtype=np.float32)
             # outputs_normalized = np.array([current_tip_pos[0]/Variabs.norm_pos, current_tip_pos[1]/Variabs.norm_pos,
             #                               current_tip_angle/Variabs.norm_angle], dtype=np.float32)
-            inputs_normalized = np.array([current_tip_pos[0]/Variabs.norm_pos, current_tip_pos[1]/Variabs.norm_pos,
-                                          current_tip_angle/Variabs.norm_angle], dtype=np.float32)
-            outputs_normalized = np.array([State.Fx/Variabs.norm_force, State.Fy/Variabs.norm_force], dtype=np.float32)
+            inputs_normalized = array([current_tip_pos[0]/Variabs.norm_pos, current_tip_pos[1]/Variabs.norm_pos,
+                                       current_tip_angle/Variabs.norm_angle], dtype=np.float32)
+            outputs_normalized = array([State.Fx/Variabs.norm_force, State.Fy/Variabs.norm_force], dtype=np.float32)
             grad_loss_vec = learning_funcs.grad_loss_FC(Strctr.NE, inputs_normalized, outputs_normalized,
                                                         Strctr.DM, Strctr.output_nodes_arr, self.loss)
             update_vec = - self.alpha * np.matmul(Strctr.DM_dagger, grad_loss_vec)
@@ -301,16 +290,16 @@ class SupervisorClass:
             total_angle_meas = helpers_builders._get_total_angle(current_tip_pos, 0.0, Strctr.L)
             
             loss_total_angle = helpers_builders._get_scalar_in_orthogonal_dir(self.loss, total_angle_meas)
-            F_total_angle = helpers_builders._get_scalar_in_orthogonal_dir(np.array([State.Fx, State.Fy]), total_angle_meas)
+            F_total_angle = helpers_builders._get_scalar_in_orthogonal_dir(array([State.Fx, State.Fy]), total_angle_meas)
             # print(f'F_total_angle{F_total_angle}')
             loss_tip = helpers_builders._get_scalar_in_orthogonal_dir(self.loss, current_tip_angle)
-            F_tip_angle = helpers_builders._get_scalar_in_orthogonal_dir(np.array([State.Fx, State.Fy]), current_tip_angle)
+            F_tip_angle = helpers_builders._get_scalar_in_orthogonal_dir(array([State.Fx, State.Fy]), current_tip_angle)
             # print(f'F_tip_angle{F_tip_angle}')
 
-            inputs_normalized = np.array([total_angle_meas/Variabs.norm_angle, current_tip_angle/Variabs.norm_angle],
+            inputs_normalized = array([total_angle_meas/Variabs.norm_angle, current_tip_angle/Variabs.norm_angle],
                                          dtype=np.float32)
             # print(f'inputs_normalized={inputs_normalized}')
-            outputs_normalized = np.array([F_total_angle/Variabs.norm_force, F_tip_angle/Variabs.norm_force], dtype=np.float32)
+            outputs_normalized = array([F_total_angle/Variabs.norm_force, F_tip_angle/Variabs.norm_force], dtype=np.float32)
             # print(f'outputs_normalized={outputs_normalized}')
 
             d_total_angle = - self.alpha * 1/8*(loss_total_angle*(3*outputs_normalized[0] - outputs_normalized[1] - 2*inputs_normalized[0]) +
@@ -320,17 +309,17 @@ class SupervisorClass:
             # print(f'delta_Theta{d_total_angle}')
             # print(f'delta_theta{d_tip_angle}')
 
-            loss_thetas = np.array([loss_total_angle, loss_tip])
+            loss_thetas = array([loss_total_angle, loss_tip])
 
             grad_loss_vec = learning_funcs.grad_loss_FC(Strctr.NE, inputs_normalized, outputs_normalized,
                                                         Strctr.DM, Strctr.output_nodes_arr, loss_thetas)
             # print(f'grad_loss_vec={grad_loss_vec}')
             predicted_grad_loss_1 = (outputs_normalized[0] - inputs_normalized[0])*loss_total_angle
             predicted_grad_loss_2 = (outputs_normalized[1] - inputs_normalized[0])*loss_tip
-            # print(f'predicted grad_loss_vec{np.array([predicted_grad_loss_1, predicted_grad_loss_2])}')
+            # print(f'predicted grad_loss_vec{array([predicted_grad_loss_1, predicted_grad_loss_2])}')
             # update_vec = - self.alpha * np.matmul(Strctr.DM_dagger, grad_loss_vec)
-            # update_vec = np.array([-d_total_angle, -d_tip_angle])
-            update_vec = np.array([-d_total_angle, -d_tip_angle]) * np.sign(total_angle_meas)
+            # update_vec = array([-d_total_angle, -d_tip_angle])
+            update_vec = array([-d_total_angle, -d_tip_angle]) * np.sign(total_angle_meas)
             # print(f'update_vec={update_vec}')
             # delta_tip_x = update_vec[0] * -tip_update[1]  # move in direction orthogonal to tip update
             # delta_tip_y = update_vec[0] * tip_update[0]  # move in direction orthogonal to tip update
@@ -399,9 +388,9 @@ class SupervisorClass:
             loss_tip = -self.loss[0]*np.sin(current_tip_angle) + self.loss[1]*np.cos(current_tip_angle)
             print(f'tip_angle_for_loss={current_tip_angle}')
             print(f'loss_tip={loss_tip:.2f}')
-            F_total_angle = helpers_builders._get_scalar_in_orthogonal_dir(np.array([State.Fx, State.Fy]), total_angle)
+            F_total_angle = helpers_builders._get_scalar_in_orthogonal_dir(array([State.Fx, State.Fy]), total_angle)
             print(f'F_total_angle={F_total_angle}')
-            F_tip_angle = helpers_builders._get_scalar_in_orthogonal_dir(np.array([State.Fx, State.Fy]), current_tip_angle)
+            F_tip_angle = helpers_builders._get_scalar_in_orthogonal_dir(array([State.Fx, State.Fy]), current_tip_angle)
             print(f'F_tip_angle={F_tip_angle}')
 
             # delta_tip_x = (- self.alpha * loss_total_angle) * current_tip_pos[1]
@@ -417,13 +406,13 @@ class SupervisorClass:
         #     # delta_tip = - self.alpha * self.loss[:2] / Variabs.norm_force
         #     delta_tip_x = + self.alpha * self.loss[0] / Variabs.norm_force * Strctr.hinges * Strctr.L
         #     delta_tip_y = - self.alpha * self.loss[1] / Variabs.norm_force * Strctr.hinges * Strctr.L
-        #     delta_tip = np.array([delta_tip_x, delta_tip_y])
+        #     delta_tip = array([delta_tip_x, delta_tip_y])
         #     delta_angle = + self.alpha * self.loss[2] / Variabs.norm_torque * np.pi/64 if (self.loss.size == 3) else 0.0
         #     print('delta_tip=', delta_tip)
         #     print('delta_angle=', delta_angle)
         else:
             raise ValueError(f"Unknown update_scheme='{self.update_scheme}'")
-        delta_tip = np.array([delta_tip_x, delta_tip_y])
+        delta_tip = array([delta_tip_x, delta_tip_y])
         if not self.supress_prints:
             print(f'delta_tip before corr {delta_tip}')
             print(f'delta_angle before corr {delta_angle}')
@@ -457,7 +446,7 @@ class SupervisorClass:
                 print(f'normalized angle to {float(delta_angle)}')
             # print(f'to {self.alpha*(float(delta_angle) + delta_total_angle)/step_size}')
 
-        # delta_tip = self.alpha*(np.array([Fx, Fy]) - current_tip_pos)*(self.loss) * ([2, 0.5])  # not BEASTAL
+        # delta_tip = self.alpha*(array([Fx, Fy]) - current_tip_pos)*(self.loss) * ([2, 0.5])  # not BEASTAL
         if not self.supress_prints:
             print(f'prev_tip_update_pos{prev_tip_update_pos}')
             print(f'prev_tip_update_angle{prev_tip_update_angle}')
@@ -502,7 +491,7 @@ class SupervisorClass:
                                                                                       before_prev=before_tip,
                                                                                       tip_angle_new=prev_tip_update_angle + delta_angle,
                                                                                       tip_raw=prev_tip_update_pos + delta_tip,
-                                                                                      second_node=np.array([Strctr.L, 0.0]),
+                                                                                      second_node=array([Strctr.L, 0.0]),
                                                                                       R_lim=R_eff, L=Strctr.L)
         self.tip_pos_update_in_t[t, :] = tip_new
         print(f'tip_new={tip_new}')
