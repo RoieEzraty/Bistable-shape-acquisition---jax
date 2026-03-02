@@ -210,7 +210,8 @@ class EquilibriumClass(eqx.Module):
                                                                               fixed_vals=fixed_vals,
                                                                               imposed_mask=Sprvsr.imposed_mask,
                                                                               imposed_vals=imposed_vals)
-
+        # print('STD forces=', jax.numpy.std(potential_F_in_t[300:], axis=0))
+        # print('STD pos=', jax.numpy.std(pos_in_t[300:], axis=0))
         forces = potential_F_in_t[-1]  # [mN] from torque files
 
         return final_pos, pos_in_t, vel_in_t, forces

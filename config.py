@@ -9,8 +9,8 @@ import numpy as np
 
 # MATERIAL = "numerical"
 # MATERIAL = "Leon_plastic"
-MATERIAL = "Leon_metal"
-# MATERIAL = "Roie_metal"
+# MATERIAL = "Leon_metal"
+MATERIAL = "Roie_metal"
 
 
 # -----------------------------
@@ -66,8 +66,9 @@ class VariablesConfig:
             # object.__setattr__(self, "tau_file", "Roie_metal_singleMylar_short.csv")
             # object.__setattr__(self, "tau_file", "single_hinge_files/Stress_Strain_steel_1myl1tp_short.csv")
             # object.__setattr__(self, "thresh", 1.53)  # Feb23 realistically from just before red south
-            object.__setattr__(self, "tau_file", "single_hinge_files/Stress_Strain_1myl1tp_otherEnd_short.csv")
-            object.__setattr__(self, "thresh", 1.99)
+            # object.__setattr__(self, "tau_file", "single_hinge_files/Stress_Strain_1myl1tp_otherEnd_short.csv")
+            object.__setattr__(self, "tau_file", "single_hinge_files/Stress_Strain_1myl1tp_flipped_Feb26_2_average.csv")  # Feb26
+            object.__setattr__(self, "thresh", 1.99)  # Feb23
             # object.__setattr__(self, "thresh", 1.58)
             # object.__setattr__(self, "thresh", 1.9)  # Feb22 measurements from just before Red South
             object.__setattr__(self, "thetas_ss", 0.91)  # not used in experimental
@@ -110,12 +111,15 @@ class EquilibriumConfig:
     calc_through_energy: bool = False
     rand_key_Eq: int = 3
     pos_noise: float = 0.1
+    # pos_noise: float = 0.0
     vel_noise: float = 1.0
+    # vel_noise: float = 0.0
     ramp_pos: bool = True
     r_intersect_factor: float = 0.1  # best one 2026Feb8
     k_intersect_factor: float = 10000.0  # best one 2026Feb8
-    # tolerance: float = 1e-8
+    # k_intersect_factor: float = 0.0  # best one 2026Feb8
     tolerance: float = 1e-4
+    # tolerance: float = 1e-6
 
     def __post_init__(self):
         if self.material in {"Leon_plastic", "numerical"}:
@@ -125,8 +129,11 @@ class EquilibriumConfig:
             object.__setattr__(self, "mass", 5e-3)
         elif self.material in {"Leon_metal", "Roie_metal"}:
             object.__setattr__(self, "k_stretch_ratio", 2e4)
+            # object.__setattr__(self, "k_stretch_ratio", 2e2)
             object.__setattr__(self, "T_eq", 0.04)
-            object.__setattr__(self, "damping", 4.0)
+            # object.__setattr__(self, "T_eq", 0.06)
+            # object.__setattr__(self, "damping", 4.0)
+            object.__setattr__(self, "damping", 8.0)
             object.__setattr__(self, "mass", 12e-3)
         else:
             raise ValueError(f"Unknown material: {self.material}")
