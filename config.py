@@ -200,7 +200,7 @@ class TrainingConfig:
 
 
 # -----------------------------
-# A single top-level config
+# Top-level config
 # -----------------------------
 @dataclass(frozen=True)
 class ExperimentConfig:
@@ -210,5 +210,4 @@ class ExperimentConfig:
     Train: TrainingConfig = TrainingConfig()
 
 
-# Default instance you can import directly
 CFG = ExperimentConfig()

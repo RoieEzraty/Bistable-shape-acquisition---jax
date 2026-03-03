@@ -354,7 +354,7 @@ def _get_total_angle(tip_pos: np.array, prev_total_angle: float, L: float) -> np
     return total_angle
 
 
-def clamp_preserve_before_step_np(
+def clamp_pos_same_delta(
     *,
     tip_prev,            # (2,)
     before_prev,         # (2,)
@@ -401,6 +401,22 @@ def clamp_preserve_before_step_np(
 
     tip_new = before_new + L*np.array([np.cos(tip_angle_new), np.sin(tip_angle_new)], float)
     return tip_new, before_new, True
+
+
+def coil(angle: float, revolutions: float = 1.5):
+    """
+    return boolean whether the tip coiled too much
+
+    Parameters:
+    -----------
+    angle       - float, angle during update state after corrections 
+    revolutions - float, how many 2pi revolution allowed before angle is considered as too much coiled
+
+    Returns:
+    --------
+    boolean - True=coiled too much, correct inside SupervisorClass.calc_update
+    """
+    return np.abs(angle) > revolutions * 2*np.pi
 
 
 # def _correct_big_stretch(tip_pos: NDArray[np.float_], tip_angle: float, total_angle: float, L: float,
