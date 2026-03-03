@@ -159,7 +159,7 @@ class TrainingConfig:
         # desired_buckle_pattern: tuple = (-1, 1, 1, 1)  # which shims should be buckled up, initially
 
     # init_buckle_pattern: tuple = (-1, -1, -1, -1, 1)  # which shims should be buckled up, initially
-    init_buckle_pattern: tuple = (1, 1, -1, 1)  # which shims should be buckled up, initially
+    init_buckle_pattern: tuple = (-1, -1, -1, 1)  # which shims should be buckled up, initially
     # init_buckle_pattern: tuple = (1, 1, 1, -1)  # which shims should be buckled up, initially
     # init_buckle_pattern: tuple = (1)  # which shims should be buckled up, initially
 
@@ -171,8 +171,8 @@ class TrainingConfig:
     # dataset_sampling = 'stress strain'
 
     # # tip values to buckle shims - 'BEASTAL' for the BEASTAL scheme, else 'one_to_one'
-    update_scheme: str = 'one_to_one'  # direct normalized loss, equal to num of outputs
-    # update_scheme: str = 'radial_one_to_one'  # evolve tip angle and large radius due to instantaneous loss
+    # update_scheme: str = 'one_to_one'  # direct normalized loss, equal to num of outputs
+    update_scheme: str = 'radial_one_to_one'  # evolve tip angle and large radius due to instantaneous loss
     # update_scheme: str = 'BEASTAL'  # update using the BEASTAL scheme (with pseudoinverse of the incidence matrix).
     # update_scheme: str = 'BEASTAL_no_pinv'  # update using (y_j)(Loss_j), no psuedo inv of the incidence matrix.
     # update_scheme: str = 'radial_halfway_BEASTAL'  # evolve tip angle and large radius due to instantaneous loss
@@ -185,7 +185,7 @@ class TrainingConfig:
     if update_scheme == 'radial_BEASTAL' and not normalize_step:
         alpha: float = 1.0  # learning rate
     elif normalize_step:
-        alpha: float = 1.0
+        alpha: float = 0.25
     else:
         alpha: float = 0.12  # learning rate
 

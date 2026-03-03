@@ -318,162 +318,21 @@ class SupervisorClass:
         """Compute next tip position/angle commands from current loss and state (pure NumPy)."""
         # Normalised inputs/outputs (NumPy)
 
-        # --- BEASTAL or one_to_one ---
-        if self.update_scheme == 'BEASTAL':
-            inputs_normalized = array([current_tip_pos[0]/Variabs.norm_pos, current_tip_pos[1]/Variabs.norm_pos,
-                                       current_tip_angle/Variabs.norm_angle], dtype=np.float32)
-            outputs_normalized = array([State.Fx/Variabs.norm_force, State.Fy/Variabs.norm_force], dtype=np.float32)
-            grad_loss_vec = learning_funcs.grad_loss_FC(Strctr.NE, inputs_normalized, outputs_normalized,
-                                                        Strctr.DM, Strctr.output_nodes_arr, self.loss)
-            update_vec = - self.alpha * np.matmul(Strctr.DM_dagger, grad_loss_vec)
-            delta_tip_x = update_vec[0] * Variabs.norm_pos
-            delta_tip_y = update_vec[1] * Variabs.norm_pos
-            delta_angle = -update_vec[2] * Variabs.norm_angle
-        elif self.update_scheme == 'radial_BEASTAL':
-            if t == 1:
-                prev_total_angle = 0.0
-                tip_update = current_tip_pos
-            else:
-                prev_total_angle = self.total_angle_update_in_t[t-1]
-                tip_update = self.tip_pos_update_in_t[t-1, :]
-            total_angle_meas = helpers_builders._get_total_angle(current_tip_pos, 0.0, Strctr.L)
-            
-            loss_total_angle = helpers_builders._get_scalar_in_orthogonal_dir(self.loss, total_angle_meas)
-            F_total_angle = helpers_builders._get_scalar_in_orthogonal_dir(array([State.Fx, State.Fy]), total_angle_meas)
-            # print(f'F_total_angle{F_total_angle}')
-            loss_tip = helpers_builders._get_scalar_in_orthogonal_dir(self.loss, current_tip_angle)
-            F_tip_angle = helpers_builders._get_scalar_in_orthogonal_dir(array([State.Fx, State.Fy]), current_tip_angle)
-            # print(f'F_tip_angle{F_tip_angle}')
-
-            inputs_normalized = array([total_angle_meas/Variabs.norm_angle, current_tip_angle/Variabs.norm_angle],
-                                         dtype=np.float32)
-            # print(f'inputs_normalized={inputs_normalized}')
-            outputs_normalized = array([F_total_angle/Variabs.norm_force, F_tip_angle/Variabs.norm_force], dtype=np.float32)
-            # print(f'outputs_normalized={outputs_normalized}')
-
-            d_total_angle = - self.alpha * 1/8*(loss_total_angle*(3*outputs_normalized[0] - outputs_normalized[1] - 2*inputs_normalized[0]) +
-                                                loss_tip*(3*outputs_normalized[0] - outputs_normalized[1] - 2*inputs_normalized[1]))
-            d_tip_angle = - self.alpha * 1/8*(loss_total_angle*(3*outputs_normalized[1] - outputs_normalized[0] - 2*inputs_normalized[0]) +
-                                                loss_tip*(3*outputs_normalized[1] - outputs_normalized[0] - 2*inputs_normalized[1]))
-            # print(f'delta_Theta{d_total_angle}')
-            # print(f'delta_theta{d_tip_angle}')
-
-            loss_thetas = array([loss_total_angle, loss_tip])
-
-            grad_loss_vec = learning_funcs.grad_loss_FC(Strctr.NE, inputs_normalized, outputs_normalized,
-                                                        Strctr.DM, Strctr.output_nodes_arr, loss_thetas)
-            # print(f'grad_loss_vec={grad_loss_vec}')
-            predicted_grad_loss_1 = (outputs_normalized[0] - inputs_normalized[0])*loss_total_angle
-            predicted_grad_loss_2 = (outputs_normalized[1] - inputs_normalized[0])*loss_tip
-            # print(f'predicted grad_loss_vec{array([predicted_grad_loss_1, predicted_grad_loss_2])}')
-            # update_vec = - self.alpha * np.matmul(Strctr.DM_dagger, grad_loss_vec)
-            # update_vec = array([-d_total_angle, -d_tip_angle])
-            update_vec = array([-d_total_angle, -d_tip_angle]) * np.sign(total_angle_meas)
-            # print(f'update_vec={update_vec}')
-            # delta_tip_x = update_vec[0] * -tip_update[1]  # move in direction orthogonal to tip update
-            # delta_tip_y = update_vec[0] * tip_update[0]  # move in direction orthogonal to tip update
-            delta_tip_x = update_vec[0] * tip_update[1]  # move in direction orthogonal to tip update
-            delta_tip_y = update_vec[0] * -tip_update[0]  # move in direction orthogonal to tip update
-            # delta_angle = update_vec[1] * Variabs.norm_angle * 2
-            delta_angle = update_vec[1] * Variabs.norm_angle
-        elif self.update_scheme == 'BEASTAL_no_pinv':
-            # large_angle = np.arctan2(self.tip_pos_int_t[t, 1], self.tip_pos_in_t[t, 0])
-            # R = np.sqrt(self.tip_pos_int_t[t, 1]**2 + self.tip_pos_int_t[t, 1]**2)
-
-            # delta_tip = - self.alpha * self.loss[:2] / Variabs.norm_force
-            delta_tip_x = + self.alpha * self.loss[0] / Variabs.norm_force * Strctr.hinges * Strctr.L * (current_tip_pos[0] - 
-                                                                                                         Strctr.hinges * 
-                                                                                                         Strctr.L)
-            delta_tip_y = - self.alpha * self.loss[1] / Variabs.norm_force * Strctr.hinges * Strctr.L * current_tip_pos[1]
-            if self.loss.size == 3:
-                delta_angle = + self.alpha * self.loss[2] / Variabs.norm_torque * np.pi/64 * current_tip_angle
-            else:
-                delta_angle = 0.0
-        elif self.update_scheme == 'one_to_one':
-            # large_angle = np.arctan2(self.tip_pos_int_t[t, 1], self.tip_pos_in_t[t, 0])
-            # R = np.sqrt(self.tip_pos_int_t[t, 1]**2 + self.tip_pos_int_t[t, 1]**2)
-            sgnx = np.sign(self.tip_pos_update_in_t[t-1, 0])
-            sgny = np.sign(self.tip_pos_update_in_t[t-1, 0])
-            # sgny = np.sign(self.tip_pos_update_in_t[t-1, 1])
-            if sgnx == 0.0:  # sign can't be 0
-                sgnx = 1
-            if sgny == 0.0:
-                sgny = 1
-            delta_tip_y = - self.alpha * self.loss[0] * Strctr.hinges * Variabs.norm_pos * sgnx
-            delta_tip_x = self.alpha * self.loss[0] * Strctr.hinges * Variabs.norm_pos * sgny
-            delta_angle = - self.alpha * self.loss[1] * Variabs.norm_angle * np.pi
-        elif self.update_scheme == 'radial_one_to_one':
-            if t == 1:
-                prev_total_angle = 0.0
-                tip_update = current_tip_pos
-            else:
-                prev_total_angle = self.total_angle_update_in_t[t-1]
-                tip_update = self.tip_pos_update_in_t[t-1, :]
-            # total_angle = helpers_builders._get_total_angle(tip_update, prev_total_angle, Strctr.L)
-            total_angle = helpers_builders._get_total_angle(current_tip_pos, 0.0, Strctr.L)
-            # print(f'total_angle_for_loss={total_angle}')
-            loss_total_angle = -self.loss[0]*np.sin(total_angle) + self.loss[1]*np.cos(total_angle)
-            # print(f'loss_total_angle={loss_total_angle:.2f}')
-            loss_tip = -self.loss[0]*np.sin(current_tip_angle) + self.loss[1]*np.cos(current_tip_angle)
-            # print(f'tip_angle_for_loss={current_tip_angle}')
-            # print(f'loss_tip={loss_tip:.2f}')
-            # delta_tip_x = (- self.alpha * loss_total_angle) * current_tip_pos[1]
-            # delta_tip_y = (- self.alpha * loss_total_angle) * (-current_tip_pos[0])
-            delta_tip_x = (- self.alpha * loss_total_angle) * tip_update[1]
-            delta_tip_y = (- self.alpha * loss_total_angle) * -tip_update[0]
-            delta_angle = - self.alpha * loss_tip * Variabs.norm_angle * 2
-        elif self.update_scheme == 'radial_halfway_BEASTAL':
-            if t == 1:
-                prev_total_angle = 0.0
-                tip_update = current_tip_pos
-            else:
-                prev_total_angle = self.total_angle_update_in_t[t-1]
-                tip_update = self.tip_pos_update_in_t[t-1, :]
-            # total_angle = helpers_builders._get_total_angle(tip_update, prev_total_angle, Strctr.L)
-            total_angle = helpers_builders._get_total_angle(current_tip_pos, 0.0, Strctr.L)
-            print(f'total_angle_for_loss={total_angle}')
-            loss_total_angle = -self.loss[0]*np.sin(total_angle) + self.loss[1]*np.cos(total_angle)
-            print(f'loss_total_angle={loss_total_angle:.2f}')
-            loss_tip = -self.loss[0]*np.sin(current_tip_angle) + self.loss[1]*np.cos(current_tip_angle)
-            print(f'tip_angle_for_loss={current_tip_angle}')
-            print(f'loss_tip={loss_tip:.2f}')
-            F_total_angle = helpers_builders._get_scalar_in_orthogonal_dir(array([State.Fx, State.Fy]), total_angle)
-            print(f'F_total_angle={F_total_angle}')
-            F_tip_angle = helpers_builders._get_scalar_in_orthogonal_dir(array([State.Fx, State.Fy]), current_tip_angle)
-            print(f'F_tip_angle={F_tip_angle}')
-
-            # delta_tip_x = (- self.alpha * loss_total_angle) * current_tip_pos[1]
-            # delta_tip_y = (- self.alpha * loss_total_angle) * (-current_tip_pos[0])
-            delta_tip_x = (self.alpha * loss_total_angle) * tip_update[1] * F_total_angle/Variabs.norm_force
-            delta_tip_y = (self.alpha * loss_total_angle) * -tip_update[0] * F_total_angle/Variabs.norm_force
-            delta_angle = self.alpha * loss_tip * Variabs.norm_angle * 2 * F_tip_angle/Variabs.norm_force
-
-        # elif self.update_scheme == 'one_to_one_2D':
-        #     # large_angle = np.arctan2(self.tip_pos_int_t[t, 1], self.tip_pos_in_t[t, 0])
-        #     # R = np.sqrt(self.tip_pos_int_t[t, 1]**2 + self.tip_pos_int_t[t, 1]**2)
-
-        #     # delta_tip = - self.alpha * self.loss[:2] / Variabs.norm_force
-        #     delta_tip_x = + self.alpha * self.loss[0] / Variabs.norm_force * Strctr.hinges * Strctr.L
-        #     delta_tip_y = - self.alpha * self.loss[1] / Variabs.norm_force * Strctr.hinges * Strctr.L
-        #     delta_tip = array([delta_tip_x, delta_tip_y])
-        #     delta_angle = + self.alpha * self.loss[2] / Variabs.norm_torque * np.pi/64 if (self.loss.size == 3) else 0.0
-        #     print('delta_tip=', delta_tip)
-        #     print('delta_angle=', delta_angle)
-        else:
+        # ------ delta tip and angle ------
+        # through BEASTAL, one_to_one or radial_one_to_one
+        dispatch = self._get_delta_dispatch()
+        fn = dispatch.get(self.update_scheme, None)  # function to calculate delta tip and angle from update_scheme
+        if fn is None:
             raise ValueError(f"Unknown update_scheme='{self.update_scheme}'")
-        delta_tip = array([delta_tip_x, delta_tip_y])
+        delta_tip_x, delta_tip_y, delta_angle = fn(t, Strctr, Variabs, State, current_tip_pos=current_tip_pos,
+                                                   current_tip_angle=current_tip_angle)
+        delta_tip = array([delta_tip_x, delta_tip_y])  # assemble into 3d array
         if not self.supress_prints:
             print(f'delta_tip before corr {delta_tip}')
             print(f'delta_angle before corr {delta_angle}')
 
-        # insert into tip_pos_update
-        if prev_tip_update_pos is None:
-            prev_tip_update_pos = self.tip_pos_update_in_t[t-1, :]
-        if prev_tip_update_angle is None:
-            prev_tip_update_angle = self.tip_angle_update_in_t[t-1]
-
-        if self.normalize_step and np.linalg.norm(np.append(delta_tip, delta_angle)) > 10**(-12):  # normalize if non-zero update
-            
+        # ------ normalize step ------
+        if self.normalize_step and np.linalg.norm(np.append(delta_tip, delta_angle)) > 10**(-12):  # normalize if non-zero update            
             # old version up to Feb22
             step_size = np.linalg.norm(np.append(delta_tip, delta_angle))
             print(f'step_size={step_size}')
@@ -487,28 +346,33 @@ class SupervisorClass:
             # tradeoff_pos_angle = 1
             # delta_tip = copy.copy(delta_tip)/pos_step_size*self.alpha
             # delta_angle = copy.copy(delta_angle)*(angle_step_size/pos_step_size)*self.alpha * tradeoff_pos_angle 
-            
-            # print(f'delta_tip after normalization={delta_tip}')
-            # print(f'delta_angle after normalization={delta_angle}')
+
             if not self.supress_prints:
                 print(f'normalized position to {delta_tip}')
                 print(f'normalized angle to {float(delta_angle)}')
-            # print(f'to {self.alpha*(float(delta_angle) + delta_total_angle)/step_size}')
 
-        # delta_tip = self.alpha*(array([Fx, Fy]) - current_tip_pos)*(self.loss) * ([2, 0.5])  # not BEASTAL
-        if not self.supress_prints:
-            print(f'prev_tip_update_pos{prev_tip_update_pos}')
-            print(f'prev_tip_update_angle{prev_tip_update_angle}')
-        # print(f'delta_tip{delta_tip}')
-        self.tip_pos_update_in_t[t, :] = prev_tip_update_pos + delta_tip
+        # ------ insert into vectors in time ------
+        # insert into tip_pos_update
+        if prev_tip_update_pos is None:
+            prev_tip_update_pos = self.tip_pos_update_in_t[t-1, :]
+        if prev_tip_update_angle is None:
+            prev_tip_update_angle = self.tip_angle_update_in_t[t-1]
 
         # Angle update (only if enabled)
         if prev_tip_update_angle is None and t > 0:
             prev_tip_update_angle = float(self.tip_angle_update_in_t[t - 1])
         elif prev_tip_update_angle is None:
             prev_tip_update_angle = current_tip_angle
+
+        if not self.supress_prints:
+            print(f'prev_tip_update_pos{prev_tip_update_pos}')
+            print(f'prev_tip_update_angle{prev_tip_update_angle}')
+
+        # add to tip position in time
+        self.tip_pos_update_in_t[t, :] = prev_tip_update_pos + delta_tip
         self.tip_angle_update_in_t[t] = prev_tip_update_angle + float(delta_angle)
 
+        # ------ correct for total angle ------
         # add change in tip angle to the total angle from the origin
         if correct_for_total_angle:
             if t == 1:
@@ -523,11 +387,7 @@ class SupervisorClass:
             # print('delta_total_angle', delta_total_angle)
             self.tip_angle_update_in_t[t] += delta_total_angle
 
-        # print('update_tip_y', self.tip_pos_update_in_t[t][1])
-        # print('update angle', self.tip_angle_update_in_t[t])
-        # print('update angle change', self.tip_angle_update_in_t[t]-self.tip_angle_update_in_t[t-1])
-
-        # correct for to big a stretch
+        # ------ correct for to big a stretch ------
         # self.tip_pos_update_in_t[t, :] = helpers_builders._correct_big_stretch_robot_style(self.tip_pos_update_in_t[t], 
         #                                                                                    self.tip_angle_update_in_t[t],
         #                                                                                    total_angle, self.R_free, Strctr.L,
@@ -547,6 +407,7 @@ class SupervisorClass:
         print(f'before_new={before_new}')
         print(f'clamped={clamped}')
 
+        # ------ correct for coil or cut origin ------
         cond_coil = np.abs(self.tip_angle_update_in_t[t]) > 3.5*np.pi
         cond_cut_origin = np.linalg.norm(self.tip_pos_update_in_t[t, :]) < Strctr.L
         if (correct_for_coil and cond_coil) or (correct_for_cut_origin and cond_cut_origin):
@@ -564,3 +425,159 @@ class SupervisorClass:
         if not self.supress_prints:
             print(f'delta_tip after corr {delta_tip_after_corr}')
             print(f'delta_angle after corr {delta_angle_after_corr}')
+
+    def _get_delta_dispatch(self):
+        """
+        Map update_scheme -> function that computes (delta_tip_x, delta_tip_y, delta_angle).
+        Each function must return 3 scalars in *your current convention*.
+        """
+        return {
+            "one_to_one": self._delta_one_to_one,
+            "radial_one_to_one": self._delta_radial_one_to_one,
+            "BEASTAL": self._delta_BEASTAL,
+            "radial_BEASTAL": self._delta_radial_BEASTAL,
+            "BEASTAL_no_pinv": self._delta_BEASTAL_no_pinv,
+            "radial_halfway_BEASTAL": self._delta_radial_halfway_BEASTAL,
+        }
+
+    def _delta_one_to_one(self, t, Strctr, Variabs, State, current_tip_pos, current_tip_angle):
+        sgnx = np.sign(self.tip_pos_update_in_t[t - 1, 0])
+        sgny = np.sign(self.tip_pos_update_in_t[t - 1, 0])
+        # sgny = np.sign(self.tip_pos_update_in_t[t-1, 1])
+        if sgnx == 0.0:
+            sgnx = 1
+        if sgny == 0.0:
+            sgny = 1
+        delta_tip_y = - self.alpha * self.loss[0] * Strctr.hinges * Variabs.norm_pos * sgnx
+        delta_tip_x = + self.alpha * self.loss[0] * Strctr.hinges * Variabs.norm_pos * sgny
+        delta_angle = - self.alpha * self.loss[1] * Variabs.norm_angle * np.pi
+        return delta_tip_x, delta_tip_y, delta_angle
+
+    def _delta_radial_one_to_one(self, t, Strctr, Variabs, State, current_tip_pos, current_tip_angle):
+        if t == 1:
+            prev_total_angle = 0.0
+            tip_update = current_tip_pos
+        else:
+            prev_total_angle = self.total_angle_update_in_t[t - 1]
+            tip_update = self.tip_pos_update_in_t[t - 1, :]
+
+        total_angle = helpers_builders._get_total_angle(current_tip_pos, 0.0, Strctr.L)
+        loss_total_angle = -self.loss[0] * np.sin(total_angle) + self.loss[1] * np.cos(total_angle)
+        loss_tip = -self.loss[0] * np.sin(current_tip_angle) + self.loss[1] * np.cos(current_tip_angle)
+
+        delta_tip_x = (- self.alpha * loss_total_angle) * tip_update[1]
+        delta_tip_y = (- self.alpha * loss_total_angle) * -tip_update[0]
+        delta_angle = - self.alpha * loss_tip * Variabs.norm_angle * 2
+        return delta_tip_x, delta_tip_y, delta_angle
+
+    def _delta_BEASTAL(self, t, Strctr, Variabs, State, current_tip_pos, current_tip_angle):
+        inputs_normalized = array([
+            current_tip_pos[0] / Variabs.norm_pos,
+            current_tip_pos[1] / Variabs.norm_pos,
+            current_tip_angle / Variabs.norm_angle
+        ], dtype=np.float32)
+
+        outputs_normalized = array([
+            State.Fx / Variabs.norm_force,
+            State.Fy / Variabs.norm_force
+        ], dtype=np.float32)
+
+        grad_loss_vec = learning_funcs.grad_loss_FC(
+            Strctr.NE, inputs_normalized, outputs_normalized,
+            Strctr.DM, Strctr.output_nodes_arr, self.loss
+        )
+        update_vec = - self.alpha * np.matmul(Strctr.DM_dagger, grad_loss_vec)
+
+        delta_tip_x = update_vec[0] * Variabs.norm_pos
+        delta_tip_y = update_vec[1] * Variabs.norm_pos
+        delta_angle = - update_vec[2] * Variabs.norm_angle
+        return delta_tip_x, delta_tip_y, delta_angle
+
+    def _delta_radial_BEASTAL(self, t, Strctr, Variabs, State, current_tip_pos, current_tip_angle):
+        if t == 1:
+            prev_total_angle = 0.0
+            tip_update = current_tip_pos
+        else:
+            prev_total_angle = self.total_angle_update_in_t[t - 1]
+            tip_update = self.tip_pos_update_in_t[t - 1, :]
+
+        total_angle_meas = helpers_builders._get_total_angle(current_tip_pos, prev_total_angle, Strctr.L)
+
+        loss_total_angle = helpers_builders._get_scalar_in_orthogonal_dir(self.loss, total_angle_meas)
+        F_total_angle = helpers_builders._get_scalar_in_orthogonal_dir(array([State.Fx, State.Fy]), total_angle_meas)
+
+        loss_tip = helpers_builders._get_scalar_in_orthogonal_dir(self.loss, current_tip_angle)
+        F_tip_angle = helpers_builders._get_scalar_in_orthogonal_dir(array([State.Fx, State.Fy]), current_tip_angle)
+
+        inputs_normalized = array([
+            total_angle_meas / Variabs.norm_angle,
+            current_tip_angle / Variabs.norm_angle
+        ], dtype=np.float32)
+
+        outputs_normalized = array([
+            F_total_angle / Variabs.norm_force,
+            F_tip_angle / Variabs.norm_force
+        ], dtype=np.float32)
+
+        d_total_angle = - self.alpha * 1/8 * (
+            loss_total_angle * (3*outputs_normalized[0] - outputs_normalized[1] - 2*inputs_normalized[0]) +
+            loss_tip       * (3*outputs_normalized[0] - outputs_normalized[1] - 2*inputs_normalized[1])
+        )
+        d_tip_angle = - self.alpha * 1/8 * (
+            loss_total_angle * (3*outputs_normalized[1] - outputs_normalized[0] - 2*inputs_normalized[0]) +
+            loss_tip       * (3*outputs_normalized[1] - outputs_normalized[0] - 2*inputs_normalized[1])
+        )
+
+        loss_thetas = array([loss_total_angle, loss_tip])
+
+        grad_loss_vec = learning_funcs.grad_loss_FC(
+            Strctr.NE, inputs_normalized, outputs_normalized,
+            Strctr.DM, Strctr.output_nodes_arr, loss_thetas
+        )
+
+        # kept exactly as in your code (even if grad_loss_vec is unused below)
+        predicted_grad_loss_1 = (outputs_normalized[0] - inputs_normalized[0]) * loss_total_angle
+        predicted_grad_loss_2 = (outputs_normalized[1] - inputs_normalized[0]) * loss_tip
+
+        update_vec = array([-d_total_angle, -d_tip_angle]) * np.sign(total_angle_meas)
+
+        delta_tip_x = update_vec[0] * tip_update[1]
+        delta_tip_y = update_vec[0] * -tip_update[0]
+        delta_angle = update_vec[1] * Variabs.norm_angle
+        return delta_tip_x, delta_tip_y, delta_angle
+
+    def _delta_BEASTAL_no_pinv(self, t, Strctr, Variabs, State, current_tip_pos, current_tip_angle):
+        delta_tip_x = + self.alpha * self.loss[0] / Variabs.norm_force * Strctr.hinges * Strctr.L * (
+            current_tip_pos[0] - Strctr.hinges * Strctr.L
+        )
+        delta_tip_y = - self.alpha * self.loss[1] / Variabs.norm_force * Strctr.hinges * Strctr.L * current_tip_pos[1]
+        if self.loss.size == 3:
+            delta_angle = + self.alpha * self.loss[2] / Variabs.norm_torque * np.pi/64 * current_tip_angle
+        else:
+            delta_angle = 0.0
+        return delta_tip_x, delta_tip_y, delta_angle
+
+    def _delta_radial_halfway_BEASTAL(self, t, Strctr, Variabs, State, current_tip_pos, current_tip_angle):
+        if t == 1:
+            prev_total_angle = 0.0
+            tip_update = current_tip_pos
+        else:
+            prev_total_angle = self.total_angle_update_in_t[t - 1]
+            tip_update = self.tip_pos_update_in_t[t - 1, :]
+
+        total_angle = helpers_builders._get_total_angle(current_tip_pos, 0.0, Strctr.L)
+        print(f'total_angle_for_loss={total_angle}')
+        loss_total_angle = -self.loss[0] * np.sin(total_angle) + self.loss[1] * np.cos(total_angle)
+        print(f'loss_total_angle={loss_total_angle:.2f}')
+        loss_tip = -self.loss[0] * np.sin(current_tip_angle) + self.loss[1] * np.cos(current_tip_angle)
+        print(f'tip_angle_for_loss={current_tip_angle}')
+        print(f'loss_tip={loss_tip:.2f}')
+        F_total_angle = helpers_builders._get_scalar_in_orthogonal_dir(array([State.Fx, State.Fy]), total_angle)
+        print(f'F_total_angle={F_total_angle}')
+        F_tip_angle = helpers_builders._get_scalar_in_orthogonal_dir(array([State.Fx, State.Fy]), current_tip_angle)
+        print(f'F_tip_angle={F_tip_angle}')
+
+        delta_tip_x = (self.alpha * loss_total_angle) * tip_update[1] * F_total_angle / Variabs.norm_force
+        delta_tip_y = (self.alpha * loss_total_angle) * -tip_update[0] * F_total_angle / Variabs.norm_force
+        delta_angle = self.alpha * loss_tip * Variabs.norm_angle * 2 * F_tip_angle / Variabs.norm_force
+        return delta_tip_x, delta_tip_y, delta_angle

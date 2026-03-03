@@ -314,7 +314,7 @@ def _get_tip_angle(pos_arr: np.array) -> np.array:
     return theta_from_negx
 
 
-def _get_total_angle(tip_pos: np.array, prev_total_angle, L: float) -> np.array:
+def _get_total_angle(tip_pos: np.array, prev_total_angle: float, L: float) -> np.array:
     """
     angle between tip and last fixed node, CCW
     pos_arr: array of shape (H, 2)
