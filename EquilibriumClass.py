@@ -48,38 +48,37 @@ class EquilibriumClass(eqx.Module):
         * `-1` → hinge buckled **upwards**
     - The first two nodes (0 and 1) are fixed in space by default.
 
-    Attributes
-    ----------
-    T: float              
-        End time for simulation of equilibrium state
-    damping_coeff: float             
-        Coefficient for right hand side of eqn of motion
-    mass: float                      
-        Newtonian mass for right hand side of eqn of motion
-
-    rest_lengths : jax.Array, shape (hinges+1,)
-        Rest lengths of each edge, initialized from the straight configuration.
-    init_pos : jax.Array, shape (nodes,2)
-        Initial nodal positions of the chain (nodes = hinges+2).
-    buckle_arr : jax.Array, shape (hinges ,shims)
-        Buckle state for each hinge and shim (values in {+1, -1}).
-
     Methods
     -------
-    calculate_state(Variabs, Strctr, tip_pos=None)
-        Run a dynamic relaxation process to compute equilibrium shape
-        under constraints and optional imposed tip displacement.
-        Returns final positions, full trajectory, velocities, and potential forces.
-    dof_idx(node, comp)
-        Map a node index and component (0=x, 1=y) to a flat degree-of-freedom index.
-    imposed_vals(t)
-        Return imposed displacement vector at time `t` (default: none).
-    force_function(t)
-        Return external force vector at time `t` (default: zero).
-    potential_force_free(...)
-        Compute forces on free DOFs via gradient of total potential energy.
+    calculate_state(Variabs, Strctr, Sprvsr, init_pos, control_first_edge, tip_pos, tip_angle, pos_noise, vel_noise)
+        Compute equilibrium state of the chain given boundary conditions and optional noise.
+    total_potential_force(Variabs, Strctr, t, x_free, *, free_mask, fixed_mask, fixed_vals, imposed_mask, imposed_vals)
+        Compute internal reaction force on all DOFs (positions only) given only x_free. 
+        Fixed and imposed DOFs are reconstructed via the provided masks and callables.
+    total_potential_force_from_full_x(Variabs, Strctr, x_full)
+        Compute internal reaction force on all DOFs (positions only) given `x_full`.
+    potential_force_free(Variabs, Strctr, t, x_free, *, free_mask, fixed_mask, fixed_vals, imposed_mask, imposed_vals)
+        uses total_potential_force to get internal reaction force on **FREE** DOFs only, for the ODE RHS.
+    bend_forces(Strctr, tau_hinges, x_full):
+        Forces on all nodes due to torques on each hinge. to be assembled in total_...
+    stretch_forces(Strctr, Variabs, jnp_pos_arr)
+        Linear edge stretch forces on all DOFs given node positions. Should make sure distance between node is Strctr.L
+    contact_forces_node_edge(Strctr, Variabs, jnp_pos_arr, edges, p, fmax, skip_band, eps)
+        Compute node–edge contact forces (self-intersection prevention).
     force_function_free(t, force_function, free_mask)
-        Restrict external forces to free DOFs only.
+        Restrict external forces to free DOFs only. Currently all zeros
+    solve_dynamics(state_0, Variabs, Strctr, fixed_mask, fixed_vals, imposed_mask, imposed_vals, maxsteps)
+        Integrate damped EOMs for chain on FREE DOFs, enforcing fixed and imposed DOFs through masks.
+
+    Helpers:
+    --------
+    _theta_jacs_local(Strctr, x_flat)
+        Compute local hinge-angle Jacobians ∂θ_h/∂x for all hinges h.
+    _set_fixed_vals(fixed_mask)
+        boolean jax array (2*N,), nonzero values are values that are fixed along equilibrium calculation 
+        (i.e. 1st and 2nd nodes at chain base)
+    _set_imposed_vals(Strctr, Sprvsr, tip_pos, tip_angle, init_pos):
+        Build a time-dependent imposed displacement function.
     """
     
     # --- User input ---
@@ -129,6 +128,7 @@ class EquilibriumClass(eqx.Module):
         self.r_intersect_factor = CFG.Eq.r_intersect_factor
         self.k_intersect_factor = CFG.Eq.k_intersect_factor
 
+    # ------- main function of EquilibriumClass -------
     def calculate_state(self, Variabs: "VariablesClass", Strctr: "StructureClass", Sprvsr: "SupervisorClass",
                         init_pos: NDArray[float], control_first_edge: bool = True,  tip_pos: jax.Array | None = None,
                         tip_angle: float | jax.Array | None = None, pos_noise: float | jax.Array | None = None,
@@ -197,7 +197,7 @@ class EquilibriumClass(eqx.Module):
 
         # ------ imposed tip position and possibly angle ------
         # Build a callable (always), even if mask is all False.
-        imposed_vals = self._set_imposed_vals(Strctr, Sprvsr, Sprvsr.imposed_mask, tip_pos, tip_angle, fixed_vals, jnp_init_pos)
+        imposed_vals = self._set_imposed_vals(Strctr, Sprvsr, tip_pos, tip_angle, jnp_init_pos)
 
         # -------- initial state (positions & velocities) ----------
         pos_noise = Strctr.L * self.pos_noise  # scale relative to length
@@ -216,56 +216,7 @@ class EquilibriumClass(eqx.Module):
 
         return final_pos, pos_in_t, vel_in_t, forces
 
-    def _set_fixed_vals(self, fixed_mask):
-        # USED
-        fixed_vals = jnp.zeros((len(fixed_mask),), dtype=float)
-        return fixed_vals.at[fixed_mask].set(self.jnp_init_pos.reshape((-1,))[fixed_mask])
-
-    def _set_imposed_vals(self, Strctr: "StructureClass", Sprvsr: "SupervisorClass", imposed_mask, tip_pos, tip_angle, 
-                          fixed_vals, init_pos):
-        """
-        Build a time-dependent imposed displacement function.
-
-        - At t = 0: imposed DOFs equal the previous equilibrium positions (self.jnp_init_pos).
-        - For 0 < t < T_ramp: linearly ramp to the new tip pose.
-        - For t >= T_ramp: imposed DOFs stay at the new pose.
-        """
-        start_vec = init_pos.reshape(-1)
-
-        if tip_pos is None:
-            return lambda t, v=start_vec: v
-
-        tip_init = start_vec[-2:]  # only if last node is tip in your flattening
-        # Better: explicitly pull from init_pos:
-        tip_init = init_pos[-1, :]                      # (2,)
-        before_tip_init = init_pos[-2, :]                   # (2,)
-        theta_init = jnp.arctan2(tip_init[1]-before_tip_init[1], tip_init[0]-before_tip_init[0])  # angle of last edge
-
-        tip_fin = jnp.asarray(tip_pos, dtype=init_pos.dtype).reshape((2,))
-        theta_fin = jnp.asarray(tip_angle, dtype=init_pos.dtype) if tip_angle is not None else theta_init
-
-        T_total = self.time_points[-1]
-        T_ramp = 0.33 * T_total
-
-        def smoothstep(s):
-            return s*s*(3 - 2*s)  # C1 smooth
-
-        def imposed_vals(t):
-            s = jnp.clip(t / T_ramp, 0.0, 1.0)
-            s = smoothstep(s)
-
-            tip_t = (1-s) * tip_init + s * tip_fin
-            th_t = (1-s) * theta_init + s * theta_fin
-
-            before_t = helpers_builders._get_before_tip(
-                tip_pos=tip_t, tip_angle=th_t, L=Strctr.L, dtype=init_pos.dtype
-            )
-            out = start_vec
-            out = out.at[Sprvsr.imposed_mask].set(jnp.concatenate([before_t, tip_t]))
-            return out
-
-        return imposed_vals
-
+    # ------ assembly of total forces from bend, stretch, intersection ------
     def total_potential_force(self, Variabs: "VariablesClass", Strctr: "StructureClass", t: float,
                               x_free: jax.Array, *,
                               free_mask: jax.Array, fixed_mask: jax.Array, fixed_vals: jax.Array,
@@ -389,11 +340,8 @@ class EquilibriumClass(eqx.Module):
         tau_shims = -Variabs.torque(theta_eff)  # (H,S)
         tau_hinges = jnp.sum(B * tau_shims, axis=1)  # (H,)
 
-        # Jacobian of theta for each hinge: (H, n_coords) which is (H, 2*nodes)
-        theta_jacs = self._theta_jacs_local(Strctr, x_full)  # (H, n_coords)
-
         # Map torques to DOF forces
-        F_theta_full = (theta_jacs.T @ tau_hinges).reshape(-1)  # (n_coords,) which is (2*nodes,), [mN]
+        F_theta_full = self.bend_forces(Strctr, tau_hinges, x_full)
 
         # --- stretch forces ---
         F_stretch_full = self.stretch_forces(Strctr, Variabs, jnp_pos_arr)      # (n_coords,) which is (2*nodes,), [mN]
@@ -404,21 +352,7 @@ class EquilibriumClass(eqx.Module):
         # jax.debug.print('F_theta_full {}', F_theta_full)
         # jax.debug.print('F_stretch_full {}', F_stretch_full)
         # jax.debug.print('F_contact_full {}', F_contact_full)
-        # mag = lambda F: jnp.linalg.norm(F)
 
-        # max_ext = jnp.max(mag(F_theta_full))
-        # max_pot = jnp.max(mag(F_stretch_full))
-        # max_con = jnp.max(mag(F_contact_full))
-
-        # lax.cond(
-        #     max_con > 0,
-        #     lambda _: jax.debug.print("max |F|: theta={} stretch={} contact={}, inside total_potential_force_from_full_x", max_ext, max_pot, max_con),
-        #     lambda _: None,
-        #     operand=None,
-        # )
-
-        # reaction/internal force on DOFs (same sign you use in rhs)
-        # return F_theta_full + F_stretch_full                                # (n_coords,) which is (2*nodes,)
         return F_theta_full + F_stretch_full + F_contact_full                 # (n_coords,) which is (2*nodes,), [mN]
 
     def potential_force_free(self, Variabs: "VariablesClass", Strctr: "StructureClass", t: float,
@@ -426,8 +360,7 @@ class EquilibriumClass(eqx.Module):
                              free_mask: jax.Array, fixed_mask: jax.Array, fixed_vals: jax.Array,
                              imposed_mask: jax.Array, imposed_vals: jax.Array):
         """
-        USED
-        Internal reaction force on **FREE** DOFs only, for the ODE RHS.
+        uses total_potential_force to get internal reaction force on **FREE** DOFs only, for the ODE RHS.
 
         Mode:
         - If `self.calc_through_energy` is True: use `-∇U(x_full)` and slice by `free_mask`.
@@ -451,7 +384,20 @@ class EquilibriumClass(eqx.Module):
         """
         return self.total_potential_force(Variabs, Strctr, t, x_free, free_mask=free_mask, fixed_mask=fixed_mask,
                                           imposed_mask=imposed_mask, fixed_vals=fixed_vals, imposed_vals=imposed_vals)[free_mask]
-            
+ 
+    # ------ physical forces - bend, stretch, intersect ------ 
+    def bend_forces(self, Strctr, tau_hinges, x_full):
+        """
+        Forces on all nodes due to torques on each hinge.
+
+        Returns:
+        --------
+        jax.Array, shape: (n_coords,) which is (2*nodes,), Flattened reaction force on all position DOFs, [mN]
+        """
+
+        theta_jacs = self._theta_jacs_local(Strctr, x_full)  # (H, n_coords)
+        return (theta_jacs.T @ tau_hinges).reshape(-1)  # (n_coords,) which is (2*nodes,), [mN]  
+
     def stretch_forces(self, Strctr: "StructureClass", Variabs: "VariablesClass",
                        jnp_pos_arr: jax.Array[float]) -> jax.Array:
         """
@@ -472,8 +418,7 @@ class EquilibriumClass(eqx.Module):
 
         Returns
         -------
-        jax.Array, shape: (n_coords,) which is (2*nodes,)
-            Flattened reaction force on all position DOFs, [mN]
+        jax.Array, shape: (n_coords,) which is (2*nodes,), Flattened reaction force on all position DOFs, [mN]
         """
         # pos_arr: (N, 2)
         # Strctr.edge_list: (E, 2) with node indices (ia, ib)
@@ -505,23 +450,30 @@ class EquilibriumClass(eqx.Module):
                                  edges: jax.Array, p: float = 1.0, fmax: float | None = None, skip_band: int = 1,
                                  eps: float = 1e-12):
         """
-        Returns F_contact on all nodes, shape (N,2).
-        Designed for a simple chain where node i connects to i±1.
-        skip_band=2 skips edges too close: (i with edges touching i, i±1, etc.)
+        Compute node–edge contact (self-intersection prevention) forces for a planar chain.
+        Computes the shortest distance from node i to the edge (j,k). 
+        If the node penetrates within a radius r = r_intersect_factor * L, a repulsive force is applied along the outward normal.
+        Equal and opposite forces are distributed to the segment endpoints (j,k).
+        To avoid fighting stretch constraints, edges whose endpoints are within `skip_band` from the node are ignored.
 
-        inputs:
+        Parameters:
+        ------------
         jnp_pos_arr: (N,2) jax array, node positions in x-y
         edges      : (NE, 2) of each edge (1st dim) connecting node i to j (2nd dim)
         p          : exponent on penetration (1=linear, 2=quadratic)
         fmax       : float, maximal force that can be applied while using node-edge contact 
         skip_band  : skip edges within this index distance (chain), don't measure contact between a node and its own edge
-        eps        : 
+        eps    
+
+        Returns
+        -------
+        F_contact_full : jax.Array, shape (2*N,). Flattened contact force [mN] on all nodes, ordered as:
+                         [Fx0, Fy0, Fx1, Fy1, ..., Fx_{N-1}, Fy_{N-1}] 
         """
         r = self.r_intersect_factor*Strctr.L
         k = self.k_intersect_factor*Variabs.k_stretch
 
         N = jnp_pos_arr.shape[0]
-        r2 = r * r
 
         def pair_force(i, e):
             j, kidx = e  # segment endpoints
@@ -554,8 +506,7 @@ class EquilibriumClass(eqx.Module):
             Fa = -(1.0 - t) * F
             Fb = -t * F
 
-            active_flag = active.astype(jnp.int32)
-            return F, Fa, Fb, j, kidx, active_flag
+            return F, Fa, Fb, j, kidx
 
         # Accumulate forces via scatter-add
         Ftot = jnp.zeros_like(jnp_pos_arr)
@@ -566,7 +517,7 @@ class EquilibriumClass(eqx.Module):
         def for_i(i):
             return jax.vmap(lambda e: pair_force(i, e))(edges)
 
-        F_i, Fa_i, Fb_i, j_i, k_i, active_flags = jax.vmap(for_i)(ii)
+        F_i, Fa_i, Fb_i, j_i, k_i = jax.vmap(for_i)(ii)
 
         # Sum contributions:
         # Node forces: add over edges
@@ -584,177 +535,268 @@ class EquilibriumClass(eqx.Module):
 
         return Ftot.reshape(-1)
 
-    def _theta_jacs_local(self, Strctr: "StructureClass", x_flat: jax.Array) -> jax.Array:
-        """
-        Efficiently compute ∂θ_h/∂x for all hinges h, using a 6-DOF local parametrization.
-
-        Returns
-        -------
-        theta_jacs : jax.Array, shape (H, n_coords) which is (H, 2*nodes)
-            Row h contains the gradient of hinge angle θ_h w.r.t. all position DOFs.
-            Only the 6 DOFs of nodes (h, h+1, h+2) are non-zero.
-        """
-        n_coords = x_flat.shape[0]
-        H = Strctr.hinges
-
-        def hinge_local_dof_indices(h: int) -> jax.Array:
-            """
-            For hinge h in a chain, the angle depends on nodes (h, h+1, h+2),
-            each with (x,y) → 6 position DOFs total.
-            Returns a length-6 array of global DOF indices.
-            """
-            nodes = jnp.array([h, h + 1, h + 2], dtype=jnp.int32)
-            dofs = jnp.stack([2 * nodes, 2 * nodes + 1], axis=1)  # (3, 2)
-            return dofs.reshape(-1)  # (6,)
-
-        def grad_for_h(h: int) -> jax.Array:
-            local_idx = hinge_local_dof_indices(h)        # (6,)
-            x_local0 = x_flat[local_idx]                 # (6,)
-
-            def theta_of_local(x_local: jax.Array) -> jax.Array:
-                # Rebuild a full x vector using the local 6-DOF values
-                x_full = x_flat.at[local_idx].set(x_local)
-                pa = helpers_builders._reshape_state_2_pos_arr(x_full, self.jnp_init_pos)
-                return Strctr._get_theta(pa, h)
-
-            # dθ_h/dx_local (6,) via one reverse-mode pass
-            g_local = jax.jacrev(theta_of_local)(x_local0)
-
-            # Scatter back into a length-n_coords global gradient
-            grad_global = jnp.zeros_like(x_flat)
-            grad_global = grad_global.at[local_idx].set(g_local)
-            return grad_global  # (n_coords,) which is (2*nodes,)
-
-        # vmap over hinges → (H, n_coords) which is (H, 2*nodes)
-        theta_jacs = jax.vmap(grad_for_h)(jnp.arange(H, dtype=jnp.int32))
-        return theta_jacs
-
-    # -------- external forces (optional) ----------
+    # -------- external forces ----------
     def force_function_free(self, t: float, force_function: Callable[[float], jax.Array], *, 
                             free_mask: jax.Array) -> jax.Array:
-        """External force restricted to free DOFs."""
+        """
+        External force restricted to free DOFs. returns all zeros as of 2026Mar
+        """
         return force_function(t)[free_mask]
 
     def solve_dynamics(self, state_0: jax.Array, Variabs: "VariablesClass", Strctr: "StructureClass",
                        fixed_mask: jax.Array[bool] = None, fixed_vals: jax.Array[jnp.float_] = None,
-                       imposed_mask: jax.Array[bool] = None, imposed_vals: jax.Array[jnp.float_] = None, rtol: float = 1e-2,
+                       imposed_mask: jax.Array[bool] = None, imposed_vals: jax.Array[jnp.float_] = None,
                        maxsteps: int = 100):
-        # ------ ensure correct sizes ---
-        force_function = lambda t: jnp.zeros_like(self.jnp_init_pos).flatten()
+        """
+        Integrate damped EOMs for chain on FREE DOFs, enforcing fixed and imposed DOFs through masks.
 
+        This method:
+          1. Extracts the reduced state vector containing only FREE positional DOFs and their velocities.
+              - fixed_vals / imposed_vals become callables: t -> full position vector (n_coords,)
+          2. Integrates the ODE on the reduced state using `jax.experimental.ode.odeint`.
+          3. Reassembles the full trajectory (positions+velocities) by inserting imposed and fixed
+          4. Computes internal reaction forces along the trajectory.
+
+        Parameters
+        ----------
+        state_0                  : jax.Array, shape (2*n_coords,)
+                                   full state vector before equilibration, with positions and velocities, concatenated as:
+                                   [x0, y0, x1, y1, ..., x_{N-1}, y_{N-1}, vx0, vy0, ..., vx_{N-1}, vy_{N-1}]
+                                   where n_coords = 2*nodes.
+        fixed_mask, imposed_mask : optional array of bool, (n_coords,). 
+                                   True at DOFs that remain fixed / imposed throughout the integration.
+        fixed_vals, imposed_vals : jax.Array or callable, optional
+                                   If an array: full position vector of (n_coords,) containing fixed / imposed DOF values
+                                   (other entries ignored). Converted to a callable internally.
+                                   If a callable: function f(t) -> full position vector (n_coords,).
+                                   If None: defaults to the initial positions stored in `self.jnp_init_pos`.
+        maxsteps                 : int, default=100. Maximum number of internal steps for `odeint` (passed as `mxstep`).
+
+        Returns
+        -------
+        final_pos        : jax.Array, (nodes, 2). Final nodal positions at end of the integration (positions only).
+        pos_in_t         : jax.Array, (T, nodes, 2). Time history of nodal positions, reconstructed from full state history.
+        vel_in_t         : jax.Array, (T, nodes, 2). Time history of nodal velocities.
+        potential_F_in_t : jax.Array, shape (T, n_coords). Internal reaction forces on position DOFs (flattened).
+
+        Notes
+        -----
+        - The ODE is solved only on free DOFs. Fixed and imposed DOFs are injected back
+          into the full state after integration.
+        - External forces are currently set to zero (`force_function` is identically zero).
+        - Imposed DOFs are treated as prescribed positions; their velocities are not explicitly
+          imposed here (kept at zero unless they are also free DOFs).
+        """
+        # ------ external forces (currently zero) ------
+        force_function = lambda t: jnp.zeros_like(self.jnp_init_pos).reshape(-1)
+
+        # ------ canonicalize masks ------
         if fixed_mask is None:
-            fixed_mask = jnp.zeros_like(self.jnp_init_pos).flatten().astype(bool)
+            fixed_mask = jnp.zeros_like(self.jnp_init_pos).reshape(-1).astype(bool)
         else:
-            fixed_mask = jnp.array(fixed_mask).flatten().astype(bool)
-
-        if fixed_vals is None:
-            fixed_vals = jnp.asarray(self.jnp_init_pos, dtype=self.jnp_init_pos.dtype).reshape((self.jnp_init_pos.size,))
-        elif callable(fixed_vals):
-            # leave as-is
-            pass
-        else:
-            # fixed_vals = jnp.asarray(fixed_vals, dtype=Eq.init_pos.dtype).reshape((Eq.init_pos.size,))
-            ivec = jnp.asarray(fixed_vals, dtype=self.jnp_init_pos.dtype).reshape((self.jnp_init_pos.size,))
-            fixed_vals = lambda t, ivec=ivec: ivec
+            fixed_mask = jnp.asarray(fixed_mask).reshape(-1).astype(bool)
 
         if imposed_mask is None:
             imposed_mask = jnp.zeros((self.jnp_init_pos.size,), dtype=bool)
         else:
             imposed_mask = jnp.asarray(imposed_mask, dtype=bool).reshape((self.jnp_init_pos.size,))
 
-        # imposed displacement values: callable or constant vector
-        if imposed_vals is None:
-            base = jnp.asarray(self.jnp_init_pos, dtype=self.jnp_init_pos.dtype).reshape((self.jnp_init_pos.size,))
-            imposed_vals = lambda t, base=base: base
-        elif callable(imposed_vals):  # leave as-is
+        # ------ canonicalize fixed_vals to a callable ------
+        if fixed_vals is None:
+            ivec = jnp.asarray(self.jnp_init_pos, dtype=self.jnp_init_pos.dtype).reshape(-1)
+            fixed_vals = lambda t, ivec=ivec: ivec
+        elif callable(fixed_vals):
             pass
         else:
-            ivec = jnp.asarray(imposed_vals, dtype=self.jnp_init_pos.dtype).reshape((self.jnp_init_pos.size,))
+            ivec = jnp.asarray(fixed_vals, dtype=self.jnp_init_pos.dtype).reshape(-1)
+            fixed_vals = lambda t, ivec=ivec: ivec
+
+        # ------ canonicalize imposed_vals to a callable ------
+        if imposed_vals is None:
+            base = jnp.asarray(self.jnp_init_pos, dtype=self.jnp_init_pos.dtype).reshape(-1)
+            imposed_vals = lambda t, base=base: base
+        elif callable(imposed_vals):
+            pass
+        else:
+            ivec = jnp.asarray(imposed_vals, dtype=self.jnp_init_pos.dtype).reshape(-1)
             imposed_vals = lambda t, ivec=ivec: ivec
 
+        # ------ reduce full state to free DOFs ------
         free_mask, n_free_DOFs, state_0_free = helpers_builders._get_state_free_from_full(state_0, fixed_mask, imposed_mask)
 
+        # JIT force-from-full-x function for fast force evaluations along the trajectory
         force_full_fn = eqx.filter_jit(lambda x_full: self.total_potential_force_from_full_x(Variabs, Strctr, x_full))
 
-        # ------ right-hand-size of ODE ------
+        # ------ RHS on the reduced (free) state ------
         @jit
         def rhs(state_free: jax.Array, t: float):
             x_free, xdot_free = state_free[:n_free_DOFs], state_free[n_free_DOFs:]
+
             f_ext = self.force_function_free(t, force_function, free_mask=free_mask)
             f_pot = self.potential_force_free(Variabs, Strctr, t, x_free, free_mask=free_mask, fixed_mask=fixed_mask,
                                               fixed_vals=fixed_vals, imposed_mask=imposed_mask, imposed_vals=imposed_vals)
             accel = (f_ext + f_pot - self.damping_coeff * xdot_free) / self.mass
             return jnp.concatenate([xdot_free, accel], axis=0)
 
-        # @jit
-        # def rhs_diffrax(t: float, state_free: jax.Array, args):
-        #     return rhs(state_free, t)
-
-        t1 = time.time()
-
+        # ------ integrate reduced system ------
         res_free: jax.Array = odeint(rhs, state_0_free, self.time_points, rtol=self.tolerance, mxstep=maxsteps)
 
-        pos_mask = free_mask
-        vel_mask = free_mask
-        mask_free_both = jnp.concatenate([pos_mask, vel_mask], axis=0)
+        # ------ reconstruct full state history (positions+velocities) ------
+        # free DOFs occupy the same mask in both position and velocity halves
+        mask_free_both = jnp.concatenate([free_mask, free_mask], axis=0)
 
         res = jnp.zeros((res_free.shape[0], Strctr.n_coords * 2), dtype=res_free.dtype)
         res = res.at[:, mask_free_both].set(res_free)
 
+        # fixed positions injected; fixed velocities set to zero
         mask_fixed_pos = jnp.concatenate([fixed_mask, jnp.zeros_like(fixed_mask)], axis=0)
         mask_fixed_vel = jnp.concatenate([jnp.zeros_like(fixed_mask), fixed_mask], axis=0)
         res = res.at[:, mask_fixed_pos].set(vmap(fixed_vals)(self.time_points)[:, fixed_mask])
         res = res.at[:, mask_fixed_vel].set(0.0)
 
+        # imposed positions injected; imposed velocities left as-is (currently zero unless free)
         mask_imposed_pos = jnp.concatenate([imposed_mask, jnp.zeros_like(imposed_mask)], axis=0)
-        # mask_imposed_vel = jnp.concatenate([jnp.zeros_like(imposed_mask), imposed_mask], axis=0)
-
         res = res.at[:, mask_imposed_pos].set(vmap(imposed_vals)(self.time_points)[:, imposed_mask])
-        # res = res.at[:, mask_imposed_vel].set(vmap(imposed_disp_speed_values)(self.time_points)[:, imposed_mask])
 
-        # # assume n_coords = Strctr.n_coords (number of coordinate DOFs)
-        # # and n_free = sum(free_mask) (number of free positional DOFs)
-        # free_pos_count = jnp.sum(free_mask)  # number of free position DOFs
-        # free_vel_count = free_pos_count      # number of free velocity DOFs (same as free pos)
+        # ------ unpack outputs ------
+        final_pos = res[-1, :Strctr.n_coords].reshape(self.jnp_init_pos.shape)
 
-        # def assemble_full_state(free_state, t):
-        #     # `free_state` contains [x_free, xdot_free] flattened for this time step
-        #     x_free = free_state[:free_pos_count]
-        #     xdot_free = free_state[free_pos_count:]
-            
-        #     # Start with fixed positions in place (others zero)
-        #     # `fixed_vals` is a full-length (n_coords,) vector with fixed DOFs set:contentReference[oaicite:0]{index=0}
-        #     full_pos = fixed_vals
-        #     # Insert free positions and imposed positions
-        #     full_pos = full_pos.at[free_mask].set(x_free)            # fill free DOFs
-        #     full_pos = full_pos.at[imposed_mask].set(imposed_vals(t)[imposed_mask])  # fill imposed DOFs
-            
-        #     # Full velocity: start as zeros, then fill free velocities (fixed and imposed remain 0)
-        #     full_vel = jnp.zeros_like(full_pos)
-        #     full_vel = full_vel.at[free_mask].set(xdot_free)
-        #     # (If needed, one could compute imposed velocity via derivative of imposed_vals, but often set 0 if quasi-static)
-            
-        #     # Concatenate full positions and velocities
-        #     return jnp.concatenate([full_pos, full_vel], axis=0)
+        pos_in_t = res[:, :Strctr.n_coords].reshape((len(res), self.jnp_init_pos.shape[0], self.jnp_init_pos.shape[1]))
+        vel_in_t = res[:, Strctr.n_coords:].reshape((len(res), self.jnp_init_pos.shape[0], self.jnp_init_pos.shape[1]))
 
-        # # Vectorize assembly over all time steps:
-        # res = jax.vmap(assemble_full_state)(res_free, self.time_points)
+        # reaction/internal forces on positions along the trajectory
+        potential_F_in_t = vmap(lambda x: force_full_fn(x[:Strctr.n_coords]))(res)
 
-        # res.block_until_ready()
-        # print(f"Integration done in {time.time() - t1:.2f} s")
+        return (final_pos, pos_in_t, vel_in_t, potential_F_in_t)
 
-        final_disp = res[-1, :Strctr.n_coords].reshape(self.jnp_init_pos.shape)
+    # ------ helpers for forces -------
+    def _theta_jacs_local(self, Strctr: "StructureClass", x_flat: jax.Array) -> jax.Array:
+        """
+        Compute local hinge-angle Jacobians ∂θ_h/∂x for all hinges h.
+        For a simple chain, hinge h depends only on the positions of nodes:
+            (h), (h+1), (h+2),
+        i.e. 3 nodes × 2 coordinates = 6 position DOFs.
 
-        displacements = res[:, :Strctr.n_coords].reshape((len(res), self.jnp_init_pos.shape[0], self.jnp_init_pos.shape[1]))
-        # .block_until_ready()
+        Parameters:
+        -----------
+        x_flat - jax.Array, shape (2*nodes,). Flattened **position** vector (no velocities), ordered as:
+                                              [x0, y0, x1, y1, ..., x_{N-1}, y_{N-1}]
 
-        # Get velocities from the last part of the state vector
-        velocities = res[:, Strctr.n_coords:].reshape((len(res), self.jnp_init_pos.shape[0], self.jnp_init_pos.shape[1]))
+        Returns
+        -------
+        theta_jacs - jax.Array, shape (H, n_coords) which is (H, 2*nodes)
+            Row h contains the gradient of hinge angle θ_h w.r.t. all position DOFs.
+            Only the 6 DOFs of nodes (h, h+1, h+2) are non-zero.
+        """
+        H = int(Strctr.hinges)
+        zero = jnp.zeros_like(x_flat)
 
-        # No "-" sign for force as a reaction force?   [mN]
-        potential_F_evolution = vmap(lambda x: force_full_fn(x[:Strctr.n_coords].reshape(self.jnp_init_pos.shape).flatten()))(res)
+        def local_idx_for_h(h: jax.Array) -> jax.Array:
+            """
+            Global DOF indices for nodes (h, h+1, h+2):
+            [2h, 2h+1, 2(h+1), 2(h+1)+1, 2(h+2), 2(h+2)+1]
+            """
+            base = 2 * h
+            return jnp.array([base, base + 1, base + 2, base + 3, base + 4, base + 5], dtype=jnp.int32)
 
-        return (final_disp, displacements, velocities, potential_F_evolution)
+        def grad_for_h(h: jax.Array) -> jax.Array:
+            idx = local_idx_for_h(h)     # (6,)
+            x0 = x_flat[idx]             # (6,)
+
+            def theta_of_local(x_local: jax.Array) -> jax.Array:
+                # only patch local 6 dofs into the full vector
+                x_full = x_flat.at[idx].set(x_local)
+                pos_arr = helpers_builders._reshape_state_2_pos_arr(x_full, self.jnp_init_pos)
+                return Strctr._get_theta(pos_arr, h)
+
+            g_local = jax.jacrev(theta_of_local)(x0)  # (6,)
+            return zero.at[idx].set(g_local)          # (2*nodes,)
+
+        return jax.vmap(grad_for_h)(jnp.arange(H, dtype=jnp.int32)) 
+
+    # ------ helpers for assembly - set vals ------
+    def _set_fixed_vals(self, fixed_mask) -> jax.array:
+        """
+        return jax array (2*N,), nonzero values are values that are fixed along equilibrium calculation 
+        (i.e. 1st and 2nd nodes at chain base)
+
+        Parameters:
+        -----------
+        fixed_mask   : jnp.array(bool), (2 * nodes,), which of the nodes (in x,y) are fixed.
+
+        Returns:
+        --------
+        fixed_vals : jnp.ndarray, shape (2 * nodes,), dtype=bool, [x0, y0, x1, y1, ..., x_last, y_last]
+        """
+        fixed_vals = jnp.zeros((len(fixed_mask),), dtype=float)
+        return fixed_vals.at[fixed_mask].set(self.jnp_init_pos.reshape((-1,))[fixed_mask])
+
+    def _set_imposed_vals(self, Strctr: "StructureClass", Sprvsr: "SupervisorClass", tip_pos, tip_angle, 
+                          init_pos):
+        """
+        Build a time-dependent imposed displacement function.
+
+        - At t = 0: imposed DOFs equal the previous equilibrium positions (self.jnp_init_pos).
+        - For 0 < t < T_ramp: linearly ramp to the new tip pose.
+        - For t >= T_ramp: imposed DOFs stay at the new pose.
+
+        Parameters:
+        -----------
+        Sprvsr.imposed_mask: jnp.array(bool) Boolean mask of shape (2 * nodes,) marking imposed DOFs.
+
+        tip_pos : array-like or jax array, optional
+            tip position at end of training step, shape (2,) = (x_tip, y_tip). If None, no imposed update is applied.
+
+        tip_angle : float or jax array, optional,
+            tip angle in at end of training step in radians (CCW from +x). If None, the initial tip angle
+            (angle of the last edge in `init_pos`) is preserved during the ramp.
+
+        init_pos : jax array, shape (nodes, 2)
+            Initial nodal positions used as the starting configuration at t=0 and as reference for ramp.
+
+        Returns:
+        --------
+        imposed_vals : Callable[[float], jax.Array]
+            A function of time `t` returning flattened position vector (2 * nodes,). Imposed entries are set to the values:
+                [x0, y0, x1, y1, ..., x_{N-1}, y_{N-1}]
+
+            Used as `imposed_mask` (or `Sprvsr.imposed_mask`) in `solve_dynamics()`
+        """
+        start_vec = init_pos.reshape(-1)
+
+        if tip_pos is None:
+            return lambda t, v=start_vec: v
+
+        tip_init = start_vec[-2:]  # only if last node is tip in your flattening
+        # Better: explicitly pull from init_pos:
+        tip_init = init_pos[-1, :]                      # (2,)
+        before_tip_init = init_pos[-2, :]                   # (2,)
+        theta_init = jnp.arctan2(tip_init[1]-before_tip_init[1], tip_init[0]-before_tip_init[0])  # angle of last edge
+
+        tip_fin = jnp.asarray(tip_pos, dtype=init_pos.dtype).reshape((2,))
+        theta_fin = jnp.asarray(tip_angle, dtype=init_pos.dtype) if tip_angle is not None else theta_init
+
+        T_total = self.time_points[-1]
+        T_ramp = 0.33 * T_total
+
+        def smoothstep(s):
+            return s*s*(3 - 2*s)  # C1 smooth
+
+        def imposed_vals(t):
+            s = jnp.clip(t / T_ramp, 0.0, 1.0)
+            s = smoothstep(s)
+
+            tip_t = (1-s) * tip_init + s * tip_fin
+            th_t = (1-s) * theta_init + s * theta_fin
+
+            before_t = helpers_builders._get_before_tip(
+                tip_pos=tip_t, tip_angle=th_t, L=Strctr.L, dtype=init_pos.dtype
+            )
+            out = start_vec
+            out = out.at[Sprvsr.imposed_mask].set(jnp.concatenate([before_t, tip_t]))
+            return out
+
+        return imposed_vals
 
 # # ==========
 # # NOT IN USE
