@@ -32,6 +32,8 @@ class SupervisorClass:
     """
     Variables that are by the external supervisor in the experiment
 
+    attributes:
+    -----------
     alpha              : float, Step size for updating the commanded tip pose.
     T                  : int, Number of training steps in the dataset.
     desired_buckle_arr : ndarray[int] (H,S), desired buckle configuration.
@@ -60,6 +62,22 @@ class SupervisorClass:
     convert_pos        : conversion scale from [m] to [mm], for file exports
     convert_angle      : conversion scale from [rad] to [deg], for file exports
     convert_F          : coversion scale of forces needs no adjustment, it is in [mN], for file exports.
+
+    Methods:
+    --------
+    _build_imposed_mask(Strctr, control_tip)
+            Boolean mask marking imposed (prescribed) degrees of freedom. 
+            These are prescribed position, generally tip control.
+    create_dataset(Strctr, CFG, sampling, tip_pos, tip_angle, dist_noise, angle_noise)
+            Generate and store commanded tip positions and angles for the supervisor.
+            according to sampling strategy. These trajectories are used in measurement, update, or stress–strain protocols.
+    set_desired(pos_arr, Fx, Fy, t):
+            Store ground-truth targets for step t.
+    calc_loss(Variabs, t, Fx, Fy)
+            Compute loss vector (Fx,Fy) at step t and log it.
+    calc_update_tip(t, Strctr, Variabs, State, current_tip_pos, prev_tip_update_pos, current_tip_angle,
+                    prev_tip_update_angle, correct_for_total_angle, correct_for_coil, correct_for_cut_origin
+            Compute next tip position/angle commands from current loss and state (pure NumPy).
     """  
     # --- configuration / hyperparams ---
     T: int = eqx.field(static=True)
@@ -154,7 +172,7 @@ class SupervisorClass:
 
         self.supress_prints = supress_prints
 
-    def _build_imposed_mask(self, Strctr: "StructureClass", control_tip: bool = True):
+    def _build_imposed_mask(self, Strctr: "StructureClass", control_tip: bool = True) -> jax.Array:
         """
         Boolean mask marking imposed (prescribed) degrees of freedom. These are prescribed position, generally tip control.
 
