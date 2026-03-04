@@ -18,7 +18,31 @@ from config import ExperimentConfig
 def train(Strctr: StructureClass, Variabs: VariablesClass, Sprvsr: SupervisorClass, State_meas: StateClass,
           State_update: StateClass, State_des: StateClass, CFG: ExperimentConfig):
     """
-    comment here
+    Run the closed-loop training loop: measure → compute loss → update tip command → relax → buckle.
+
+    At each training step `t`, this routine performs two equilibrium solves under the *same* commanded
+    tip pose (position + angle):
+      1) **Measurement**: equilibrate using the *current* buckle state (`State_meas.buckle_arr`).
+      2) **Desired**: equilibrate using the *target* buckle configuration (`Sprvsr.desired_buckle_arr`).
+      3) **Loss and Update**: compute loos and equilibrate again with updated tip command (`Sprvsr.tip_pos_update_in_t[t]`,
+         `Sprvsr.tip_angle_update_in_t[t]`) and the current update buckle state (`State_update.buckle_arr`).
+      4) Apply the **buckling rule** (`State_update.buckle(...)`) to flip shims whose hinge angles
+         cross thresholds, and mirror those flips into `State_meas`.
+
+    Notes
+    -----
+    - Loop starts at `t=1` (step 0 assumed to be initialization, already stored in the states).
+
+    Parameters
+    ----------
+    State_meas   - StateClass. "Measured" modality state (current buckle), updated each step from equilibrium.
+    State_update - StateClass. "Update" modality state (after applying the learned command update), buckles may flip.
+    State_des    - StateClass. "Desired" modality state (target buckle config), used to generate force targets.
+
+    Returns
+    -------
+    pos_in_t_meas   : ndarray, shape (T, nodes, 2) Measurement modality equilibrium node positions over training steps.
+    pos_in_t_update : ndarray, shape (T, nodes, 2) Update modality equilibrium node positions over training steps.
     """
     for t in range(1, Sprvsr.T):    
         print('t=', t)   
@@ -26,10 +50,10 @@ def train(Strctr: StructureClass, Variabs: VariablesClass, Sprvsr: SupervisorCla
         ## MEASUREMENT
         print('===MEASUREMENT===')
         
-    #     tip_pos = Sprvsr.tip_pos_in_t[t]
-    #     tip_angle = Sprvsr.tip_angle_in_t[t] 
-        tip_pos = np.array([0.24, 0.033769])
-        tip_angle = 0.54186946
+        tip_pos = Sprvsr.tip_pos_in_t[t]
+        tip_angle = Sprvsr.tip_angle_in_t[t] 
+        # tip_pos = np.array([0.24, 0.033769])
+        # tip_angle = 0.54186946
         # print('tip_pos=', tip_pos)
         # print('tip_angle=', tip_angle)
         
@@ -39,12 +63,10 @@ def train(Strctr: StructureClass, Variabs: VariablesClass, Sprvsr: SupervisorCla
         # --- equilibrium - measured & desired---
         Eq_meas = EquilibriumClass(Strctr, CFG, buckle_arr=State_meas.buckle_arr, pos_arr=State_meas.pos_arr)  # meausrement
         Eq_des = EquilibriumClass(Strctr, CFG, buckle_arr=Sprvsr.desired_buckle_arr, pos_arr=State_des.pos_arr)  # desired
-        final_pos, pos_in_t, _, F_theta = Eq_meas.calculate_state(Variabs, Strctr, Sprvsr,
-                                                                  init_pos=State_meas.pos_arr_in_t[:, :, t-1],
+        final_pos, pos_in_t, _, F_theta = Eq_meas.calculate_state(Variabs, Strctr, Sprvsr, init_pos=None,
                                                                   tip_pos=tip_pos, tip_angle=tip_angle)
-        final_pos_des, pos_in_t_des, _, F_theta_des = Eq_des.calculate_state(Variabs, Strctr, Sprvsr, 
-                                                                  init_pos=State_meas.pos_arr_in_t[:, :, t-1], 
-                                                                  tip_pos=tip_pos, tip_angle=tip_angle)
+        final_pos_des, pos_in_t_des, _, F_theta_des = Eq_des.calculate_state(Variabs, Strctr, Sprvsr, init_pos=None, 
+                                                                             tip_pos=tip_pos, tip_angle=tip_angle)
     #     edge_lengths = vmap(lambda e: Strctr._get_edge_length(final_pos, e))(jnp.arange(Strctr.edges))
     #     print('edge lengths', helpers_builders.numpify(edge_lengths))
 
@@ -106,113 +128,160 @@ def train(Strctr: StructureClass, Variabs: VariablesClass, Sprvsr: SupervisorCla
     #     # print('energy', Eq.energy(Variabs, Strctr, final_pos)[-1])
         plot_funcs.plot_arm(final_pos, State_update.buckle_arr, State_update.theta_arr, Strctr.L, modality="update")
 
-        pos_in_t_meas = np.moveaxis(State_meas.pos_arr_in_t, 2, 0)
-        pos_in_t_udpate = np.moveaxis(State_update.pos_arr_in_t, 2, 0)
+    pos_in_t_meas = np.moveaxis(State_meas.pos_arr_in_t, 2, 0)
+    pos_in_t_update = np.moveaxis(State_update.pos_arr_in_t, 2, 0)
 
-    return pos_in_t_meas, pos_in_t_udpate
+    return pos_in_t_meas, pos_in_t_update
 
 
 def compress_to_tip_pos(Strctr: "StructureClass", Variabs: "VariablesClass", Sprvsr: "SupervisorClass", CFG: ExperimentConfig,
                         buckle: NDArray, tip_pos_i: NDArray, tip_angle_i: float, tip_pos_f: NDArray, tip_angle_f: float,
                         Eq_iterations: int) -> Tuple["StateClass", list[NDArray], list[NDArray]]:
     """
-        Incrementally compress origami to final tip position and angle, ensuring stable convergence, in Eq_iterations steps.
+    Incrementally compress origami to final tip position and angle, ensuring stable convergence, in Eq_iterations steps.
 
-        This function performs a sequence of equilibrium simulations, gradually moving the tip 
-        from an initial position and angle `(tip_pos_i, tip_angle_i)` to a final configuration 
-        `(tip_pos_f, tip_angle_f)`. After each intermediate step, the new equilibrium state 
-        becomes the starting point for the next iteration. This progressive approach stabilizes 
-        the numerical integration for stiff systems.
+    This function performs a sequence of equilibrium simulations, gradually moving the tip 
+    from an initial position and angle `(tip_pos_i, tip_angle_i)` to a final configuration 
+    `(tip_pos_f, tip_angle_f)`. After each intermediate step, the new equilibrium state 
+    becomes the starting point for the next iteration. This progressive approach stabilizes 
+    the numerical integration for stiff systems.
 
-        Parameters
-        ----------
-        Strctr      - StructureClass, Structural definition containing geometry (hinges, edges, node layout, etc.).
-        Variabs     - VariablesClass, Material and stiffness parameters for hinges, edges, and stretch elements.
-        Sprvsr      - SupervisorClass, Supervisory object controlling simulation and visualization parameters.
-        CFG         - user variables from config file
-        buckle      - NDArray, Initial buckle state of all hinges (typically ±1).
-        tip_pos_i   - array-like of shape (2,), Initial position of the structure’s tip node.
-        tip_angle_i - float, Initial angular orientation of the tip node (radians).
-        tip_pos_f   - array-like of shape (2,), Target final position of the structure’s tip node.
-        tip_angle_f - float, Target final tip orientation (radians).        
+    Parameters
+    ----------
+    buckle      - NDArray, Initial buckle state of all hinges (typically ±1).
+    tip_pos_i   - array-like of shape (2,), Initial position of the structure’s tip node.
+    tip_angle_i - float, Initial angular orientation of the tip node (radians).
+    tip_pos_f   - array-like of shape (2,), Target final position of the structure’s tip node.
+    tip_angle_f - float, Target final tip orientation (radians).        
 
-        Returns
-        -------
-        State      - StateClass, Final equilibrium state of the structure after all compression steps.
-        pos_in_t   - list[NDArray], List of position histories over all equilibrium phases.
-                                    Each entry corresponds to the node positions over time during one equilibrium phase.
-        force_in_t - list[NDArray], List of potential force histories corresponding to each equilibrium phase.
+    Returns
+    -------
+    State      - StateClass, Final equilibrium state of the structure after all compression steps.
+    pos_in_t   - list[NDArray], List of position histories over all equilibrium phases.
+                                Each entry corresponds to the node positions over time during one equilibrium phase.
+    force_in_t - list[NDArray], List of potential force histories corresponding to each equilibrium phase.
 
-        Notes
-        -----
-        - The function linearly interpolates both the tip position and angle across 
-          `Eq_iterations` steps for smooth deformation.
-        - The last step is performed with increased `T_eq` (×2) and damping (×3) 
-          to ensure convergence to a steady-state equilibrium.
-        - Each equilibrium step is executed via `one_shot()`, which performs a 
-          single equilibrium calculation and visualization.
-        """
-
+    Notes
+    -----
+    - The function linearly interpolates both the tip position and angle across 
+      `Eq_iterations` steps for smooth deformation.
+    - The last step is performed with increased `T_eq` (×2) and damping (×3) 
+      to ensure convergence to a steady-state equilibrium.
+    - Each equilibrium step is executed via `one_shot()`, which performs a 
+      single equilibrium calculation and visualization.
+    """
     # initialize positions and forces
     pos_in_t = []
     force_in_t = []
     State = StateClass(Strctr, Sprvsr, buckle_arr=buckle)
-    for i in range(Eq_iterations):
-        
-        # incrementally move positiong and angle
-        tip_pos = tip_pos_i*(Eq_iterations-(i+1))/(Eq_iterations) + tip_pos_f*(i+1)/Eq_iterations
-        tip_angle = tip_angle_i*(Eq_iterations-(i+1))/(Eq_iterations) + tip_angle_f*(i+1)/Eq_iterations
-        
-        # initial position of current step is the Equilibrium of the previous
-        if i == 0:
-            pos_init = None
-        else:
-            pos_init = pos_in_t[-1][-1]
 
-        # calculate equilibrium of new tip pos and angle
-        pos_in_t_i, force_in_t_0 = one_shot(Strctr, Variabs, Sprvsr, State, CFG, buckle, tip_pos, tip_angle,
-                                            init_pos=pos_init, t=i)
+    # Build command schedule safely:
+    # - Eq_iterations steps to transition (could be 0)
+    # - +1 extra step to "hold" at the final command
+    n_steps = Eq_iterations + 1
+
+    # interpolation fractions for the transition steps: (1/Eq_iterations, ..., 1)
+    alphas = (np.arange(1, Eq_iterations + 1, dtype=float) / float(Eq_iterations))
+    tip_pos_i_arr = np.asarray(tip_pos_i, dtype=float)
+    tip_pos_f_arr = np.asarray(tip_pos_f, dtype=float)
+
+    tip_pos_seq = [tip_pos_i_arr * (1.0 - a) + tip_pos_f_arr * a for a in alphas]
+    tip_ang_seq = [float(tip_angle_i * (1.0 - a) + tip_angle_f * a) for a in alphas]
+
+    # append one extra "hold" step at the *final* command
+    tip_pos_seq.append(tip_pos_f_arr)
+    tip_ang_seq.append(float(tip_angle_f))
+
+    pos_init = None  # None for first shot, then last equilibrium thereafter
+
+    for t, (tip_pos, tip_angle) in enumerate(zip(tip_pos_seq, tip_ang_seq)):
+        pos_in_t_i, force_in_t_i = one_shot(Strctr, Variabs, Sprvsr, State, CFG, buckle, tip_pos, tip_angle,
+                                            init_pos=pos_init, t=t)
         pos_in_t.append(pos_in_t_i)
-        force_in_t.append(force_in_t_0)
+        force_in_t.append(force_in_t_i)
 
-    # final one is just some more time at same tip pos
-    pos_init = pos_in_t[-1][-1]
-    pos_in_t_i, force_in_t_0 = one_shot(Strctr, Variabs, Sprvsr, State, CFG, buckle, tip_pos, tip_angle, init_pos=pos_init, t=i)
-    pos_in_t.append(pos_in_t_i)
-    force_in_t.append(force_in_t_0)
+        # Next init is the last equilibrium position from this shot
+        # (assumes pos_in_t_i is a time series with last entry being final equilibrium)
+        pos_init = pos_in_t_i[-1]
+
     return State, pos_in_t, force_in_t
 
 
 def measure_determined_pos_from_file(Strctr: "StructureClass", Variabs: "VariablesClass", Sprvsr: "SupervisorClass",
                                      CFG: ExperimentConfig, path: str, buckle: NDArray,
                                      stretch_factor: Optional[float] = None) -> Tuple[NDArray, NDArray, NDArray]:
-    T, P, F = file_funcs.load_pos_force(path, mod="arrays", stretch_factor = stretch_factor)
+    """
+    tip performs prescribed trajectory from a CSV file, measure simulated tip forces. Export results to csv,
+
+    Notes
+    -----
+    - Also load experimental forces stored in the same file
+    - At each time, populate supervisor command histories:
+       - `Sprvsr.tip_pos_in_t   = P[:, :2]`
+       - `Sprvsr.tip_angle_in_t = P[:, 2]`
+    - Assumes `file_funcs.load_pos_force(..., mod="arrays")` returns:
+      `(T, P, F)` where `P[:, :2]` are positions, `P[:, 2]` is angle, and `F[:, 0/1]` are forces.
+
+    Parameters
+    ----------
+    path            - str. Path to the CSV file containing tip poses and (optionally) forces.
+    buckle          - ndarray. Initial buckle configuration for the chain, forwarded to `StateClass`
+                      and to `one_shot(...)`.
+    stretch_factor  - Optional[float]. Optional stretch rescaling passed to `load_pos_force`.
+
+    Returns
+    -------
+    State        : StateClass
+                   State instance used during replay; contains the final equilibrium state and logged histories.
+    P            : ndarray, shape (T, 3)
+                   Tip pose history loaded from file: columns are [x, y, angle].
+    F_x_vec      : ndarray, shape (T,)
+                   x-force at the tip for each commanded pose.
+    F_y_vec      : ndarray, shape (T,)
+                   y-force at the tip for each commanded pose.
+    F_x_vec_exp  : ndarray, shape (T,)
+                   Experimental x-force loaded from file (for comparison).
+    F_y_vec_exp  : ndarray, shape (T,)
+                   Experimental y-force loaded from file (for comparison).
+    """
+    T, P, F = file_funcs.load_pos_force(path, mod="arrays", stretch_factor=stretch_factor)
+
+    # Supervisor command histories (used elsewhere, and for export)
     Sprvsr.tip_pos_in_t = P[:, :2]
     Sprvsr.tip_angle_in_t = P[:, 2]
+
+    # Experimental forces from file
     F_x_vec_exp = F[:, 0]
     F_y_vec_exp = F[:, 1]
     print('P', P)
-    F_x_vec = np.zeros(np.shape(P)[0])
-    F_y_vec = np.zeros(np.shape(P)[0])
+
+    # Allocate simulated forces
+    n = P.shape[0]
+    F_x_vec = np.zeros(n, dtype=float)
+    F_y_vec = np.zeros(n, dtype=float)
+
     State = StateClass(Strctr, Sprvsr, buckle_arr=buckle)
-    for i, pos in enumerate(P):
-        if i == 0:
-            # init_pos = np.array([[0., 0.],
-            #                      [0.045, 0.],
-            #                      [0.08891349, -0.11953123],
-            #                      [0.12679164, -0.11454715],
-            #                      [0.11983377, -0.15893409],
-            #                      [0.1101802, -0.10281981],
-            #                      [0.142, -0.071]])
-            init_pos = None
-        else:
-            init_pos = pos_in_t[-1]
-        tip_pos = pos[:2]
-        tip_pos = pos[:2] + np.array([-0.002, -0.0])
-        tip_angle = pos[2]
-        pos_in_t, final_F = one_shot(Strctr, Variabs, Sprvsr, State, CFG, buckle, tip_pos, tip_angle, init_pos=init_pos, t=i)
-        F_x_vec[i], F_y_vec[i] = State.Fx, State.Fy
-    file_funcs.export_stress_strain_sim(Sprvsr, F_x_vec, F_y_vec,  Strctr.L, buckle)
+
+    # Tip calibration offset (avoid allocating each loop)
+    tip_offset = np.array([-0.002, 0.0], dtype=float)
+
+    prev_final_pos = None  # warm-start position for next step
+
+    for i in range(n):
+        tip_pos = P[i, :2] + tip_offset
+        tip_angle = float(P[i, 2])
+
+        pos_traj, final_F = one_shot(Strctr, Variabs, Sprvsr, State, CFG, buckle, tip_pos, tip_angle, 
+                                     init_pos=prev_final_pos, t=i)
+
+        # Record simulated forces (State updated inside one_shot)
+        F_x_vec[i] = State.Fx
+        F_y_vec[i] = State.Fy
+
+        # Warm start next iteration from last equilibrium position of this trajectory
+        prev_final_pos = pos_traj[-1]
+
+    file_funcs.export_stress_strain_sim(Sprvsr, F_x_vec, F_y_vec, Strctr.L, buckle)
     return State, P, F_x_vec, F_y_vec, F_x_vec_exp, F_y_vec_exp
 
 
@@ -227,10 +296,6 @@ def one_shot(Strctr: "StructureClass", Variabs: "VariablesClass", Sprvsr: "Super
 
     Parameters
     ----------
-    Strctr    - StructureClass, Structural definition containing geometry (hinges, edges, node layout, etc.).
-    Variabs   - VariablesClass, Material and stiffness parameters for hinges, edges, and stretch elements.
-    Sprvsr    - SupervisorClass, Supervisory object controlling simulation and visualization parameters.
-    CFG       - user variables in config file
     buckle    - NDArray, Array indicating the initial buckle configuration of the system (typically ±1).
     tip_pos   - NDArray, Prescribed position of the tip node(s) during the equilibrium calculation.
     tip_angle - NDArray, Prescribed angular orientation of the tip node(s).
@@ -293,10 +358,6 @@ def ADMET_stress_strain(Strctr: StructureClass, Variabs: VariablesClass, Sprvsr:
 
     Parameters
     ----------
-    Strctr    - StructureClass, Structural definition containing geometry (hinges, edges, node layout, etc.).
-    Variabs   - VariablesClass, Material and stiffness parameters for hinges, edges, and stretch elements.
-    Sprvsr    - SupervisorClass, Supervisory object controlling simulation and visualization parameters.
-    CFG       - user variables in config file
     buckle    - NDArray, Array indicating the initial buckle configuration of the system (typically ±1).
     tip_pos   - NDArray, Prescribed position of the tip node(s) during the equilibrium calculation.
     tip_angle - NDArray, Prescribed angular orientation of the tip node(s).
@@ -317,9 +378,6 @@ def ADMET_stress_strain(Strctr: StructureClass, Variabs: VariablesClass, Sprvsr:
         Buckle configuration at equilibrium for each tip position
     theta_frames : ndarray, shape (T, hinges)
         Hinge angles at equilibrium for each tip position (radians).
-
-    Notes
-    -----
     """
     # --- safety check - Supervisor tip position afo t has to be 'stress strain' ---
     if getattr(Sprvsr, "dataset_sampling", None) != "stress strain":
