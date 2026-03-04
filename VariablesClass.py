@@ -11,7 +11,6 @@ from typing import TYPE_CHECKING, Callable, Optional
 
 if TYPE_CHECKING:
     from StructureClass import StructureClass
-    from config import ExperimentConfig
 
 import file_funcs
 
@@ -88,8 +87,8 @@ class VariablesClass(eqx.Module):
         self.k_type = CFG.Variabs.k_type  # static
 
         if self.k_type == "Numerical":  # numerical model - Hookean torque
-            self.k_soft = CFG.Variabs.k_soft * np.array((H, S), dtype=jnp.float32)
-            self.k_stiff = CFG.Variabs.k_stiff * np.array((H, S), dtype=jnp.float32)
+            self.k_soft = CFG.Variabs.k_soft * array((H, S), dtype=jnp.float32)
+            self.k_stiff = CFG.Variabs.k_stiff * array((H, S), dtype=jnp.float32)
             k_max = float(np.max(self.k_stiff))  # Maximum stiffness over all hinges/shims (or from experimental k-grid).
                                                  # Used for normalization and for computing stretch stiffness.
             self.k_stretch = np.asarray(CFG.Eq.k_stretch_ratio * k_max, np.float32)

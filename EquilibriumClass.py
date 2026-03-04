@@ -1,16 +1,13 @@
 from __future__ import annotations
 
 import copy
-import diffrax
-import time
 import jax
 import jax.numpy as jnp
 import equinox as eqx
-from jax import grad, jit, vmap, lax
+from jax import grad, jit, vmap
 from jax.experimental.ode import odeint
 
 from typing import Tuple, List
-from numpy import array, zeros
 from numpy.typing import NDArray
 from typing import TYPE_CHECKING, Callable, Union, Optional
 
@@ -128,7 +125,9 @@ class EquilibriumClass(eqx.Module):
         self.r_intersect_factor = CFG.Eq.r_intersect_factor
         self.k_intersect_factor = CFG.Eq.k_intersect_factor
 
-    # ------- main function of EquilibriumClass -------
+    # ---------------------------------------------------------------
+    # main function of EquilibriumClass
+    # ---------------------------------------------------------------
     def calculate_state(self, Variabs: "VariablesClass", Strctr: "StructureClass", Sprvsr: "SupervisorClass",
                         init_pos: NDArray[float], control_first_edge: bool = True,  tip_pos: jax.Array | None = None,
                         tip_angle: float | jax.Array | None = None, pos_noise: float | jax.Array | None = None,
@@ -216,7 +215,9 @@ class EquilibriumClass(eqx.Module):
 
         return final_pos, pos_in_t, vel_in_t, forces
 
-    # ------ assembly of total forces from bend, stretch, intersection ------
+    # ---------------------------------------------------------------
+    # assembly of total forces from bend, stretch, intersection
+    # ---------------------------------------------------------------
     def total_potential_force(self, Variabs: "VariablesClass", Strctr: "StructureClass", t: float,
                               x_free: jax.Array, *,
                               free_mask: jax.Array, fixed_mask: jax.Array, fixed_vals: jax.Array,
@@ -385,7 +386,9 @@ class EquilibriumClass(eqx.Module):
         return self.total_potential_force(Variabs, Strctr, t, x_free, free_mask=free_mask, fixed_mask=fixed_mask,
                                           imposed_mask=imposed_mask, fixed_vals=fixed_vals, imposed_vals=imposed_vals)[free_mask]
  
-    # ------ physical forces - bend, stretch, intersect ------ 
+    # ---------------------------------------------------------------
+    # physical forces - bend, stretch, intersect
+    # ---------------------------------------------------------------
     def bend_forces(self, Strctr, tau_hinges, x_full):
         """
         Forces on all nodes due to torques on each hinge.
@@ -543,6 +546,9 @@ class EquilibriumClass(eqx.Module):
         """
         return force_function(t)[free_mask]
 
+    # ---------------------------------------------------------------
+    # ODE solve
+    # ---------------------------------------------------------------
     def solve_dynamics(self, state_0: jax.Array, Variabs: "VariablesClass", Strctr: "StructureClass",
                        fixed_mask: jax.Array[bool] = None, fixed_vals: jax.Array[jnp.float_] = None,
                        imposed_mask: jax.Array[bool] = None, imposed_vals: jax.Array[jnp.float_] = None,
@@ -669,7 +675,9 @@ class EquilibriumClass(eqx.Module):
 
         return (final_pos, pos_in_t, vel_in_t, potential_F_in_t)
 
-    # ------ helpers for forces -------
+    # ---------------------------------------------------------------
+    # Physical helpers
+    # ---------------------------------------------------------------
     def _theta_jacs_local(self, Strctr: "StructureClass", x_flat: jax.Array) -> jax.Array:
         """
         Compute local hinge-angle Jacobians ∂θ_h/∂x for all hinges h.
@@ -714,7 +722,9 @@ class EquilibriumClass(eqx.Module):
 
         return jax.vmap(grad_for_h)(jnp.arange(H, dtype=jnp.int32)) 
 
-    # ------ helpers for assembly - set vals ------
+    # ---------------------------------------------------------------
+    # Helpers for assembly - set vals
+    # ---------------------------------------------------------------
     def _set_fixed_vals(self, fixed_mask) -> jax.array:
         """
         return jax array (2*N,), nonzero values are values that are fixed along equilibrium calculation 

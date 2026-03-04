@@ -9,7 +9,6 @@ from typing import Tuple, List
 from numpy import array, zeros
 from numpy.typing import NDArray
 from typing import TYPE_CHECKING, Callable, Union, Optional
-from config import ExperimentConfig
 
 import helpers_builders
 
@@ -44,14 +43,24 @@ class StateClass:
     buckle_in_t    - (H,S,T) ndarray, history of buckle states over the training time.
     Fx, Fy         - floats, force on tip in x, y directions, 
                      if 2 last nodes or imposed, force is summed over both
-    
-    tip_torque, tot_torque           - float, current torques:
-                                       ``tip_torque`` = local torque acting on the tip, 
-                                                        calculated using last 2 nodes and known tip angle
-                                       ``tot_torque`` = net torque of the whole chain about the origin.
-                                                        calculated using the mean force on tip and total arm angle w.r.t origin
-    tip_torque_in_t, tot_torque_in_t - (T,) ndarray, histories of the above torques.
-    edge_lengths                     - (edges,) ndarray, current edge lengths, for convenience (last stored snapshot).
+    edge_lengths   - (edges,) ndarray, current edge lengths, for convenience (last stored snapshot).
+
+    Methods:
+    --------
+    _save_data(t, Strctr, pos_arr=None, buckle_arr=None, Forces=None)
+        Copy arrays from an EquilibriumClass solve (JAX) into this (NumPy) state at training step ``t``:
+          - positions
+          - buckle states
+          - tip forces Fx/Fy
+          - hinge angles
+          - edge lengths
+    buckle(Variabs, Strctr, t, State_measured) -> bool
+        Update buckle states using current hinge angles and per-hinge/per-shim thresholds.
+        Returns True if any shim flipped at time step ``t``, else False.
+    stretch_energy(Variabs, Strctr) -> ndarray, shape (edges,)
+        Compute per-edge stretching energy-like term ``k_stretch * (ℓ - ℓ0)^2`` 
+    bending_energy(Variabs, Strctr) -> ndarray, shape (hinges,)
+        Compute per-hinge bending energy using experimental torque curve: ``E_bend(θ) ≈ τ(θ) * (θ - buckle * θ_ss)``.
     """ 
     # --- instantaneous state ---
     pos_arr: NDArray[np.float32] = eqx.field(static=True)          # (nodes, 2)
@@ -61,6 +70,7 @@ class StateClass:
     Fy: float = eqx.field(static=True)                             # float
     tip_torque: float = eqx.field(static=True)                     # float, torque just on tip
     tot_torque: float = eqx.field(static=True)                     # float, torque of whole chain
+    edge_lengths: NDArray[np.float32] = eqx.field(static=True)     # (hinges+1,) 
 
     # --- histories / logs ---
     pos_arr_in_t: NDArray[np.float32] = eqx.field(static=True)     # (nodes, 2, T)
@@ -68,8 +78,6 @@ class StateClass:
     buckle_in_t: NDArray[np.int32] = eqx.field(static=True)        # (hinges, shims, T)
     Fx_in_t: NDArray[np.float32] = eqx.field(static=True)          # (T,)
     Fy_in_t: NDArray[np.float32] = eqx.field(static=True)          # (T,)
-    tip_torque_in_t: NDArray[np.float32] = eqx.field(static=True)  # (T,)
-    tot_torque_in_t: NDArray[np.float32] = eqx.field(static=True)  # (T,)
 
     def __init__(self, Strctr: "StructureClass", Sprvsr: "SupervisorClass", pos_arr: Optional[np.ndarray] = None,
                  buckle_arr: Optional[np.ndarray] = None) -> None:
@@ -90,34 +98,28 @@ class StateClass:
             self.pos_arr = helpers_builders._initiate_pos(Strctr.edges+1, Strctr.L).astype(np.float32)
         else:
             self.pos_arr = np.asarray(pos_arr, dtype=np.float32)                              # (nodes, 2) node position
-        self.pos_arr_in_t = np.zeros((Strctr.nodes, 2, Sprvsr.T), dtype=np.float32)           # (nodes, 2, T)
+        self.pos_arr_in_t = zeros((Strctr.nodes, 2, Sprvsr.T), dtype=np.float32)           # (nodes, 2, T)
 
         # ------ angles ------
-        self.theta_arr = np.zeros((Strctr.hinges,), dtype=np.float32)                         # (H,) hinge angles  
-        self.theta_arr_in_t = np.zeros((Strctr.hinges, Sprvsr.T), dtype=np.float32)           # (H,) hinge angles in training time
+        self.theta_arr = zeros((Strctr.hinges,), dtype=np.float32)                         # (H,) hinge angles  
+        self.theta_arr_in_t = zeros((Strctr.hinges, Sprvsr.T), dtype=np.float32)           # (H,) hinge angles in training time
 
         # ------ buckle pattern ------
         if buckle_arr is not None:
             self.buckle_arr = buckle_arr                                                    
         else:
             self.buckle_arr = helpers_builders._initiate_buckle(Strctr.hinges, Strctr.shims)  # (H, S) buckle state of shims
-        self.buckle_in_t = np.zeros((Strctr.hinges, Strctr.shims, Sprvsr.T))                  # (H, S, T)
+        self.buckle_in_t = zeros((Strctr.hinges, Strctr.shims, Sprvsr.T))                  # (H, S, T)
 
         # ------ forces and torques ------
         self.Fx = 0.0
-        self.Fx_in_t = np.zeros((Sprvsr.T), dtype=np.float32)                                 # (T,) force on tip in x direction
+        self.Fx_in_t = zeros((Sprvsr.T), dtype=np.float32)                                 # (T,) force on tip in x direction
 
         self.Fy = 0.0
-        self.Fy_in_t = np.zeros((Sprvsr.T), dtype=np.float32)                                 # (T,) force on tip in y direction
-
-        self.tip_torque = 0.0
-        self.tip_torque_in_t = np.zeros((Sprvsr.T), dtype=np.float32)                         # (T,) tip torque (not in use?)
-
-        self.tot_torque = 0.0
-        self.tot_torque_in_t = np.zeros((Sprvsr.T), dtype=np.float32)                         # (T,) torque from summed tip forces
+        self.Fy_in_t = zeros((Sprvsr.T), dtype=np.float32)                                 # (T,) force on tip in y direction
 
         # ------ edge lengths (last snapshot) ------
-        self.edge_lengths: NDArray[np.float32] = np.zeros((Strctr.edges,), dtype=np.float32)
+        self.edge_lengths: NDArray[np.float32] = zeros((Strctr.edges,), dtype=np.float32)
 
     # ---------------------------------------------------------------
     # Ingest from EquilibriumClass (JAX → NumPy)
@@ -167,7 +169,7 @@ class StateClass:
             # self.Fx = Forces[-4]  # only final node
             # self.Fy = Forces[-3]  # only final node
         else:
-            Forces = np.array([0, 0, 0, 0])
+            Forces = array([0, 0, 0, 0])
             self.Fx = 0
             self.Fy = 0
         self.Fx_in_t[t] = self.Fx
@@ -177,13 +179,6 @@ class StateClass:
         thetas = Strctr.all_hinge_angles(self.pos_arr)  # (H,) np ndarray
         self.theta_arr = helpers_builders.jax2numpy(thetas).reshape(-1)
         self.theta_arr_in_t[:, t] = self.theta_arr
-        
-        # ------- torque -------
-        tip_angle = float(helpers_builders._get_tip_angle(self.pos_arr))  # measured from -x
-        self.tot_torque = float(helpers_builders.torque(tip_angle, self.Fx, self.Fy, Strctr.L))
-        self.tot_torque_in_t[t] = self.tot_torque
-        self.tip_torque = float(helpers_builders.tip_torque(tip_angle, Forces))
-        self.tip_torque_in_t[t] = self.tip_torque
 
         # ------- edge_lengths -------
         self.edge_lengths = Strctr.all_edge_lengths(self.pos_arr)
@@ -195,8 +190,8 @@ class StateClass:
         """
         Update buckle states based on current hinge angles and thresholds (NumPy).
 
-        - If ``buckle = 1`` (e.g. "down") and ``theta < -thresh``, flip to ``-1``.
-        - If ``buckle = -1`` (e.g. "up") and ``theta > +thresh``, flip to ``1``.
+        - If ``buckle = 1`` (i.e. "down") and ``theta < -thresh``, flip to ``-1``.
+        - If ``buckle = -1`` (i.e. "up") and ``theta > +thresh``, flip to ``1``.
 
         Parameters
         ----------
@@ -207,27 +202,25 @@ class StateClass:
 
         Returns
         -------
-        buckle_bool : bool. True if at least one hinge/shim flipped state, False otherwise.
+        update buckle_arr      : ndarray, (hinges, shims), +1 where shim is buckled down, -1 for down
+        update buckle_arr_in_t : ndarray, (H,S,T), history of buckle states over the training time
+        buckle_bool            : bool. True if at least one hinge/shim flipped state, False otherwise.
         """
-        buckle_bool = False
-        buckle_nxt = np.zeros((Strctr.hinges, Strctr.shims), dtype=np.int32)
+        buckle_bool = False  # initially no buckle detected
+        buckle_nxt = zeros((Strctr.hinges, Strctr.shims), dtype=np.int32)
         for i in range(Strctr.hinges):
             for j in range(Strctr.shims):
-                theta_i = self.theta_arr[i]
-                thresh_ij = Variabs.thresh[i, j]
+                theta_i = self.theta_arr[i]  # angle of hinge i
+                thresh_ij = Variabs.thresh[i, j]  # threshold of shim j in hinge i
 
                 # buckle up (flip 1 -> -1) when angle is too negative
                 if self.buckle_arr[i, j] == 1 and theta_i < -thresh_ij:
                     buckle_nxt[i, j] = -1
-                    # print("buckled up, theta =", theta_i)
                     buckle_bool = True
-
                 # buckle down (flip -1 -> 1) when angle is too positive
                 elif self.buckle_arr[i, j] == -1 and theta_i > thresh_ij:
                     buckle_nxt[i, j] = 1
-                    # print("buckled down, theta =", theta_i)
                     buckle_bool = True
-
                 # no change
                 else:
                     buckle_nxt[i, j] = self.buckle_arr[i, j]
@@ -240,7 +233,7 @@ class StateClass:
         return buckle_bool
 
     # ---------------------------------------------------------------
-    # Energy helpers (NumPy-side diagnostics)
+    # Energy helpers (numpy)
     # ---------------------------------------------------------------
     def stretch_energy(self, Variabs: "VariablesClass", Strctr: "StructureClass") -> NDArray[np.float_]:
         """
@@ -261,13 +254,49 @@ class StateClass:
         Uses the experimental torque curve if available:
         E_bend(θ) ≈ τ(θ) * (θ - buckle * θ_ss)
 
+        Returns
+        -------
+        E_bend : ndarray(float), (H,) [mN*m*rad]. Bending energy for each hinge in the chain.
+
         Notes
         -----
         - Only meaningful for ``k_type == "Experimental"``, where ``Variabs.torque`` is defined. If torque is None, raise error.
         """
         if Variabs.torque is None:
             raise ValueError("bending_energy requires Variabs.torque (experimental mode).")
-        theta_arr = self.theta_arr  # NumPy (H,)
+        theta_arr = self.theta_arr  # NumPy (H,), radians
         taus = helpers_builders.jax2numpy(Variabs.torque(theta_arr))  # tau in NumPy 
-        effective_thetas_ss = self.buckle_arr * Variabs.thetas_ss
+        effective_thetas_ss = self.buckle_arr * Variabs.thetas_ss  # radians
         return taus * (theta_arr - effective_thetas_ss)
+
+
+# # ==========
+# # NOT IN USE
+# # ==========
+
+# ------- torque -------
+# inside declarations:
+
+# tip_torque, tot_torque           - float, current torques:
+#                                    ``tip_torque`` = local torque acting on the tip, 
+#                                                     calculated using last 2 nodes and known tip angle
+#                                    ``tot_torque`` = net torque of the whole chain about the origin.
+#                                                     calculated using the mean force on tip and total arm angle w.r.t origin
+# tip_torque_in_t, tot_torque_in_t - (T,) ndarray, histories of the above torques.
+
+# tip_torque_in_t: NDArray[np.float32] = eqx.field(static=True)  # (T,)
+# tot_torque_in_t: NDArray[np.float32] = eqx.field(static=True)  # (T,)
+
+# inside __init__
+# self.tip_torque = 0.0
+# self.tip_torque_in_t = zeros((Sprvsr.T), dtype=np.float32)                         # (T,) tip torque (not in use?)
+
+# self.tot_torque = 0.0
+# self.tot_torque_in_t = zeros((Sprvsr.T), dtype=np.float32)                         # (T,) torque from summed tip forces
+
+# inside _save_data
+# tip_angle = float(helpers_builders._get_tip_angle(self.pos_arr))  # measured from -x
+# self.tot_torque = float(helpers_builders.torque(tip_angle, self.Fx, self.Fy, Strctr.L))
+# self.tot_torque_in_t[t] = self.tot_torque
+# self.tip_torque = float(helpers_builders.tip_torque(tip_angle, Forces))
+# self.tip_torque_in_t[t] = self.tip_torque

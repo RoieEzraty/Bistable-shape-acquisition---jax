@@ -141,25 +141,25 @@ class SupervisorClass:
             desired_buckle = helpers_builders._initiate_buckle(Strctr.hinges, Strctr.shims,
                                                                buckle_pattern=CFG.Train.desired_buckle_pattern, numpify=True)
         self.desired_buckle_arr = np.asarray(desired_buckle, dtype=np.int32)
-        self.desired_pos_in_t = np.zeros((Strctr.nodes, 2, self.T), dtype=np.float32)
-        self.desired_Fx_in_t = np.zeros((self.T), dtype=np.float32)
-        self.desired_Fy_in_t = np.zeros((self.T), dtype=np.float32)
+        self.desired_pos_in_t = zeros((Strctr.nodes, 2, self.T), dtype=np.float32)
+        self.desired_Fx_in_t = zeros((self.T), dtype=np.float32)
+        self.desired_Fy_in_t = zeros((self.T), dtype=np.float32)
 
         # Dataset (commands)
-        self.tip_pos_in_t = np.zeros((self.T, 2), dtype=np.float32)
-        self.tip_angle_in_t = np.zeros((self.T,), dtype=np.float32)
+        self.tip_pos_in_t = zeros((self.T, 2), dtype=np.float32)
+        self.tip_angle_in_t = zeros((self.T,), dtype=np.float32)
 
         # Logs / updates
         loss_size = 2
-        self.loss_in_t = np.zeros((self.T, loss_size), dtype=np.float32)
-        self.loss_MSE_in_t = np.zeros((self.T,), dtype=np.float32)
+        self.loss_in_t = zeros((self.T, loss_size), dtype=np.float32)
+        self.loss_MSE_in_t = zeros((self.T,), dtype=np.float32)
 
         # Last loss vector (shape matches control mode)
-        self.loss = np.zeros(loss_size, dtype=np.float32)
+        self.loss = zeros(loss_size, dtype=np.float32)
 
-        self.tip_pos_update_in_t = np.zeros((self.T, 2), dtype=np.float32)
-        self.tip_angle_update_in_t = np.zeros((self.T,), dtype=np.float32)
-        self.total_angle_update_in_t = np.zeros((self.T,), dtype=np.float32)
+        self.tip_pos_update_in_t = zeros((self.T, 2), dtype=np.float32)
+        self.tip_angle_update_in_t = zeros((self.T,), dtype=np.float32)
+        self.total_angle_update_in_t = zeros((self.T,), dtype=np.float32)
 
         self.normalize_step = bool(CFG.Train.normalize_step)  # whether to normalize the training step in [x, y, theta] space
 
@@ -172,6 +172,9 @@ class SupervisorClass:
 
         self.supress_prints = supress_prints
 
+    # ---------------------------------------------------------------
+    # Imposed mask boolean
+    # ---------------------------------------------------------------
     def _build_imposed_mask(self, Strctr: "StructureClass", control_tip: bool = True) -> jax.Array:
         """
         Boolean mask marking imposed (prescribed) degrees of freedom. These are prescribed position, generally tip control.
@@ -203,6 +206,9 @@ class SupervisorClass:
             imposed_mask = imposed_mask.at[idxs].set(True)  
         return imposed_mask
 
+    # ---------------------------------------------------------------
+    # Dataset
+    # ---------------------------------------------------------------
     def create_dataset(self, Strctr: "StructureClass", CFG, sampling: str, tip_pos: Optional[NDArray] = None,
                        tip_angle: Optional[float] = None, dist_noise: float = 0.01, angle_noise: float = 0.1) -> None:
         """
@@ -260,7 +266,7 @@ class SupervisorClass:
                 tip_pos = array([end, 0], dtype=np.float32)
                 tip_angle = 0.0
             elif sampling == 'almost_flat':
-                tip_pos = np.array([end-dist_noise, +dist_noise], dtype=np.float32)  # flat arrangement
+                tip_pos = array([end-dist_noise, +dist_noise], dtype=np.float32)  # flat arrangement
                 tip_angle = angle_noise
             else:  # == 'specified'
                 pass
@@ -297,6 +303,9 @@ class SupervisorClass:
         self.desired_Fx_in_t[t] = float(Fx)
         self.desired_Fy_in_t[t] = float(Fy)
 
+    # ---------------------------------------------------------------
+    # Calculations - loss and Update values
+    # ---------------------------------------------------------------
     def calc_loss(self, Variabs: "VariablesClass", t: int, Fx: float, Fy: float) -> None:
         """Compute loss vector (Fx,Fy) at step t and log it.
 
@@ -466,6 +475,9 @@ class SupervisorClass:
         if not self.supress_prints:
             print(f'total angle end of calc_update {self.total_angle_update_in_t[t]}')
 
+    # ---------------------------------------------------------------
+    # Helpers (numpy)
+    # ---------------------------------------------------------------
     def _get_delta_dispatch(self):
         """
         Map update_scheme -> function that computes (delta_tip_x, delta_tip_y, delta_angle).

@@ -599,16 +599,16 @@ def torque(tip_angle: float, Fx: float, Fy: float, L: float) -> float:
     Fx: mN
     Fy: mN
     """
-    return L*np.cos(tip_angle)*Fy-L*np.sin(tip_angle)*Fx
+    F_orthogonal = _get_scalar_in_orthogonal_dir(array([Fx, Fy]), tip_angle) 
+    return F_orthogonal * L
 
 
 def tip_torque(tip_angle: float, Forces: NDArray) -> float:
-    Fy_last = Forces[-1]
-    Fx_last = Forces[-2]
-    Fy_before_last = Forces[-3]
-    Fx_before_last = Forces[-4]
-    return np.cos(tip_angle)*Fy_last-np.sin(tip_angle)*Fx_last - (np.cos(tip_angle)*Fy_before_last -
-                                                                  np.sin(tip_angle)*Fx_before_last)
+    F_xy_last = array([Forces[-2], Forces[-1]])
+    F_xy_before_last = array([Forces[-4], Forces[-3]])
+    last_orthogonal = _get_scalar_in_orthogonal_dir(F_xy_last, tip_angle)
+    before_last_orthogonal = _get_scalar_in_orthogonal_dir(F_xy_before_last, tip_angle)
+    return last_orthogonal - before_last_orthogonal
 
 
 # ### NOT IN USE
