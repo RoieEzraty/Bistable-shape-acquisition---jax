@@ -1,26 +1,27 @@
 from __future__ import annotations
 
 import numpy as np
-np.set_printoptions(precision=4, suppress=True)
 import copy
-import diffrax
 import jax
 import jax.numpy as jnp
-import equinox as eqx
 from jax import grad, jit, vmap
 
 from typing import Tuple, List
 from numpy import array, zeros
 from numpy.typing import NDArray
-from typing import TYPE_CHECKING, Callable, Union, Optional
+from typing import TYPE_CHECKING, Callable, Union, Optional, Iterable, Mapping
 
 if TYPE_CHECKING:
     from StructureClass import StructureClass
     from EquilibriumClass import EquilibriumClass
     from VariablesClass import VariablesClass
 
+np.set_printoptions(precision=4, suppress=True)
 
-# --- convenience: move from jax to numpy arrays and vice-verse ---
+
+# ---------------------------------------------------------------
+# Convenience: move from jax to numpy arrays and vice-verse
+# ---------------------------------------------------------------
 def jax2numpy(arr: jax.Array) -> NDArray[np.float_]:
     """
     Convert JAX array to NumPy array.
@@ -40,22 +41,24 @@ def numpy2jax(arr: NDArray[np.float_]) -> jnp.ndarray:
     return jnp.asarray(arr)
 
 
-# --- reshapes ---
+# ---------------------------------------------------------------
+# Reshapes
+# ---------------------------------------------------------------
 def _reshape_pos_arr_2_state(pos_arr: jnp.Array[jnp.float_]) -> jnp.Array[jnp.float_]:
     """
     Flatten position array into a full state vector ([x0, y0, x1, y1, .... x0_dot, y0_dot...]).
 
+    Notes:
+    -----
+    - Not used as of 2026Mar
+
     Parameters
     ----------
-    pos_arr : (nodes, 2) jnp.ndarray
-        Node positions, with each row containing (x, y) coordinates.
+    pos_arr : (nodes, 2) jnp.ndarray. Node positions, with each row containing (x, y) coordinates.
 
     Returns
     -------
-    state : (2*N,) jnp.ndarray
-        Concatenated state vector, where the first N*2 entries are the
-        flattened positions and the last N*2 entries are initialized
-        velocities (all zeros).
+    state : (2*N,) jnp.ndarray. Concatenated vector, 1st N*2 idxs = flattened pos, last N*2 = initialized velocities (all zeros).
     """
     first_half = pos_arr.flatten()
     second_half = jnp.zeros_like(first_half)
@@ -68,44 +71,51 @@ def _reshape_state_2_pos_arr(state: jnp.Array[jnp.float_], pos_arr: jnp.Array[jn
 
     Parameters
     ----------
-    state : (2*2*N,) jnp.ndarray
-        Flattened state vector of positions and velocities.
-    pos_arr : (N, 2) jnp.ndarray
-        Template array defining the desired shape for positions.
+    state : (2*N,) jnp.ndarray. Flattened state vector of positions and velocities.
+    pos_arr : (N, 2) jnp.ndarray. Template array defining the desired shape for positions.
 
     Returns
     -------
-    pos_arr : (N, 2) jnp.ndarray
-        Reshaped positions, extracted from the first N*2 entries of `state`.
+    pos_arr : (N, 2) jnp.ndarray. Reshaped positions, extracted from the first N*2 entries of `state`.
     """
     return state.reshape(pos_arr.shape)
 
 
+# ---------------------------------------------------------------
+# Index conventions
+# ---------------------------------------------------------------
 def dof_idx(node: int, comp: int) -> int:
     """Return the flat DOF index for a node and component.
 
-    comp = 0 → x, comp = 1 → y
+    Parameters:
+    -----------
+    node - int, node number in {0,N}
+    comp - int {0, 1}, comp = 0 → x, comp = 1 → y
+
+    returns:
+    --------
+    DOF index, int
     """
     return 2 * node + comp
 
 
-# --- initiate ---
+# ---------------------------------------------------------------
+# Initiations
+# ---------------------------------------------------------------
 def _initiate_pos(nodes: int, L: float, numpify: bool = False) -> jax.Array:
     """
     `(hinges+2, 2)` each pair is (xi, yi) of point i going like [[0, 0], [1, 0], [2, 0], etc]
     
     Parameters
     ----------
-    hinges : int
-        Number of hinges (internal joints). The number of nodes will be
-        hinges + 2 (two end nodes + internal ones).
+    hinges  - int. Number of hinges. Number of nodes will be hinges + 2 (two end nodes + internal ones).
+    L       - float. Length of edge/facet [m].
+    numpify - bool. True = return numpy array, else: jax
 
     Returns
     -------
-    pos_arr : (hinges+2, 2) jnp.ndarray
-        Node coordinates laid out on the x-axis, starting from (0,0).
-        Example for hinges=2:
-        [[0,0], [1,0], [2,0], [3,0]]
+    pos_arr : jnp.ndarray, (hinges+2, 2), Node coordinates laid out on x-axis, starting from (0,0).
+              Example for hinges=2: [[0,0], [1,0], [2,0], [3,0]]
     """
     flat = L*jnp.arange(nodes, dtype=jnp.float32)
     pos_arr = jnp.stack([flat, jnp.zeros_like(flat)], axis=1)
@@ -117,20 +127,18 @@ def _initiate_pos(nodes: int, L: float, numpify: bool = False) -> jax.Array:
 
 def _initiate_buckle(hinges: int, shims: int, buckle_pattern: tuple = (), numpify: bool = False) -> jax.Array:
     """
-    `(hinges+2, 2)` each pair is (xi, yi) of point i going like [[0, 0], [1, 0], [2, 0], etc]
+    `(hinges, shims)` of +1 and -1 denoting buckle down and up, respectively, of every shims in every hinge.
     
     Parameters
     ----------
-    hinges : int
-        Number of hinges (internal joints). The number of nodes will be
-        hinges + 2 (two end nodes + internal ones).
+    hinges         - int. Number of hinges. Number of nodes will be hinges + 2 (two end nodes + internal ones).
+    shims          - int. Number of shims per hinge. always 1.
+    buckle_pattern - optional tuple (H,) of +1 and -1 denoting buckle state of shims (assuming one per hinge)
+    numpify        - bool. True = return numpy array, else: jax
 
     Returns
     -------
-    pos_arr : (hinges+2, 2) jnp.ndarray
-        Node coordinates laid out on the x-axis, starting from (0,0).
-        Example for hinges=2:
-        [[0,0], [1,0], [2,0], [3,0]]
+    pos_arr - jnp.ndarray, (hinges, shims), +1 and -1, denoting buckle down and up, respectively, of every shims in every hinge.
     """
     buckle = -jnp.ones((hinges, shims))
     pattern = jnp.array(buckle_pattern)   # shape (H,)
@@ -148,7 +156,108 @@ def _initiate_buckle(hinges: int, shims: int, buckle_pattern: tuple = (), numpif
         return buckle
 
 
-def _circle_circle_intersections_np(c0, r0, c1, r1, eps=1e-12):
+# ---------------------------------------------------------------
+# Physical helpers
+# ---------------------------------------------------------------
+def clamp_pos_same_delta(*, before_prev: NDArray, tip_angle_new: float, tip_raw: NDArray, second_node: NDArray, R_lim: float,
+                         L: float, eps=1e-12):
+    """
+    Enforce ||node before tip - second_node|| <= R_lim
+    while preserving ||new node before tip - before_prev|| = ||before_raw - before_prev|| (when possible).
+    by solving a circle–circle intersection between:
+      1) the constraint circle centered at ``second_node`` with radius ``R_lim``
+      2) the "same-step" circle centered at ``before_prev`` with radius ``step``
+
+    If intersections exist, the solution closest to ``before_raw`` is chosen. If not, a radial
+    projection onto the constraint circle is used as a fallback.
+
+    Notes
+    -----
+    - The "same step" constraint is enforced only when the two circles intersect.
+      Otherwise, the solution is the closest feasible point obtained by radial projection.
+    - When ``r_raw`` is extremely small (near the circle center), a deterministic fallback point
+      on the constraint circle is used to avoid division by zero.
+    - all sizes in [m]
+
+    Parameters
+    ----------
+    before_prev   - np.array(float), (2,), Position of the node-before-tip at previous step.
+    tip_angle_new - float. Updated tip angle (radians), measured CCW, used to infer the before-tip point.
+    tip_raw       - np.array(float), (2,), Proposed updated tip position *before* applying radius clamp.
+    second_node   - np.array(float), (2,), Reference point for radius constraint (typically second fixed node, e.g. ``[L, 0]``)
+    R_lim         - float. Maximum allowed distance from second_node to node-before-tip. Calculated at effective_radius()
+    L             - float. Link length between the tip node and the node-before-tip.
+    eps           - float, optional, Small tolerance for numerical stability and comparisons.
+
+    Returns
+    -------
+    tip_new : ndarray(float), (2,), clamped tip position consistent with tip_angle_new and the clamped before-tip point.
+    before_new : ndarray(float), (2,) clamped node-before-tip position satisfying the radius constraint.
+    clamped : bool. True if clamping was applied, False if ``before_raw`` already satisfied the constraint.
+    """
+    before_prev = np.asarray(before_prev, float).reshape(2,)
+    tip_raw = np.asarray(tip_raw, float).reshape(2,)
+    second_node = np.asarray(second_node, float).reshape(2,)
+    R_lim = float(R_lim)
+
+    # raw before-tip implied by tip_raw and tip_angle_new
+    before_raw = tip_raw - L*array([np.cos(tip_angle_new), np.sin(tip_angle_new)], float)
+
+    disp_raw = before_raw - second_node
+    r_raw = np.linalg.norm(disp_raw)
+
+    if r_raw <= R_lim + eps:
+        return tip_raw, before_raw, False  # no clamp
+
+    step = np.linalg.norm(before_raw - before_prev)
+
+    # circle-circle intersection: constraint circle & step circle
+    pts = _circle_circle_intersections_np(second_node, R_lim, before_prev, step, eps=eps)
+
+    if len(pts) == 0:
+        # fallback: radial clamp in before-space
+        if r_raw < eps:
+            before_new = second_node + array([R_lim, 0.0])
+        else:
+            before_new = second_node + disp_raw * (R_lim / r_raw)
+    else:
+        # pick intersection closest to raw proposal
+        before_new = min(pts, key=lambda p: np.sum((p - before_raw)**2))
+
+    tip_new = before_new + L*array([np.cos(tip_angle_new), np.sin(tip_angle_new)], float)
+    return tip_new, before_new, True
+
+
+def _circle_circle_intersections_np(c0: NDArray[np.float_], r0: float, c1: NDArray[np.float_], r1: float, eps=1e-12):
+    """
+    Intersection points of two circles in 2D (NumPy version). 
+    - Circle 0: center ``c0`` and radius ``r0``
+    - Circle 1: center ``c1`` and radius ``r1``
+    this function returns their intersection point(s), if they exist.
+
+    Parameters
+    ----------
+    c0 : np.array(float), (2,), Center of the first circle.
+    r0 : float, Radius of the first circle.
+    c1 : np.array(float), (2,), Center of the second circle.
+    r1 : float, Radius of the second circle.
+    eps : float, optional, Small tolerance for numerical stability and degeneracy checks.
+
+    Returns
+    -------
+    pts : list of ndarray
+        - ``[]``         → no intersection (separate circles, contained circle, or degenerate case)
+        - ``[p]``        → one intersection point (tangent case)
+        - ``[p1, p2]``   → two intersection points
+
+    Notes
+    -----
+    - If the distance between centers is greater than ``r0 + r1`` (disjoint)
+      or smaller than ``|r0 - r1|`` (one circle fully inside the other),
+      no intersection is returned.
+    - This function is used in geometric clamping routines (e.g. enforcing
+      equal step size while respecting a radius constraint).
+    """
     c0 = np.asarray(c0, float).reshape(2,)
     c1 = np.asarray(c1, float).reshape(2,)
     r0 = float(r0); r1 = float(r1)
@@ -170,44 +279,249 @@ def _circle_circle_intersections_np(c0, r0, c1, r1, eps=1e-12):
     h = np.sqrt(h2)
 
     p2 = c0 + a * dvec / d
-    perp = np.array([-dvec[1], dvec[0]]) / d
+    perp = array([-dvec[1], dvec[0]]) / d
 
     if h <= eps:
         return [p2]
     return [p2 + h*perp, p2 - h*perp]
 
 
-# ------ DOFs - free and essential ------
-def _assemble_full_from_free(free_mask: jax.Array,       # bool (n_coords,)
-                             fixed_mask: jax.Array,      # bool (n_coords,)
-                             imposed_mask: jax.Array,    # bool (n_coords,)
-                             x_free: jax.Array,
-                             fixed_vals_t: jax.Array,
-                             imposed_vals_t: jax.Array,  # (n_coords,)
-                             ) -> jax.Array:
+def _correct_big_stretch_robot_style(tip_pos: NDArray[np.float_], tip_angle: float, total_angle: float, R_free: float,
+                                     L: float, margin: float = 0.0, supress_prints: bool = True) -> NDArray[np.float_]:
     """
-    Build full flattened x from free DOFs + constraints at time t.
+    Radially scale down tip position to maximal reachable radius constraint, if tip position exceeds it. 
+    Applied to distance between node-before-tip and second node (located at (L, 0)). Scale down is radial towards 2nd node.
+
+
+    Notes
+    -----
+    - Maximal allowed radius computed using R_eff = effective_radius(), accounting for coil wrapping and geometric shrinkage.
 
     Parameters
     ----------
-    x_free : (nodes_free*2,) jnp.ndarray
-        Values of the free degrees of freedom.
-    free_mask : (nodes*2,) jnp.ndarray[bool]
-            Boolean mask marking which entries are free DOFs.
-    fixed_mask : (nodes*2,) jnp.ndarray[bool]
-        Boolean mask marking fixed DOFs (always zero).
-    imposed_mask : (nodes*2,) jnp.ndarray[bool]
-        Boolean mask marking imposed DOFs (prescribed values).
-    imposed_vals_t : (nodes*2,) jnp.ndarray
-        Values to assign to imposed DOFs at time t.
-    n_coords : int
-        Total number of coordinates (flattened x and y for all nodes).
+    tip_pos : ndarray (2,), Initially proposed tip position.
+    tip_angle : float, Tip orientation (radians), measured CCW.
+    total_angle : float, Unwrapped accumulated chain angle (can exceed ±2π).
+    R_free : float, Nominal maximal free radius before shrink corrections.
+    L : float, Edge/facet length.
+    margin : float, optional, Additional safety factor (fraction of L) subtracted from effective radius.
+    supress_prints : bool, optional, If False, prints diagnostic information.
 
     Returns
     -------
-    x_full : (n_coords,) jnp.ndarray
-        Complete flattened coordinate vector, consistent with all masks
-        and imposed values.
+    tip_pos_corrected : ndarray, (2,), Corrected tip position if clamping was applied, otherwise returns original tip_pos.
+    """
+    if not supress_prints:
+        print(f'update vals before correction={tip_pos},{tip_angle}')
+    # Compute the location of the node before the tip
+    before_last = array([tip_pos[0] - L * np.cos(tip_angle), tip_pos[1] - L * np.sin(tip_angle)])
+
+    # Second node from the base sits at (L, 0)
+    second_node = array([L, 0.0], dtype=float)
+
+    # chain current radius
+    disp = before_last - second_node
+    r_chain = np.hypot(disp[0], disp[1])
+    R_eff = effective_radius(R_free, L, total_angle, tip_angle, supress_prints=supress_prints)
+
+    if not supress_prints:
+        print(f'r_chain{r_chain}')
+        print(f'R_eff{R_eff}')
+
+    x2, y2 = None, None
+
+    if r_chain >= (R_eff - margin*L):
+        scale = (R_eff - margin*L) / r_chain
+        x2 = second_node[0] + (tip_pos[0]-second_node[0]) * scale
+        y2 = second_node[1] + (tip_pos[1]-second_node[1]) * scale
+        if not supress_prints:
+            print(f'clamped from x={tip_pos[0]},y={tip_pos[1]} to x={x2},y={y2}')
+        return array([x2, y2])
+    else:
+        return tip_pos
+
+
+def effective_radius(R: float, L: float, total_angle: float, tip_angle: float, margin: float = 0.0, 
+                     supress_prints: bool = True) -> float:
+    """
+    Compute effective maximal reachable radius of the chain, accounting for angular wrapping (coil shrinkage).
+
+    Notes
+    -----
+    - `total_angle` must be **unwrapped**, i.e. it may exceed ±2π, ±4π, etc.
+    - For every full revolution (2π) in `delta`, the effective radius
+      shrinks by 2L, corresponding to a full loop consuming two edge lengths.
+    - Remaining partial revolution contributes additional shrinkage = L * (1 - cos(rem / 2))
+
+    Parameters
+    ----------
+    R           - float, Nominal free radius before accounting for coiling, calcaulted at init of SupervisorClass.
+    L           - float, Edge length of the chain.
+    total_angle - float, Unwrapped accumulated chain angle (radians).
+    tip_angle   - float,  Current tip orientation (radians).
+    margin      - float, optional,  Additional safety margin subtracted from R.
+    supress_prints - bool, optional, If False, prints shrink contributions.
+
+    Returns
+    -------
+    R_eff - float,  Effective maximal reachable radius after accounting for coil-induced shrinkage.
+    """
+    # total_angle should be *unwrapped* (can exceed 360)
+    delta = float(np.abs(total_angle - tip_angle))  # radians, unwrapped
+    two_pi = 2.0 * np.pi
+    n_rev = int(np.floor(delta / two_pi))
+    rem = delta - n_rev * two_pi  # in [0, 2π)
+
+    shrink_full = (2.0 * L) * n_rev
+    
+    shrink_partial = L * (1.0 - np.cos(rem / 2.0))  # in [0, 2L)
+    # shrink_partial = L * (1.0 - np.cos(rem))  # in [0, 2L)
+    if not supress_prints:
+        print('shrink due to revolutions', shrink_full)
+        print('shrink remainder in [mm]', shrink_partial)
+
+    shrink = shrink_full + shrink_partial
+    return max(0.0, (R - margin) - shrink)
+
+
+def coil(angle: float, revolutions: float = 1.5):
+    """
+    return boolean whether the tip coiled too much
+
+    Parameters:
+    -----------
+    angle       - float, angle during update state after corrections 
+    revolutions - float, how many 2pi revolution allowed before angle is considered as too much coiled
+
+    Returns:
+    --------
+    boolean - True=coiled too much, correct inside SupervisorClass.calc_update
+    """
+    return np.abs(angle) > revolutions * 2*np.pi
+
+
+# ---------------------------------------------------------------
+# Geometrical helpers
+# ---------------------------------------------------------------
+def _get_before_tip(tip_pos: NDArray, tip_angle: float, L: float, *, xp=jnp, dtype=None):
+    """
+    Return coordinates of the node that is one before the tip given the position of the last node and tip angle
+
+    Notes:
+    ------
+    Works with numpy (xp=np) or jax.numpy (xp=jnp).
+
+    Parameters:
+    -----------
+    tip_pos   - np.array(float), (2,), position of last node
+    tip_angle - float
+    L         - float, edge/facet length [mm]
+
+    Returns:
+    --------
+    np.array(float), (2,), position of before the last node
+    """
+    if dtype is None:
+        tip_pos = xp.asarray(tip_pos).reshape((2,))
+    else:
+        tip_pos = xp.asarray(tip_pos, dtype=dtype).reshape((2,))
+
+    dx = L * xp.cos(tip_angle)
+    dy = L * xp.sin(tip_angle)
+
+    if dtype is None:
+        return tip_pos - xp.array([dx, dy])
+    return tip_pos - xp.array([dx, dy], dtype=dtype)
+
+
+def _get_total_angle(tip_pos: np.array, prev_total_angle: float, L: float) -> np.array:
+    """
+    angle between tip and last fixed node, CCW
+    
+    Parameters
+    ----------
+    tip_pos          - (2,) array, Current tip position.
+    prev_total_angle - float, The accumulated unwrapped angle up to the previous timestep.
+    L                - float, Edge length (used to define reference point at (L,0)).
+
+    Returns
+    -------
+    new_total_angle : float, The unwrapped angle (can exceed ±pi, ±2pi, ±3pi, ...).
+    """
+    # ------ total angle [-pi/2, pi/2] ------
+    dx, dy = array([L, 0]) - tip_pos  # displacement vector
+
+    # shift so that 0 is along -x
+    total_angle = np.arctan2(dy, dx) - np.pi
+    # normalize back to [-pi, pi]
+    total_angle = (total_angle + np.pi) % (2*np.pi) - np.pi
+
+    # ------ correct for wrapping around center ------
+    prev_theta_wrapped = ((prev_total_angle + np.pi) % (2*np.pi)) - np.pi
+    delta = total_angle - prev_theta_wrapped
+
+    # correct jumpt across -x axis - adding or subtracting 2π
+    if delta > np.pi:
+        delta -= 2*np.pi
+    elif delta < -np.pi:
+        delta += 2*np.pi
+
+    # Update cumulative angle
+    total_angle = prev_total_angle + delta
+
+    return total_angle
+
+
+def _point_segment_closest(p: jax.array, a: jax.array, b: jax.array, eps: float = 1e-12):
+    """
+    Compute the closest point on a line segment to a given point.
+
+    Given a point `p` and a line segment defined by endpoints `a` and `b`, finds the point `c` on the segment `[a, b]` that is
+    closest to `p`, and returns the displacement vector from `c` to `p`, its squared norm, and segment interpolation parameter.
+
+    Parameters
+    ----------
+    p   - jax.Array, shape (2,), Query point.
+    a   - jax.Array, shape (2,), First endpoint of the segment.
+    b   - jax.Array, shape (2,), Second endpoint of the segment.
+    eps - float, optional, Small positive constant added to the denominator to avoid division by zero
+
+    Returns
+    -------
+    d  - jax.Array, (2,), Displacement vector from the closest point on the segment to `p`: d = p - c
+    d2 - jax.Array, scalar, Squared distance from `p` to the segment: d2 = ||p - c||²
+    t  - jax.Array, scalar,  Segment interpolation parameter in [0, 1] locating the closest point: c = a + t (b - a)
+    """
+    ab = b - a
+    ap = p - a
+    denom = jnp.dot(ab, ab) + eps
+    t = jnp.clip(jnp.dot(ap, ab) / denom, 0.0, 1.0)
+    c = a + t * ab
+    d = p - c
+    d2 = jnp.dot(d, d)
+    return d, d2, t  # d = (p-c)
+
+
+# ---------------------------------------------------------------
+# DOFs - free and essential - jax instances
+# ---------------------------------------------------------------
+def _assemble_full_from_free(free_mask: jax.Array, fixed_mask: jax.Array, imposed_mask: jax.Array, x_free: jax.Array,
+                             fixed_vals_t: jax.Array, imposed_vals_t: jax.Array) -> jax.Array:
+    """
+    Build full flattened x from free DOFs + constraints at time t.
+    organized as (x0, y0, x1, y2, ..., xN, yN).
+
+    Parameters
+    ----------
+    x_free         - jnp.ndarray (nodes_free*2,), Values of free degrees of freedom.
+    free_mask      - jnp.ndarray[bool], (nodes*2,) Boolean mask marking which entries are free DOFs.
+    fixed_mask     - jnp.ndarray[bool], (nodes*2,) Boolean mask marking fixed DOFs (always zero).
+    imposed_mask   - jnp.ndarray[bool] (nodes*2,) Boolean mask marking imposed DOFs (prescribed values).
+    imposed_vals_t - jnp.ndarray (nodes*2,), Values to assign to imposed DOFs at time t.
+
+    Returns
+    -------
+    x_full : jnp.ndarray (n_coords,), Complete flattened coordinate vector, consistent with all masks and imposed values.
     """
     x_full = jnp.zeros((free_mask.size,), dtype=fixed_vals_t.dtype)
     x_full = x_full.at[free_mask].set(x_free)
@@ -216,8 +530,28 @@ def _assemble_full_from_free(free_mask: jax.Array,       # bool (n_coords,)
     return x_full
 
 
-def _extend_pos_to_x0_v0(init_pos, pos_noise, vel_noise, rand_key):
-    # USED
+def _extend_pos_to_x0_v0(init_pos: NDArray, pos_noise: Optional[float], vel_noise: Optional[float], rand_key: int) -> NDArray:
+    """
+    Build full state vector [x, v] from positions, optionally adding noise to interior DOFs only.
+    where x = [x0, y0, x1, y1, ..., xN, yN] and v = [vx0, vy0, ..., vxN, vyN] (which are all zeros)
+
+    Notes
+    -----
+    - used at beginning of equilibration in EquilibriumClass. Initialization prior to ODE integration.
+    - Noise is sampled independently per DOF from -U[-1, 1] and scaled by ``pos_noise`` or ``vel_noise``.
+    - The same PRNG seed is currently used for both position and velocity noise.
+
+    Parameters
+    ----------
+    init_pos  - jax.Array (nodes, 2), Initial nodal positions.
+    pos_noise - float or None. Amplitude of position noise per interior DOF. If None, no positional noise is added.
+    vel_noise - float or None. Amplitude of velocity noise per interior DOF. If None, velocities remain zero.
+    rand_key - int. Integer seed used to initialize a JAX PRNGKey for reproducible noise.
+
+    Returns
+    -------
+    state_0 - jax.Array (2 * n_coords,) (=2*2*N). Concatenated flattened position and velocity vector. Velocities are zero
+    """
     # start from current geometry
     x0 = init_pos.flatten()  # (n_coords,)
     n_nodes = int(len(x0)/2)
@@ -254,8 +588,30 @@ def _extend_pos_to_x0_v0(init_pos, pos_noise, vel_noise, rand_key):
     return jnp.concatenate([x0, v0], axis=0)
 
 
-def _get_state_free_from_full(state_0, fixed_mask, imposed_mask):
-    # USED
+def _get_state_free_from_full(state_0: NDArray, fixed_mask: NDArray, imposed_mask: NDArray) -> Tuple[NDArray, int, NDArray]:
+    """
+    Extract free degrees of freedom (positions + velocities) from full flattened state vector state_0 = [x_flat, v_flat]
+    x_flat - (n_coords,) = (x0, y0, ..., xN, yN),  
+    v_flat - (n_coords,) = (vx0, vy0, ..., vxN, vyN)
+    matching the convention used in `solve_dynamics`
+
+    Parameters
+    ----------
+    state_0      - (2 * n_coords,) jax.Array, full flattened state vector [x0_flat, v0_flat]
+    fixed_mask   - (n_coords,) jax.Array[bool], boolean mask marking position DOFs that are fixed.
+    imposed_mask - (n_coords,) jax.Array[bool], Boolean mask marking position DOFs that are externally imposed.
+
+    Returns
+    -------
+    free_mask   - jax.Array[bool] (n_coords,), Boolean mask marking position DOFs that are free.
+    n_free_DOFs - int, Number of free **position** DOFs.
+    state_free  - jax.Array (2 * n_free_DOFs,), Reduced flattened state vector containing:
+
+    Notes
+    -----
+    - This function is used before ODE integration to construct the
+      reduced system that evolves only over free DOFs.
+    """
     n_coords = int(len(state_0)/2)
     free_mask = jnp.logical_not(imposed_mask | fixed_mask)
     n_free_DOFs = jnp.sum(free_mask)
@@ -266,162 +622,86 @@ def _get_state_free_from_full(state_0, fixed_mask, imposed_mask):
     return free_mask, n_free_DOFs, jnp.concatenate([state_0_x_free, state_0_x_dot_free])
 
 
-def _get_before_tip(tip_pos,
-                    tip_angle,
-                    L: float,
-                    *,
-                    xp=jnp,
-                    dtype=None):
+def _get_first_in_file(r: Mapping[str, Union[str, float, int, None]], keys: Iterable[str], *, name: str = "",
+                       allow_missing: bool = False) -> Optional[float]:
     """
-    Return coordinates of the node that is one before the tip.
+    Extract first valid scalar value from a csv, using list of candidate keys. If no valid key is found: returns `None`
 
-    Works with numpy (xp=np) or jax.numpy (xp=jnp).
-    tip_pos: (2,)
-    tip_angle: scalar
-    L: float
-    """
-    if dtype is None:
-        tip_pos = xp.asarray(tip_pos).reshape((2,))
-    else:
-        tip_pos = xp.asarray(tip_pos, dtype=dtype).reshape((2,))
-
-    dx = L * xp.cos(tip_angle)
-    dy = L * xp.sin(tip_angle)
-
-    if dtype is None:
-        return tip_pos - xp.array([dx, dy])
-    return tip_pos - xp.array([dx, dy], dtype=dtype)
-
-
-def _get_tip_angle(pos_arr: np.array) -> np.array:
-    """
-    angle of edge connected to tip relative to horizontal, CCW
-    pos_arr: array of shape (H, 2)
-    Returns: angle (radians) in [-pi, pi], measured from -x axis
-    """
-    pos_arr = np.asarray(pos_arr)
-    p0, p1 = pos_arr[-2], pos_arr[-1]   # last two nodes
-    dx, dy = p1 - p0                    # displacement vector
-
-    # shift so that 0 is along -x
-    # theta_from_negx = np.arctan2(dy, dx) - np.pi
-
-    # shift so that 0 is along +x
-    theta_from_negx = np.arctan2(dy, dx)
-    # normalize back to [-pi, pi]
-    theta_from_negx = (theta_from_negx + np.pi) % (2*np.pi) - np.pi
-
-    return theta_from_negx
-
-
-def _get_total_angle(tip_pos: np.array, prev_total_angle: float, L: float) -> np.array:
-    """
-    angle between tip and last fixed node, CCW
-    pos_arr: array of shape (H, 2)
-    Returns: angle (radians) in [-pi, pi], measured from -x axis
-    
     Parameters
     ----------
-    tip_pos          - (2,) array, Current tip position.
-    prev_total_angle - float, The accumulated unwrapped angle up to the previous timestep.
-    L                - float, Edge length (used to define reference point at (L,0)).
+    r             - Mapping[str, str | float | int | None]. Record-like object (e.g. CSV row dictionary).
+    keys          - Iterable[str]. Ordered candidate keys to search for.
+    name          - str, optional.  Human-readable field name used only for error reporting.
+    allow_missing - bool, optional. If True, return None when no key is found.
 
     Returns
     -------
-    new_total_angle : float, The unwrapped angle (can exceed ±pi, ±2pi, ±3pi, ...).
+    value - float or None. First successfully parsed scalar value.
     """
-    # ------ total angle [-pi/2, pi/2] ------
-    dx, dy = np.array([L, 0]) - tip_pos  # displacement vector
-
-    # shift so that 0 is along -x
-    total_angle = np.arctan2(dy, dx) - np.pi
-    # normalize back to [-pi, pi]
-    total_angle = (total_angle + np.pi) % (2*np.pi) - np.pi
-
-    # ------ correct for wrapping around center ------
-    prev_theta_wrapped = ((prev_total_angle + np.pi) % (2*np.pi)) - np.pi
-    delta = total_angle - prev_theta_wrapped
-
-    # correct jumpt across -x axis - adding or subtracting 2π
-    if delta > np.pi:
-        delta -= 2*np.pi
-    elif delta < -np.pi:
-        delta += 2*np.pi
-
-    # Update cumulative angle
-    total_angle = prev_total_angle + delta
-
-    return total_angle
+    for k in keys:
+        if k in r and r[k] not in ("", None):
+            return float(r[k])
+    if allow_missing:
+        return None
+    raise KeyError(f"None of {keys} found for {name}")
 
 
-def clamp_pos_same_delta(
-    *,
-    tip_prev,            # (2,)
-    before_prev,         # (2,)
-    tip_angle_new,       # scalar (already updated)
-    tip_raw,             # (2,) proposed tip after your normalized step
-    second_node,         # (2,) usually [L, 0]
-    R_lim,               # scalar
-    L: float,
-    eps=1e-12,
-):
+def _get_scalar_in_orthogonal_dir(vec: NDArray[np.floating], angle: float) -> float:
     """
-    Enforce ||before - second_node|| <= R_lim
-    while preserving ||before_new - before_prev|| = ||before_raw - before_prev|| (when possible).
+    Compute scalar projection of vector onto direction orthogonal angle.
+
+    Notes
+    -----
+    - The orthogonal direction is defined as n = [-sin(angle), cos(angle)] corresponding to +90° rotation of unit vector
+      `[cos(angle), sin(angle)]`.
+
+    Parameters
+    ----------
+    vec : NDArray, (2,) , vector whose orthogonal component is extracted.
+    angle : float, Reference direction angle in radians.
+
+    Returns
+    -------
+    scalar : float, Scalar projection of `vec` onto the orthogonal direction.
     """
-    tip_prev = np.asarray(tip_prev, float).reshape(2,)
-    before_prev = np.asarray(before_prev, float).reshape(2,)
-    tip_raw = np.asarray(tip_raw, float).reshape(2,)
-    second_node = np.asarray(second_node, float).reshape(2,)
-    R_lim = float(R_lim)
-
-    # raw before-tip implied by tip_raw and tip_angle_new
-    before_raw = tip_raw - L*np.array([np.cos(tip_angle_new), np.sin(tip_angle_new)], float)
-
-    disp_raw = before_raw - second_node
-    r_raw = np.linalg.norm(disp_raw)
-
-    if r_raw <= R_lim + eps:
-        return tip_raw, before_raw, False  # no clamp
-
-    step = np.linalg.norm(before_raw - before_prev)
-
-    # circle-circle intersection: constraint circle & step circle
-    pts = _circle_circle_intersections_np(second_node, R_lim, before_prev, step, eps=eps)
-
-    if len(pts) == 0:
-        # fallback: radial clamp in before-space
-        if r_raw < eps:
-            before_new = second_node + np.array([R_lim, 0.0])
-        else:
-            before_new = second_node + disp_raw * (R_lim / r_raw)
-    else:
-        # pick intersection closest to raw proposal
-        before_new = min(pts, key=lambda p: np.sum((p - before_raw)**2))
-
-    tip_new = before_new + L*np.array([np.cos(tip_angle_new), np.sin(tip_angle_new)], float)
-    return tip_new, before_new, True
+    return -vec[0]*np.sin(angle) + vec[1]*np.cos(angle)
 
 
-def coil(angle: float, revolutions: float = 1.5):
-    """
-    return boolean whether the tip coiled too much
+# # ==========
+# # NOT IN USE
+# # ==========
 
-    Parameters:
-    -----------
-    angle       - float, angle during update state after corrections 
-    revolutions - float, how many 2pi revolution allowed before angle is considered as too much coiled
+# def clamp_tip_no_cross(tip_pos, tip_angle, L, it=30):
+#     """
+#     used previously if correct_for_cut_origin==True
+#     """
+#     p0, p1 = array([0., 0.]), array([L, 0.])
+#     s = array([L, 0.])
+#     b = np.asarray(tip_pos, float)
+#     d = b - s
+#     if not inter(b, L, p0, p1, tip_angle): 
+#         return b
+# 
+#     lo, hi = 0., 1.
+#     for _ in range(it): 
+#         mid = (lo+hi)/2
+#         x = s+mid*d
+#         (hi := mid) if inter(x) else (lo := mid)
+#     return s + lo*d
 
-    Returns:
-    --------
-    boolean - True=coiled too much, correct inside SupervisorClass.calc_update
-    """
-    return np.abs(angle) > revolutions * 2*np.pi
-
+# def inter(x, L, p0, p1, tip_angle, eps=1e-12):
+#     """
+#     Only used in clamp_tip_no_cross, which is unused
+#     """
+#     u = x - array([L*np.cos(tip_angle), L*np.sin(tip_angle)])
+#     o = lambda A, B, C: (B[0]-A[0])*(C[1]-A[1])-(B[1]-A[1])*(C[0]-A[0])
+#     o1, o2, o3, o4 = o(u, x, p0), o(u, x, p1), o(p0, p1, u), o(p0, p1, x)
+#     return (o1*o2 < -eps) and (o3*o4 < -eps)
 
 # def _correct_big_stretch(tip_pos: NDArray[np.float_], tip_angle: float, total_angle: float, L: float,
 #                          edges: int) -> NDArray[np.float_]:
 #     """
+#     Used previously before _correct_big_stretch_robot_style
 #     Physical upper bound on total chain stretch by correcting tip position to not exceed  maximal possible length.
 
 #     Parameters
@@ -475,143 +755,50 @@ def coil(angle: float, revolutions: float = 1.5):
 #     # Otherwise nothing to correct
 #     return tip_pos
 
-
-def _correct_big_stretch_robot_style(tip_pos, tip_angle, total_angle, R_free, L, margin=0.0, supress_prints: bool = True):
+# def torque(tip_angle: float, Fx: float, Fy: float, L: float) -> float:
+#     """
+#     total torque
     
-    if not supress_prints:
-        print(f'update vals before correction={tip_pos},{tip_angle}')
-    # Compute the location of the node before the tip
-    before_last = np.array([tip_pos[0] - L * np.cos(tip_angle), tip_pos[1] - L * np.sin(tip_angle)])
-
-    # Second node from the base sits at (L, 0)
-    second_node = np.array([L, 0.0], dtype=float)
-
-    # chain current radius
-    disp = before_last - second_node
-    r_chain = np.hypot(disp[0], disp[1])
-    R_eff = effective_radius(R_free, L, total_angle, tip_angle, supress_prints = supress_prints)
-
-    if not supress_prints:
-        print(f'r_chain{r_chain}')
-        print(f'R_eff{R_eff}')
-
-    x2, y2 = None, None
-
-    if r_chain >= (R_eff - margin*L):
-        scale = (R_eff - margin*L) / r_chain
-        x2 = second_node[0] + (tip_pos[0]-second_node[0]) * scale
-        y2 = second_node[1] + (tip_pos[1]-second_node[1]) * scale
-        if not supress_prints:
-            print(f'clamped from x={tip_pos[0]},y={tip_pos[1]} to x={x2},y={y2}')
-        return np.array([x2, y2])
-    else:
-        return tip_pos
+#     tip_angle - float, angle of tip of chain
+#     Fx        - force [mN] in global x direction
+#     Fy        - force [mN] in global y direction
+#     """
+#     F_orthogonal = _get_scalar_in_orthogonal_dir(array([Fx, Fy]), tip_angle) 
+#     return F_orthogonal * L
 
 
-def effective_radius(R, L, total_angle, tip_angle, margin=0.0, supress_prints: bool = True) -> float:
-    # total_angle should be *unwrapped* (can exceed 360)
-    delta = float(np.abs(total_angle - tip_angle))  # radians, unwrapped
-    two_pi = 2.0 * np.pi
-    n_rev = int(np.floor(delta / two_pi))
-    rem = delta - n_rev * two_pi  # in [0, 2π)
+# def tip_torque(tip_angle: float, Forces: NDArray) -> float:
+#     F_xy_last = array([Forces[-2], Forces[-1]])
+#     F_xy_before_last = array([Forces[-4], Forces[-3]])
+#     last_orthogonal = _get_scalar_in_orthogonal_dir(F_xy_last, tip_angle)
+#     before_last_orthogonal = _get_scalar_in_orthogonal_dir(F_xy_before_last, tip_angle)
+#     return last_orthogonal - before_last_orthogonal
 
-    shrink_full = (2.0 * L) * n_rev
+# def _get_tip_angle(pos_arr: np.array) -> np.array:
+#     """
+#     angle of edge connected to tip relative to horizontal, CCW
+
+#     Parameters:
+#     -----------
+#     pos_arr - np.array, (H, 2), chain node positions
     
-    shrink_partial = L * (1.0 - np.cos(rem / 2.0))  # in [0, 2L)
-    # shrink_partial = L * (1.0 - np.cos(rem))  # in [0, 2L)
-    if not supress_prints:
-        print('shrink due to revolutions', shrink_full)
-        print('shrink remainder in [mm]', shrink_partial)
+#     Returns:
+#     --------
+#     angle (radians) in [-pi, pi], measured from -x axis, CCW
+#     """
+#     pos_arr = np.asarray(pos_arr)
+#     p0, p1 = pos_arr[-2], pos_arr[-1]   # last two nodes
+#     dx, dy = p1 - p0                    # displacement vector
 
-    shrink = shrink_full + shrink_partial
-    return max(0.0, (R - margin) - shrink)
+#     # shift so that 0 is along -x
+#     # theta_from_negx = np.arctan2(dy, dx) - np.pi
 
+#     # shift so that 0 is along +x
+#     theta_from_negx = np.arctan2(dy, dx)
+#     # normalize back to [-pi, pi]
+#     theta_from_negx = (theta_from_negx + np.pi) % (2*np.pi) - np.pi
 
-def _point_segment_closest(p, a, b, eps=1e-12):
-    """
-    Compute the closest point on a line segment to a given point.
-
-    Given a point `p` and a line segment defined by endpoints `a` and `b`, finds the point `c` on the segment `[a, b]` that is
-    closest to `p`, and returns the displacement vector from `c` to `p`, its squared norm, and segment interpolation parameter.
-
-    Parameters
-    ----------
-    p   : jax.Array, shape (2,), Query point.
-    a   : jax.Array, shape (2,), First endpoint of the segment.
-    b   : jax.Array, shape (2,), Second endpoint of the segment.
-    eps : float, optional, Small positive constant added to the denominator to avoid division by zero
-
-    Returns
-    -------
-    d  : jax.Array, shape (2,), Displacement vector from the closest point on the segment to `p`: d = p - c
-    d2 : jax.Array, scalar, Squared distance from `p` to the segment: d2 = ||p - c||²
-    t  : jax.Array, scalar,  Segment interpolation parameter in [0, 1] locating the closest point: c = a + t (b - a)
-    """
-    ab = b - a
-    ap = p - a
-    denom = jnp.dot(ab, ab) + eps
-    t = jnp.clip(jnp.dot(ap, ab) / denom, 0.0, 1.0)
-    c = a + t * ab
-    d = p - c
-    d2 = jnp.dot(d, d)
-    return d, d2, t  # d = (p-c)
-
-
-def clamp_tip_no_cross(tip_pos, tip_angle, L, it=30):
-    p0, p1 = np.array([0., 0.]), np.array([L, 0.])
-    s = np.array([L, 0.])
-    b = np.asarray(tip_pos, float)
-    d = b - s
-    if not inter(b, L, p0, p1, tip_angle): 
-        return b
-
-    lo, hi = 0., 1.
-    for _ in range(it): 
-        mid = (lo+hi)/2
-        x = s+mid*d
-        (hi := mid) if inter(x) else (lo := mid)
-    return s + lo*d
-
-
-def inter(x, L, p0, p1, tip_angle, eps=1e-12):
-    u = x - np.array([L*np.cos(tip_angle), L*np.sin(tip_angle)])
-    o = lambda A, B, C: (B[0]-A[0])*(C[1]-A[1])-(B[1]-A[1])*(C[0]-A[0])
-    o1, o2, o3, o4 = o(u, x, p0), o(u, x, p1), o(p0, p1, u), o(p0, p1, x)
-    return (o1*o2 < -eps) and (o3*o4 < -eps)
-
-
-def _get_first_in_file(r, keys, *, name="", allow_missing=False):
-    for k in keys:
-        if k in r and r[k] not in ("", None):
-            return float(r[k])
-    if allow_missing:
-        return None
-    raise KeyError(f"None of {keys} found for {name}")
-
-
-def _get_scalar_in_orthogonal_dir(vec, angle):
-    return -vec[0]*np.sin(angle) + vec[1]*np.cos(angle)
-
-
-def torque(tip_angle: float, Fx: float, Fy: float, L: float) -> float:
-    """
-    tip_angle: rad
-    Fx: mN
-    Fy: mN
-    """
-    F_orthogonal = _get_scalar_in_orthogonal_dir(array([Fx, Fy]), tip_angle) 
-    return F_orthogonal * L
-
-
-def tip_torque(tip_angle: float, Forces: NDArray) -> float:
-    F_xy_last = array([Forces[-2], Forces[-1]])
-    F_xy_before_last = array([Forces[-4], Forces[-3]])
-    last_orthogonal = _get_scalar_in_orthogonal_dir(F_xy_last, tip_angle)
-    before_last_orthogonal = _get_scalar_in_orthogonal_dir(F_xy_before_last, tip_angle)
-    return last_orthogonal - before_last_orthogonal
-
-
-# ### NOT IN USE
+#     return theta_from_negx
 #     @staticmethod
 #     def _compute_thetas_over_traj(Strctr: "StructureClass", traj_pos: jax.Array) -> jax.Array:
 #         """

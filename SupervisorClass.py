@@ -438,8 +438,7 @@ class SupervisorClass:
         before_tip = helpers_builders._get_before_tip(prev_tip_update_pos, prev_tip_update_angle, Strctr.L, xp=np)
         R_eff = helpers_builders.effective_radius(self.R_free, Strctr.L, total_angle, prev_tip_update_angle, 
                                                   supress_prints=self.supress_prints)
-        tip_new, before_new, clamped = helpers_builders.clamp_pos_same_delta(tip_prev=prev_tip_update_pos,
-                                                                             before_prev=before_tip,
+        tip_new, before_new, clamped = helpers_builders.clamp_pos_same_delta(before_prev=before_tip,
                                                                              tip_angle_new=prev_tip_update_angle + delta_angle,
                                                                              tip_raw=prev_tip_update_pos + delta_tip,
                                                                              second_node=array([Strctr.L, 0.0]),

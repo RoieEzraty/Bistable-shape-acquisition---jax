@@ -14,7 +14,9 @@ from SupervisorClass import SupervisorClass
 from EquilibriumClass import EquilibriumClass
 from config import ExperimentConfig
 
-
+# ---------------------------------------------------------------
+# Full training
+# ---------------------------------------------------------------
 def train(Strctr: StructureClass, Variabs: VariablesClass, Sprvsr: SupervisorClass, State_meas: StateClass,
           State_update: StateClass, State_des: StateClass, CFG: ExperimentConfig):
     """
@@ -134,6 +136,9 @@ def train(Strctr: StructureClass, Variabs: VariablesClass, Sprvsr: SupervisorCla
     return pos_in_t_meas, pos_in_t_update
 
 
+# ---------------------------------------------------------------
+# Single tip movement, incremental equilibration
+# ---------------------------------------------------------------
 def compress_to_tip_pos(Strctr: "StructureClass", Variabs: "VariablesClass", Sprvsr: "SupervisorClass", CFG: ExperimentConfig,
                         buckle: NDArray, tip_pos_i: NDArray, tip_angle_i: float, tip_pos_f: NDArray, tip_angle_f: float,
                         Eq_iterations: int) -> Tuple["StateClass", list[NDArray], list[NDArray]]:
@@ -207,6 +212,9 @@ def compress_to_tip_pos(Strctr: "StructureClass", Variabs: "VariablesClass", Spr
     return State, pos_in_t, force_in_t
 
 
+# ---------------------------------------------------------------
+# Full experiment from file
+# ---------------------------------------------------------------
 def measure_determined_pos_from_file(Strctr: "StructureClass", Variabs: "VariablesClass", Sprvsr: "SupervisorClass",
                                      CFG: ExperimentConfig, path: str, buckle: NDArray,
                                      stretch_factor: Optional[float] = None) -> Tuple[NDArray, NDArray, NDArray]:
@@ -285,6 +293,9 @@ def measure_determined_pos_from_file(Strctr: "StructureClass", Variabs: "Variabl
     return State, P, F_x_vec, F_y_vec, F_x_vec_exp, F_y_vec_exp
 
 
+# ---------------------------------------------------------------
+# Single equilibration
+# ---------------------------------------------------------------
 def one_shot(Strctr: "StructureClass", Variabs: "VariablesClass", Sprvsr: "SupervisorClass", State: "StateClass",
              CFG: ExperimentConfig, buckle: NDArray, tip_pos: NDArray, tip_angle: float,
              init_pos: Optional[np.ndarray] = None, t: int = 0) -> Tuple["StateClass", NDArray, NDArray]:
@@ -339,6 +350,9 @@ def one_shot(Strctr: "StructureClass", Variabs: "VariablesClass", Sprvsr: "Super
     return pos_in_t, final_F
 
 
+# ---------------------------------------------------------------
+# Simulation of Bi-ax measurement, Harvard 2025
+# ---------------------------------------------------------------
 def ADMET_stress_strain(Strctr: StructureClass, Variabs: VariablesClass, Sprvsr: SupervisorClass, State: StateClass, 
                         CFG: ExperimentConfig, tip_angle: float, *, plot_every: int = 1
                         ) -> Tuple[NDArray[np.float_],   # Fx_afo_pos
