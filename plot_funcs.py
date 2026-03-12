@@ -13,15 +13,26 @@ from typing import List, Union
 import colors, helpers_builders
 
 
-def plot_arm(pos_vec: np.ndarray, buckle: np.ndarray, thetas: Union[np.ndarray, list, tuple], L: float,
-             modality: str, show: bool=True, ax=None) -> None:
-    colors_lst, red, custom_cmap = colors.color_scheme()
+def plot_arm(pos_vec: np.ndarray, buckle: np.ndarray, L: float, modality: str, show: bool = True, ax=None) -> None:
+    """
+    Plot arm configuration together with buckle direction arrows.
+
+    Parameters
+    ----------
+    pos_vec   - ndarray, shape ``(nodes, 2)``, xy coordinates of chain nodes.
+    buckle    - ndarray, shape ``(H,)`` or ``(H, 1)``, buckle sign of each hinge. 1=down, -1=up
+    L         - float, characteristic link length used for visual scaling.
+    modality  - Optional[str], selects chain color. ``"measurement"`` and ``"desired"`` use one color, ``"update"`` another.
+    show      - bool, if True and ``ax`` not provided, display figure.
+    ax        - Optional[Axes], existing matplotlib axes to draw on.
+    """
+    # ------ prelims ------
+    colors_lst, _, _ = colors.color_scheme()
 
     # pick axes
-    if ax is None:
-        fig, ax = plt.subplots(figsize=(4, 4))
-    else:
-        fig = ax.figure
+    created_ax = ax is None
+    if created_ax:
+        _, ax = plt.subplots(figsize=(4, 4))
 
     xs, ys = pos_vec[:, 0], pos_vec[:, 1]
     tip_angle_deg = np.rad2deg(float(helpers_builders._get_tip_angle(pos_vec)))
@@ -33,42 +44,43 @@ def plot_arm(pos_vec: np.ndarray, buckle: np.ndarray, thetas: Union[np.ndarray, 
     else:
         clr = colors_lst[1]
 
-    # ------ edges and nodes ------
+    # ------ chain faces and nodes ------
     ax.plot(xs, ys, linewidth=4, color=clr)
     ax.scatter(xs, ys, s=60, zorder=3, color=clr)
     ax.scatter([0], [0], s=60, zorder=3, color="k")
 
-    # ------ line of wall ------
-    ax.plot([xs[-1], xs[-1]],
-            [ys[-1] + 0.4 * L, ys[-1] - 0.4 * L],
-            linestyle=":", color="k", linewidth=3.0)
+    # # ------ line of wall ------
+    # ax.plot([xs[-1], xs[-1]],
+    #         [ys[-1] + 0.4 * L, ys[-1] - 0.4 * L],
+    #         linestyle=":", color="k", linewidth=3.0)
 
     # ------ buckle arrows ------
+    buckle_vec = np.asarray(buckle, dtype=float).reshape(-1, 1)
     diffs = pos_vec[2:, :] - pos_vec[:-2, :]
-    diffs_3d = np.concatenate((diffs, np.zeros((diffs.shape[0], 1))), axis=1)
-    buckle_3d = np.concatenate((np.zeros((buckle.shape[0], 2)), buckle), axis=1)
-    V_3d = np.cross(diffs_3d, buckle_3d)
-    V = V_3d[:, :2]
+    diffs_3d = np.column_stack((diffs, np.zeros(diffs.shape[0], dtype=float)))
+    buckle_3d = np.column_stack((np.zeros((buckle_vec.shape[0], 2), dtype=float), buckle_vec.reshape(-1)))
+    directions = np.cross(diffs_3d, buckle_3d)[:, :2]
 
-    for p, v in zip(pos_vec[1:-1], V):
-        nv = np.linalg.norm(v)
-        if nv < 1e-12:
-            continue  # nothing to draw
+    for p, v in zip(pos_vec[1:-1], directions):
+        norm_v = np.linalg.norm(v)
+        if norm_v < 1e-12:
+            continue
 
         arrow = patches.FancyArrowPatch(
             p,
-            p + (v / nv) * 0.02,
-            arrowstyle='-|>',
+            p + (v / norm_v) * 0.02,
+            arrowstyle="-|>",
             mutation_scale=25,
             linewidth=3,
-            capstyle='round',
-            joinstyle='round'
+            capstyle="round",
+            joinstyle="round",
         )
         try:
             ax.add_patch(arrow)
-        except:
-            print('bad animation, lets solve this later')
+        except Exception:
+            print("bad animation, lets solve this later")
 
+    # ------ annotate tip and aesthetics -------
     # annotate tip
     ax.annotate(rf"$x={xs[-1]:.2f},\ y={ys[-1]:.2f},\ \theta={tip_angle_deg:.2f}$",
                 xy=(xs[-1], ys[-1]), xytext=(xs[-1] - 0.05, ys[-1] - 0.05))
@@ -82,20 +94,33 @@ def plot_arm(pos_vec: np.ndarray, buckle: np.ndarray, thetas: Union[np.ndarray, 
     ax.set_title(modality if modality is not None
                  else f"Tip (x, y, theta)=({xs[-1]:.2f}, {ys[-1]:.2f}, {tip_angle_deg:.2f})")
 
-    if show and ax is None:
+    if show and created_ax:
         plt.show()
 
 
-def animate_arm_w_arcs(traj_pos, L, frames=10, interval_ms=30, save_path=None, fps=30, show_inline=False, buckle_traj=None,
-                       arc_scale: float = 0.2):
+def animate_arm_w_arcs(traj_pos, L, frames=10, interval_ms=30, save_path=None, fps=30, show_inline=False,
+                       buckle_traj=None) -> None:
     """
     Animate an N-link arm over time, optionally drawing hinge arcs.
 
-    traj_pos   : array-like, shape (T, N, 2), positions over time
-    L          : reference link length
-    buckle_traj: optional, shape (T, H, S) or (H, S), buckle states per frame
+    Parameters
+    ----------
+    traj_pos    - array-like, shape ``(T, N, 2)``, arm positions over time.
+    L           - float, reference link length used for axis scaling.
+    frames      - int, approximate number of displayed frames after temporal downsampling.
+    interval_ms - int, delay between displayed frames in milliseconds.
+    save_path   - Optional[str], if given, save the animation to ``.gif`` or ``.mp4``.
+    fps         - int, output frame rate used when saving.
+    show_inline - bool, if True, return an HTML animation object for notebook display.
+    buckle_traj - Optional[array-like], buckle history with shape ``(T, H, S)`` or static buckle state ``(H, S)``.
+    arc_scale   - float, kept for interface compatibility. Currently unused.
+
+    Returns
+    -------
+    (fig, anim) - tuple[Figure, FuncAnimation], returned when ``show_inline=False``.
+    HTML        - IPython display object, returned when ``show_inline=True``.
     """
-    colors_lst, red, custom_cmap = colors.color_scheme()
+    colors_lst, _, _ = colors.color_scheme()
     plt.rcParams["axes.prop_cycle"] = plt.cycler("color", colors_lst)
 
     pos = np.asarray(traj_pos, dtype=float)  # (T, N, 2)
@@ -125,7 +150,6 @@ def animate_arm_w_arcs(traj_pos, L, frames=10, interval_ms=30, save_path=None, f
 
     # List to hold current arc patches so we can remove them each frame
     arc_patches: list[patches.Arc] = []
-    r = arc_scale * float(L)
 
     def init():
         line.set_data([], [])
@@ -197,7 +221,7 @@ def animate_arm_w_arcs(traj_pos, L, frames=10, interval_ms=30, save_path=None, f
     return fig, anim
 
 
-def loss_and_buckle_in_t(loss_MSE_in_t, buckle_in_t, F_meas_in_t, F_des_in_t, start=0, end=None):
+def loss_and_buckle_in_t(loss_MSE_in_t, buckle_in_t, F_meas_in_t, F_des_in_t, start=0, end=None) -> None:
     """
     Plot (top->bottom):
       1) measured forces (solid) vs desired forces (dotted) over training steps
@@ -206,15 +230,15 @@ def loss_and_buckle_in_t(loss_MSE_in_t, buckle_in_t, F_meas_in_t, F_des_in_t, st
 
     Parameters
     ----------
-    loss_in_t    : np.ndarray, shape (T, 2)
-    buckle_in_t  : np.ndarray, shape (H, 1, T)  (as in your current indexing)
-    F_meas_in_t  : np.ndarray, shape (T, 2)
-    F_des_in_t   : np.ndarray, shape (T, 2)
-    start        : int, inclusive
-    end          : int, exclusive (None -> full length)
+    loss_MSE_in_t - np.ndarray, shape (T, 2)
+    buckle_in_t   - np.ndarray, shape (H, 1, T)  (as in your current indexing)
+    F_meas_in_t   - np.ndarray, shape (T, 2)
+    F_des_in_t    - np.ndarray, shape (T, 2)
+    start         - int, inclusive
+    end           - int, exclusive (None -> full length)
     """
     # ------ colors ------
-    colors_lst, red, custom_cmap = colors.color_scheme()
+    colors_lst, _, _ = colors.color_scheme()
 
     # -------- time vector / slicing --------
     T = np.size(loss_MSE_in_t)
@@ -259,6 +283,23 @@ def loss_and_buckle_in_t(loss_MSE_in_t, buckle_in_t, F_meas_in_t, F_des_in_t, st
     axes[2].xaxis.set_major_locator(MaxNLocator(integer=True))
 
     plt.tight_layout()
+    plt.show()
+
+
+def plot_tau_afo_theta(torque_func) -> None:
+    """
+    Torque-angle response over ``[-pi, pi]``. Used inside main.ipynb for single hinge stress response
+
+    Parameters
+    ----------
+    torque_func - callable, function mapping angle in radians to torque.
+    """
+    thetas = np.linspace(-np.pi, np.pi, 100)
+    taus = torque_func(thetas)
+    plt.plot(thetas, taus)
+    plt.ylabel(r'$\tau$')
+    plt.xlabel(r'$\theta\,\left[rad\right]$')
+    plt.ylim([-15, 15])
     plt.show()
 
 
@@ -324,16 +365,6 @@ def plot_compare_sim_exp_stress_strain(exp_dfs: List[pd.DataFrame], sim_df: pd.D
     plt.xlabel("pos [mm]", fontsize=font_size)
     plt.ylabel("Force [N]", fontsize=font_size)
     plt.legend(legend_labels, fontsize=font_size)
-    plt.show()
-
-
-def plot_tau_afo_theta(torque_func) -> None:
-    thetas = np.linspace(-np.pi, np.pi, 100)
-    taus = torque_func(thetas)
-    plt.plot(thetas, taus)
-    plt.ylabel(r'$\tau$')
-    plt.xlabel(r'$\theta\,\left[rad\right]$')
-    plt.ylim([-15, 15])
     plt.show()
 
 

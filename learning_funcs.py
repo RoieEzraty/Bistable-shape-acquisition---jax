@@ -25,8 +25,10 @@ def build_incidence(Nin: int, Nout: int) -> Tuple[NDArray[np.int_], NDArray[np.i
     Builds incidence matrix DM as np.array [NEdges, NNodes] for 1 single FC network, w/out ground
     its meaning is 1 at input node and -1 at outpus for every row which resembles one edge.
 
-    input (extracted from Variabs input):
-    Strctr: "Network_Structure" class instance with the input, intermediate and output nodes
+    Parameters
+    ----------
+    Nin  - int, Number of input nodes in the learning graph.
+    Nout - int, Number of output nodes in the learning graph.
 
     output:
     EI, EJ     - 1D np.arrays sized NEdges such that EI[i] is node connected to EJ[i] at certain edge
@@ -58,8 +60,6 @@ def build_incidence(Nin: int, Nout: int) -> Tuple[NDArray[np.int_], NDArray[np.i
     for i in range(NE):
         DM[i, int(EI[i])] = +1.
         DM[i, int(EJ[i])] = -1.
-
-    return EI, EJ, EIEJ_plots, DM, NE, NN, output_nodes_arr
 
 
 def inverse_incidence(DM: NDArray[np.int_]) -> NDArray[np.float_]:
@@ -97,20 +97,12 @@ def grad_loss_FC(NE: int, inputs_normalized: NDArray[np.float_], outputs_normali
 
     Returns:
     - grad_loss_vec: NDArray[np.float_]
-        Gradient of the loss with respect to each edge pressure.
+        Gradient of the loss with respect to each edge.
     """
     node_vec = np.concatenate((inputs_normalized, outputs_normalized))
     grad_loss_vec: NDArray[np.float_] = np.zeros([NE])
     first_output = np.size(inputs_normalized)
-    # for idx in range(NE):
-    #     output_idx = np.where(output_nodes_arr == np.where(DM[idx] == -1)[0][0])[0]  # index of output of edge
-    #     x_j = node_vec[np.where(DM[idx] == 1)]
-    #     y_i = node_vec[np.where(DM[idx] == -1)]
-    #     loss_i = loss[0][output_idx[0]]
-    #     grad_loss_ij = -(y_i-x_j)*loss_i
-    #     grad_loss_vec[idx] = grad_loss_ij
     for idx in range(NE):
-        # output_idx = np.where(output_nodes_arr == np.where(DM[idx] == -1)[0][0])[0]  # index of output of edge
         x_j = node_vec[np.where(DM[idx] == 1)]
         y_i = node_vec[np.where(DM[idx] == -1)]
         if np.where(DM[idx] == -1)[0][0] == first_output:
