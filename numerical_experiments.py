@@ -154,11 +154,12 @@ def compress_to_tip_pos(Strctr: "StructureClass", Variabs: "VariablesClass", Spr
 
     Parameters
     ----------
-    buckle      - NDArray, Initial buckle state of all hinges (typically ±1).
-    tip_pos_i   - array-like of shape (2,), Initial position of the structure’s tip node.
-    tip_angle_i - float, Initial angular orientation of the tip node (radians).
-    tip_pos_f   - array-like of shape (2,), Target final position of the structure’s tip node.
-    tip_angle_f - float, Target final tip orientation (radians).        
+    buckle        - NDArray, Initial buckle state of all hinges (typically ±1).
+    tip_pos_i     - array-like of shape (2,), Initial position of the structure’s tip node.
+    tip_angle_i   - float, Initial angular orientation of the tip node (radians).
+    tip_pos_f     - array-like of shape (2,), Target final position of the structure’s tip node.
+    tip_angle_f   - float, Target final tip orientation (radians).    
+    Eq_iterations - int, how many equilibration steps along tip movement
 
     Returns
     -------
@@ -180,11 +181,6 @@ def compress_to_tip_pos(Strctr: "StructureClass", Variabs: "VariablesClass", Spr
     pos_in_t = []
     force_in_t = []
     State = StateClass(Strctr, Sprvsr, buckle_arr=buckle)
-
-    # Build command schedule safely:
-    # - Eq_iterations steps to transition (could be 0)
-    # - +1 extra step to "hold" at the final command
-    n_steps = Eq_iterations + 1
 
     # interpolation fractions for the transition steps: (1/Eq_iterations, ..., 1)
     alphas = (np.arange(1, Eq_iterations + 1, dtype=float) / float(Eq_iterations))
@@ -253,6 +249,7 @@ def measure_determined_pos_from_file(Strctr: "StructureClass", Variabs: "Variabl
     F_y_vec_exp  : ndarray, shape (T,)
                    Experimental y-force loaded from file (for comparison).
     """
+    # ------ load positions and optionally forces ------
     T, P, F = file_funcs.load_pos_force(path, mod="arrays", stretch_factor=stretch_factor)
 
     # Supervisor command histories (used elsewhere, and for export)
@@ -264,11 +261,11 @@ def measure_determined_pos_from_file(Strctr: "StructureClass", Variabs: "Variabl
     F_y_vec_exp = F[:, 1]
     print('P', P)
 
-    # Allocate simulated forces
+    # ------ Initialize simulation -------
+    # simulated forces
     n = P.shape[0]
     F_x_vec = np.zeros(n, dtype=float)
     F_y_vec = np.zeros(n, dtype=float)
-
     State = StateClass(Strctr, Sprvsr, buckle_arr=buckle)
 
     # Tip calibration offset (avoid allocating each loop)
@@ -276,6 +273,7 @@ def measure_determined_pos_from_file(Strctr: "StructureClass", Variabs: "Variabl
 
     prev_final_pos = None  # warm-start position for next step
 
+    # ------ loop ------
     for i in range(n):
         tip_pos = P[i, :2] + tip_offset
         tip_angle = float(P[i, 2])
@@ -290,6 +288,7 @@ def measure_determined_pos_from_file(Strctr: "StructureClass", Variabs: "Variabl
         # Warm start next iteration from last equilibrium position of this trajectory
         prev_final_pos = pos_traj[-1]
 
+    # ------ export ------
     file_funcs.export_predetermined(Sprvsr, State)
     return State, P, F_x_vec, F_y_vec, F_x_vec_exp, F_y_vec_exp
 
@@ -330,7 +329,6 @@ def one_shot(Strctr: "StructureClass", Variabs: "VariablesClass", Sprvsr: "Super
     - A plot of the arm configuration is displayed at the end of execution.
     """
     # ------ initialize, no tip movement yet ------
-
     Eq = EquilibriumClass(Strctr, CFG, buckle_arr=buckle, pos_arr=State.pos_arr)
 
     # ------ claculate equilibrium from ode dynamics ------
