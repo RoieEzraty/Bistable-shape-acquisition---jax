@@ -472,6 +472,45 @@ def _get_total_angle(tip_pos: np.array, prev_total_angle: float, L: float) -> np
     return total_angle
 
 
+def _get_tip_angle(pos_arr: np.array) -> np.array:
+    """
+    angle of edge connected to tip relative to horizontal, CCW
+
+    Parameters:
+    -----------
+    pos_arr - np.array, (H, 2), chain node positions
+
+    Returns:
+    --------
+    angle (radians) in [-pi, pi], measured from -x axis, CCW
+    """
+    pos_arr = np.asarray(pos_arr)
+    p0, p1 = pos_arr[-2], pos_arr[-1]   # last two nodes
+    dx, dy = p1 - p0                    # displacement vector
+
+    # shift so that 0 is along -x
+    # theta_from_negx = np.arctan2(dy, dx) - np.pi
+
+    # shift so that 0 is along +x
+    theta_from_negx = np.arctan2(dy, dx)
+    # normalize back to [-pi, pi]
+    theta_from_negx = (theta_from_negx + np.pi) % (2*np.pi) - np.pi
+
+    return theta_from_negx
+    @staticmethod
+    def _compute_thetas_over_traj(Strctr: "StructureClass", traj_pos: jax.Array) -> jax.Array:
+        """
+        Compute hinge angles (T,H) from a trajectory of positions (T,N,2)
+        using StructureClass.hinge_angle(pos, h). Returns radians.
+        """
+        H = Strctr.hinges
+        hinge_ids = jnp.arange(H, dtype=jnp.int32)
+
+        # vmaps: over time, then over hinges
+        per_time = jax.vmap(lambda P: jax.vmap(lambda h: Strctr.hinge_angle(P, h))(hinge_ids))
+        return per_time(traj_pos)  # (T,H)
+
+
 def _point_segment_closest(p: jax.array, a: jax.array, b: jax.array, eps: float = 1e-12):
     """
     Compute the closest point on a line segment to a given point.
@@ -773,41 +812,3 @@ def _get_scalar_in_orthogonal_dir(vec: NDArray[np.floating], angle: float) -> fl
 #     last_orthogonal = _get_scalar_in_orthogonal_dir(F_xy_last, tip_angle)
 #     before_last_orthogonal = _get_scalar_in_orthogonal_dir(F_xy_before_last, tip_angle)
 #     return last_orthogonal - before_last_orthogonal
-
-# def _get_tip_angle(pos_arr: np.array) -> np.array:
-#     """
-#     angle of edge connected to tip relative to horizontal, CCW
-
-#     Parameters:
-#     -----------
-#     pos_arr - np.array, (H, 2), chain node positions
-    
-#     Returns:
-#     --------
-#     angle (radians) in [-pi, pi], measured from -x axis, CCW
-#     """
-#     pos_arr = np.asarray(pos_arr)
-#     p0, p1 = pos_arr[-2], pos_arr[-1]   # last two nodes
-#     dx, dy = p1 - p0                    # displacement vector
-
-#     # shift so that 0 is along -x
-#     # theta_from_negx = np.arctan2(dy, dx) - np.pi
-
-#     # shift so that 0 is along +x
-#     theta_from_negx = np.arctan2(dy, dx)
-#     # normalize back to [-pi, pi]
-#     theta_from_negx = (theta_from_negx + np.pi) % (2*np.pi) - np.pi
-
-#     return theta_from_negx
-#     @staticmethod
-#     def _compute_thetas_over_traj(Strctr: "StructureClass", traj_pos: jax.Array) -> jax.Array:
-#         """
-#         Compute hinge angles (T,H) from a trajectory of positions (T,N,2)
-#         using StructureClass.hinge_angle(pos, h). Returns radians.
-#         """
-#         H = Strctr.hinges
-#         hinge_ids = jnp.arange(H, dtype=jnp.int32)
-
-#         # vmaps: over time, then over hinges
-#         per_time = jax.vmap(lambda P: jax.vmap(lambda h: Strctr.hinge_angle(P, h))(hinge_ids))
-#         return per_time(traj_pos)  # (T,H)

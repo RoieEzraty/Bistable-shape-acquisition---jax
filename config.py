@@ -67,7 +67,8 @@ class VariablesConfig:
             # object.__setattr__(self, "tau_file", "single_hinge_files/Stress_Strain_steel_1myl1tp_short.csv")
             # object.__setattr__(self, "thresh", 1.53)  # Feb23 realistically from just before red south
             # object.__setattr__(self, "tau_file", "single_hinge_files/Stress_Strain_1myl1tp_otherEnd_short.csv")
-            object.__setattr__(self, "tau_file", "single_hinge_files/Stress_Strain_1myl1tp_flipped_Feb26_2_average.csv")  # Feb26
+            # object.__setattr__(self, "tau_file", "single_hinge_files/Stress_Strain_1myl1tp_flipped_Feb26_2_average.csv")  # Feb26
+            object.__setattr__(self, "tau_file", "single_hinge_files/Mar9_filled_average.csv")  # Feb26
             object.__setattr__(self, "thresh", 1.99)  # Feb23
             # object.__setattr__(self, "thresh", 1.58)
             # object.__setattr__(self, "thresh", 1.9)  # Feb22 measurements from just before Red South
@@ -159,7 +160,7 @@ class TrainingConfig:
         # desired_buckle_pattern: tuple = (-1, 1, 1, 1)  # which shims should be buckled up, initially
 
     # init_buckle_pattern: tuple = (-1, -1, -1, -1, 1)  # which shims should be buckled up, initially
-    init_buckle_pattern: tuple = (-1, -1, -1, 1)  # which shims should be buckled up, initially
+    init_buckle_pattern: tuple = (-1, -1, 1, -1)  # which shims should be buckled up, initially
     # init_buckle_pattern: tuple = (1, 1, 1, -1)  # which shims should be buckled up, initially
     # init_buckle_pattern: tuple = (1)  # which shims should be buckled up, initially
 

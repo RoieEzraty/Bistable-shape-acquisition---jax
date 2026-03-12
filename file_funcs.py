@@ -7,6 +7,7 @@ import jax.numpy as jnp
 from pathlib import Path
 from scipy.signal import savgol_filter
 import csv
+import copy
 
 from typing import Tuple, List
 from numpy import array, zeros
@@ -17,13 +18,48 @@ import helpers_builders
 
 if TYPE_CHECKING:
     from SupervisorClass import SupervisorClass
-    from VariablesClass import VariablesClass
+    from StateClass import StateClass
     from EquilibriumClass import EquilibriumClass
 
 
 # ===================================================
 # file_funcs - functions to assist with file conversions etc.
 # ===================================================
+
+
+def export_predetermined(Sprvsr: "SupervisorClass", State: "StateClass", filename: str = None) -> None:
+    """
+    """
+    # trajectory steps
+    T = Sprvsr.tip_pos_in_t.shape[0]
+    
+    # convert to [mN] and [deg]
+    tip_pos_in_t = Sprvsr.tip_pos_in_t * Sprvsr.convert_pos
+    tip_angle_in_t = Sprvsr.tip_angle_in_t * Sprvsr.convert_angle
+    Fx_afo_pos = State.Fx_in_t[:T] * Sprvsr.convert_F
+    Fy_afo_pos = State.Fy_in_t[:T] * Sprvsr.convert_F
+
+    # pandas dataframe
+    df = pd.DataFrame({
+        "x_tip": tip_pos_in_t[:, 0],
+        "y_tip": tip_pos_in_t[:, 1],
+        "tip_angle_deg": tip_angle_in_t,
+        "F_x": Fx_afo_pos,
+        "F_y": Fy_afo_pos,
+    })
+
+    # filename for save
+    if filename is not None:
+        pass 
+    else:
+        buckle = copy.copy(State.buckle_arr)
+        buckle[State.buckle_arr == -1] = 0
+        buckle_str = ''.join(buckle.reshape(-1).astype(str))
+        filename = f"buckle={buckle_str}.csv"  # filename example "buckle=0001.csv"
+    out_path = Path(filename)
+
+    # save
+    df.to_csv(out_path, index=False)
 
 
 def export_stress_strain_sim(Sprvsr: "SupervisorClass", Fx_afo_pos: NDArray[np.float_], Fy_afo_pos: NDArray[np.float_], 

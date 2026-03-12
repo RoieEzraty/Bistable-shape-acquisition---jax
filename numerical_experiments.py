@@ -14,6 +14,7 @@ from SupervisorClass import SupervisorClass
 from EquilibriumClass import EquilibriumClass
 from config import ExperimentConfig
 
+
 # ---------------------------------------------------------------
 # Full training
 # ---------------------------------------------------------------
@@ -289,7 +290,7 @@ def measure_determined_pos_from_file(Strctr: "StructureClass", Variabs: "Variabl
         # Warm start next iteration from last equilibrium position of this trajectory
         prev_final_pos = pos_traj[-1]
 
-    file_funcs.export_stress_strain_sim(Sprvsr, F_x_vec, F_y_vec, Strctr.L, buckle)
+    file_funcs.export_predetermined(Sprvsr, State)
     return State, P, F_x_vec, F_y_vec, F_x_vec_exp, F_y_vec_exp
 
 
