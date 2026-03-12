@@ -11,8 +11,6 @@ from numpy.typing import NDArray
 # ==================================
 # color scheme
 # ==================================
-
-
 def color_scheme(show: bool = False) -> Tuple[list[str], str, Colormap]:
     """
     define color scheme and return main colors, main red color and a colormap
@@ -25,15 +23,15 @@ def color_scheme(show: bool = False) -> Tuple[list[str], str, Colormap]:
     red         - str, hexadecimal for soft red
     custom_cmap - matplotlibcolors.Colormap of 256 colors on a scale using "colors"
     """
-
+    # ------ Define colors ------
     # Define the custom color scheme as a colormap
-
     colors_lst = ['#4500E0', '#54CCE0', '#CD23E1', '#9EE1B1', '#E04F68']
     red = '#E04F68'
 
     # Create the custom colormap for the gradient
     custom_cmap = LinearSegmentedColormap.from_list('custom_cmap', [colors_lst[1], colors_lst[2], colors_lst[0]], N=256)
 
+    # ------ Show ------
     if show:
         # Create a gradient and plot it with log scale on the y-axis
         plt.figure(figsize=(8, 4))

@@ -255,8 +255,8 @@ class SupervisorClass:
         # tip positions and angles for specified tip dataset
         if sampling == 'uniform':
             rng = np.random.default_rng(CFG.Train.rand_key_dataset)
-            low = array([(Strctr.edges - 1.5) * Strctr.L, -Strctr.L / 2, -np.pi / 5])  # lowest allowed value
-            high = array([(Strctr.edges - 0.5) * Strctr.L, Strctr.L / 2, np.pi / 5])  # highest allowed value
+            low = array([(Strctr.edges - 1.0) * Strctr.L, -Strctr.L * 2 / 3, -np.pi / 5])  # lowest allowed value
+            high = array([(Strctr.edges - 0.4) * Strctr.L, Strctr.L * 2 / 3, np.pi / 5])  # highest allowed value
             samples = rng.uniform(low, high, size=(self.T, 3)).astype(np.float32)  # (T, 3) sample size
             self.tip_pos_in_t = samples[:, :2]  # (T, 2)
             self.tip_angle_in_t = samples[:, 2]  # (T,)
@@ -428,6 +428,9 @@ class SupervisorClass:
             self.total_angle_update_in_t[t] = total_angle
             delta_total_angle = total_angle - prev_total_angle
             self.tip_angle_update_in_t[t] += delta_total_angle
+            if not self.supress_prints:
+                print(f'total angle {total_angle}')
+                print(f'add delta tip angle {delta_total_angle} to correct for total angle ')
 
         # ------ correct for to big a stretch ------
         # self.tip_pos_update_in_t[t, :] = helpers_builders._correct_big_stretch_robot_style(self.tip_pos_update_in_t[t], 
@@ -445,7 +448,7 @@ class SupervisorClass:
                                                                              R_lim=R_eff, L=Strctr.L)
         self.tip_pos_update_in_t[t, :] = tip_new
         if not self.supress_prints:
-            print(f'tip clamped due to to effective radius: {clamped}')
+            print(f'tip clamped due to effective radius: {clamped}')
             print(f'tip after clamp to radius={tip_new}')
 
         # ------ correct for coil or cut origin ------
@@ -465,8 +468,8 @@ class SupervisorClass:
         if not self.supress_prints:
             delta_tip_after_corr = self.tip_pos_update_in_t[t, :] - self.tip_pos_update_in_t[t-1, :]
             delta_angle_after_corr = self.tip_angle_update_in_t[t] - self.tip_angle_update_in_t[t-1]
-            print(f'delta_tip after corr {delta_tip_after_corr}')
-            print(f'delta_angle after corr {delta_angle_after_corr}')
+            print(f'delta_tip after correcting coil and cut origin {delta_tip_after_corr}')
+            print(f'delta_angle after correcting coil and cut origin {delta_angle_after_corr}')
 
         # ------ update total angle -------
         self.total_angle_update_in_t[t] = helpers_builders._get_total_angle(self.tip_pos_update_in_t[t, :], prev_total_angle,
