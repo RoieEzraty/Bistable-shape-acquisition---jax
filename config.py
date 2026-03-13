@@ -68,8 +68,10 @@ class VariablesConfig:
             # object.__setattr__(self, "thresh", 1.53)  # Feb23 realistically from just before red south
             # object.__setattr__(self, "tau_file", "single_hinge_files/Stress_Strain_1myl1tp_otherEnd_short.csv")
             # object.__setattr__(self, "tau_file", "single_hinge_files/Stress_Strain_1myl1tp_flipped_Feb26_2_average.csv")
-            object.__setattr__(self, "tau_file", "single_hinge_files/Mar9_holey_average.csv")
-            object.__setattr__(self, "thresh", 1.99)  # Feb23
+            # object.__setattr__(self, "tau_file", "single_hinge_files/Mar9_filled_average.csv")
+            object.__setattr__(self, "tau_file", "single_hinge_files/Mar12_dl90.csv")
+            object.__setattr__(self, "thresh", 1.22)  # Mar12 dl90 
+            # object.__setattr__(self, "thresh", 1.99)  # Feb23
             # object.__setattr__(self, "thresh", 1.58)
             # object.__setattr__(self, "thresh", 1.9)  # Feb22 measurements from just before Red South
             object.__setattr__(self, "thetas_ss", 0.91)  # not used in experimental

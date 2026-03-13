@@ -78,9 +78,9 @@ def train(Strctr: StructureClass, Variabs: VariablesClass, Sprvsr: SupervisorCla
         State_des._save_data(t, Strctr, final_pos_des, State_des.buckle_arr, F_theta_des)
         
         Sprvsr.set_desired(final_pos_des, State_des.Fx, State_des.Fy, t)
-        plot_funcs.plot_arm(final_pos, State_meas.buckle_arr, State_meas.theta_arr, Strctr.L, modality="measurement")
+        plot_funcs.plot_arm(final_pos, State_meas.buckle_arr, Strctr.L, modality="measurement")
     #     print('potential F sum', F_theta)
-        plot_funcs.plot_arm(final_pos_des, State_des.buckle_arr, State_des.theta_arr, Strctr.L, modality="measurement")
+        plot_funcs.plot_arm(final_pos_des, State_des.buckle_arr, Strctr.L, modality="measurement")
     #     print('potential F summed desired', F_theta_des)
     #     # print('Forces', potential_force_in_t[-1])
     #     print('Fx on tip, measurement', State_meas.Fx)
@@ -118,7 +118,7 @@ def train(Strctr: StructureClass, Variabs: VariablesClass, Sprvsr: SupervisorCla
 
         # --- save sizes and plot ---
         State_update._save_data(t, Strctr, final_pos, State_update.buckle_arr, F_theta)
-        plot_funcs.plot_arm(final_pos, State_update.buckle_arr, State_update.theta_arr, Strctr.L, modality="update")
+        plot_funcs.plot_arm(final_pos, State_update.buckle_arr, Strctr.L, modality="update")
     #     print('pre buckle', State_update.buckle_arr.T)
         # print('energy', Eq.energy(Variabs, Strctr, final_pos)[-1])
         
@@ -129,7 +129,7 @@ def train(Strctr: StructureClass, Variabs: VariablesClass, Sprvsr: SupervisorCla
     #     print('post buckle', State_update.buckle_arr.T)
     #     # print('post buckle update', State_update.buckle_arr)
     #     # print('energy', Eq.energy(Variabs, Strctr, final_pos)[-1])
-        plot_funcs.plot_arm(final_pos, State_update.buckle_arr, State_update.theta_arr, Strctr.L, modality="update")
+        plot_funcs.plot_arm(final_pos, State_update.buckle_arr, Strctr.L, modality="update")
 
     pos_in_t_meas = np.moveaxis(State_meas.pos_arr_in_t, 2, 0)
     pos_in_t_update = np.moveaxis(State_update.pos_arr_in_t, 2, 0)
@@ -269,7 +269,7 @@ def measure_determined_pos_from_file(Strctr: "StructureClass", Variabs: "Variabl
     State = StateClass(Strctr, Sprvsr, buckle_arr=buckle)
 
     # Tip calibration offset (avoid allocating each loop)
-    tip_offset = np.array([-0.002, 0.0], dtype=float)
+    tip_offset = np.array([-0.003, 0.0], dtype=float)
 
     prev_final_pos = None  # warm-start position for next step
 
@@ -341,10 +341,11 @@ def one_shot(Strctr: "StructureClass", Variabs: "VariablesClass", Sprvsr: "Super
                                                                     tip_pos=tip_pos, tip_angle=tip_angle)
     # ------ save, plot, print ------
     State._save_data(t, Strctr, final_pos, State.buckle_arr, final_F)
+    State.buckle(Variabs, Strctr, t, State_measured=State)   
     print('pos_arr', final_pos)
     print('edge len', Strctr.all_edge_lengths(State.pos_arr))
     print('total edge error', np.sum((Strctr.all_edge_lengths(State.pos_arr)-Strctr.L)**2)/(Strctr.edges*Strctr.L**2))
-    plot_funcs.plot_arm(State.pos_arr, State.buckle_arr, State.theta_arr, Strctr.L, modality="measurement")
+    plot_funcs.plot_arm(State.pos_arr, State.buckle_arr, Strctr.L, modality="measurement")
     plt.show()
     return pos_in_t, final_F
 
@@ -426,7 +427,7 @@ def ADMET_stress_strain(Strctr: StructureClass, Variabs: VariablesClass, Sprvsr:
         print("State tip forces ", [State.Fx, State.Fy])
         print("edge lengths ", State.edge_lengths)
         if plot_every > 0 and (i % plot_every == 0):
-            plot_funcs.plot_arm(State.pos_arr, State.buckle_arr, State.theta_arr, Strctr.L, modality="measurement")
+            plot_funcs.plot_arm(State.pos_arr, State.buckle_arr, Strctr.L, modality="measurement")
         Fx_afo_pos[i] = State.Fx
         pos_frames[i, :, :] = State.pos_arr
         buckle_frames[i, :, :] = State.buckle_arr
