@@ -66,7 +66,7 @@ class SupervisorClass:
     Methods:
     --------
     _build_imposed_mask(Strctr, control_tip)
-            Boolean mask marking imposed (prescribed) degrees of freedom. 
+            Boolean mask marking imposed (prescribed) degrees of freedom.
             These are prescribed position, generally tip control.
     create_dataset(Strctr, CFG, sampling, tip_pos, tip_angle, dist_noise, angle_noise)
             Generate and store commanded tip positions and angles for the supervisor.
@@ -78,7 +78,7 @@ class SupervisorClass:
     calc_update_tip(t, Strctr, Variabs, State, current_tip_pos, prev_tip_update_pos, current_tip_angle,
                     prev_tip_update_angle, correct_for_total_angle, correct_for_coil, correct_for_cut_origin
             Compute next tip position/angle commands from current loss and state (pure NumPy).
-    """  
+    """
     # --- configuration / hyperparams ---
     T: int = eqx.field(static=True)
     alpha: float = eqx.field(static=True)
@@ -105,16 +105,16 @@ class SupervisorClass:
     loss_in_t: NDArray[np.float32] = eqx.field(init=False, static=True)            # (T, 2)
     loss_MSE_in_t: NDArray[np.float32] = eqx.field(init=False, static=True)        # (T,)
     tip_pos_update_in_t: NDArray[np.float32] = eqx.field(init=False, static=True)  # (T, 2)
-    tip_angle_update_in_t: Optional[NDArray[np.float32]] = eqx.field(default=None, init=False, 
+    tip_angle_update_in_t: Optional[NDArray[np.float32]] = eqx.field(default=None, init=False,
                                                                      static=True)  # (T,)
-    total_angle_update_in_t: Optional[NDArray[np.float32]] = eqx.field(default=None, init=False, 
+    total_angle_update_in_t: Optional[NDArray[np.float32]] = eqx.field(default=None, init=False,
                                                                        static=True)  # (T,)
 
-    # ------ for equilibrium calculation, jax arrays ------    
+    # ------ for equilibrium calculation, jax arrays ------
     imposed_mask: jax.ndarray[bool] = eqx.field(static=True)                       # (2*nodes,)
 
     # --- scratch (most recent loss vector) ---
-    loss: NDArray[np.float32] = eqx.field(init=False, static=True)                 # (2,) 
+    loss: NDArray[np.float32] = eqx.field(init=False, static=True)                 # (2,)
 
     def __init__(self, Strctr, CFG, supress_prints: bool = True) -> None:
         self.T = int(CFG.Train.T)  # total training-set size (& algorithm time, not to confuse with time to equilib state)
@@ -194,16 +194,16 @@ class SupervisorClass:
         N = Strctr.nodes  # number of nodes
         last = N - 1
 
-        # --- fixed and imposed DOFs initialize --- 
+        # --- fixed and imposed DOFs initialize ---
         imposed_mask = jnp.zeros((n_coords,), dtype=bool)
 
         # -------- imposed tip position ----------
         if control_tip:
-            # set tip indices as true 
+            # set tip indices as true
             idxs = jnp.array([helpers_builders.dof_idx(last, 0), helpers_builders.dof_idx(last, 1)])
             before_last_idxs = jnp.array([helpers_builders.dof_idx(last - 1, 0), helpers_builders.dof_idx(last - 1, 1)])
             idxs = jnp.concatenate([before_last_idxs, idxs])
-            imposed_mask = imposed_mask.at[idxs].set(True)  
+            imposed_mask = imposed_mask.at[idxs].set(True)
         return imposed_mask
 
     # ---------------------------------------------------------------
@@ -255,11 +255,20 @@ class SupervisorClass:
         # tip positions and angles for specified tip dataset
         if sampling == 'uniform':
             rng = np.random.default_rng(CFG.Train.rand_key_dataset)
-            low = array([(Strctr.edges - 1.0) * Strctr.L, -Strctr.L * 2 / 3, -np.pi / 5])  # lowest allowed value
-            high = array([(Strctr.edges - 0.4) * Strctr.L, Strctr.L * 2 / 3, np.pi / 5])  # highest allowed value
+            low = array([(Strctr.edges - 0.5) * Strctr.L, -Strctr.L * 1 / 3, -np.pi / 5])  # lowest allowed value
+            high = array([(Strctr.edges - 0.01) * Strctr.L, Strctr.L * 1 / 3, np.pi / 5])  # highest allowed value
             samples = rng.uniform(low, high, size=(self.T, 3)).astype(np.float32)  # (T, 3) sample size
             self.tip_pos_in_t = samples[:, :2]  # (T, 2)
             self.tip_angle_in_t = samples[:, 2]  # (T,)
+
+            # correct for too big stretch during measurement
+            # ------ clamp overstretched dataset samples ------
+            for t in range(self.T):
+                self.tip_pos_in_t[t, :] = helpers_builders._correct_big_stretch_robot_style(tip_pos=self.tip_pos_in_t[t, :], 
+                                                                                            tip_angle=float(self.tip_angle_in_t[t]),
+                                                                                            total_angle=0.0, R_free=self.R_free,
+                                                                                            L=Strctr.L, margin=0.1,
+                                                                                            supress_prints=self.supress_prints)
         elif sampling in {'flat', 'almost_flat', 'specified'}:
             end = float(Strctr.edges*Strctr.L)
             if sampling == 'flat':
@@ -343,23 +352,23 @@ class SupervisorClass:
                         correct_for_coil: Optional[bool] = True,
                         correct_for_cut_origin: Optional[bool] = True) -> None:
         """Compute next tip position/angle commands from current loss and state (pure NumPy).
-        
+
         Parameters:
         -----------
         t
-        current_tip_pos       : ndarrat(float) (2,) during measurement, used only in radial_one_to_one update function 
+        current_tip_pos       : ndarrat(float) (2,) during measurement, used only in radial_one_to_one update function
         prev_tip_update_pos   : ndarrat(float) (2,) previous update tip pos, for inserting new top into vectors in time
-        current_tip_angle     : float, during measurement, used only in radial_one_to_one update function 
+        current_tip_angle     : float, during measurement, used only in radial_one_to_one update function
         prev_tip_update_angle : float, previous update tip pos, for inserting new top into vectors in time
-        correct_for_total_angle, correct_for_coil, correct_for_cut_origin : booleans, whether to correct tip pos due to: 
+        correct_for_total_angle, correct_for_coil, correct_for_cut_origin : booleans, whether to correct tip pos due to:
                                                                             addition to simulation total angle,
                                                                             coiled tip (reset tip values from dataset)
                                                                             tip cuts origin (as above)
 
         Returns:
-        -------- 
+        --------
         updates in self:
-        np.array(float), (2,) update_tip_pos_in_t       
+        np.array(float), (2,) update_tip_pos_in_t
         float, tip_angle_update_in_t
         float, total_angle_update_in_t
         """
@@ -380,7 +389,7 @@ class SupervisorClass:
         if self.normalize_step and np.linalg.norm(np.append(delta_tip, delta_angle)) > 10**(-12):  # normalize if non-zero update            
             # old version up to Feb22
             step_size = np.linalg.norm(np.append(delta_tip, delta_angle))
-            print(f'step_size={step_size}')
+            # print(f'step_size={step_size}')
             tradeoff_pos_angle = 1/2
             delta_tip = copy.copy(delta_tip)/step_size*self.alpha
             delta_angle = copy.copy(delta_angle)/step_size*self.alpha * tradeoff_pos_angle
@@ -390,7 +399,7 @@ class SupervisorClass:
             # angle_step_size = np.linalg.norm(delta_angle)
             # tradeoff_pos_angle = 1
             # delta_tip = copy.copy(delta_tip)/pos_step_size*self.alpha
-            # delta_angle = copy.copy(delta_angle)*(angle_step_size/pos_step_size)*self.alpha * tradeoff_pos_angle 
+            # delta_angle = copy.copy(delta_angle)*(angle_step_size/pos_step_size)*self.alpha * tradeoff_pos_angle
 
             if not self.supress_prints:
                 print(f'normalized position to {delta_tip}')
@@ -433,28 +442,41 @@ class SupervisorClass:
                 print(f'add delta tip angle {delta_total_angle} to correct for total angle ')
 
         # ------ correct for to big a stretch ------
-        # self.tip_pos_update_in_t[t, :] = helpers_builders._correct_big_stretch_robot_style(self.tip_pos_update_in_t[t], 
-        #                                                                                    self.tip_angle_update_in_t[t],
-        #                                                                                    total_angle, self.R_free, Strctr.L,
-        #                                                                                    margin=0.1, 
-        #                                                                                    supress_prints=self.supress_prints)
-        before_tip = helpers_builders._get_before_tip(prev_tip_update_pos, prev_tip_update_angle, Strctr.L, xp=np)
-        R_eff = helpers_builders.effective_radius(self.R_free, Strctr.L, total_angle, prev_tip_update_angle, 
-                                                  supress_prints=self.supress_prints)
-        tip_new, before_new, clamped = helpers_builders.clamp_pos_same_delta(before_prev=before_tip,
-                                                                             tip_angle_new=prev_tip_update_angle + delta_angle,
-                                                                             tip_raw=prev_tip_update_pos + delta_tip,
-                                                                             second_node=array([Strctr.L, 0.0]),
-                                                                             R_lim=R_eff, L=Strctr.L)
-        self.tip_pos_update_in_t[t, :] = tip_new
+        self.tip_pos_update_in_t[t, :] = helpers_builders._correct_big_stretch_robot_style(self.tip_pos_update_in_t[t],
+                                                                                           self.tip_angle_update_in_t[t],
+                                                                                           total_angle, self.R_free, Strctr.L,
+                                                                                           margin=0.1, 
+                                                                                           supress_prints=self.supress_prints)
         if not self.supress_prints:
-            print(f'tip clamped due to effective radius: {clamped}')
-            print(f'tip after clamp to radius={tip_new}')
+            print(f'tip after correct big stretch={self.tip_pos_update_in_t[t, :]}')
+        # before_tip = helpers_builders._get_before_tip(prev_tip_update_pos, prev_tip_update_angle, Strctr.L, xp=np)
+        # R_eff = helpers_builders.effective_radius(self.R_free, Strctr.L, total_angle, prev_tip_update_angle, 
+        #                                           supress_prints=self.supress_prints)
+        # tip_new, before_new, clamped = helpers_builders.clamp_pos_same_delta(before_prev=before_tip,
+        #                                                                      tip_angle_new=prev_tip_update_angle + delta_angle,
+        #                                                                      tip_raw=prev_tip_update_pos + delta_tip,
+        #                                                                      second_node=array([Strctr.L, 0.0]),
+        #                                                                      R_lim=R_eff, L=Strctr.L)
+        # self.tip_pos_update_in_t[t, :] = tip_new
+        # if not self.supress_prints:
+        #     print(f'tip clamped due to effective radius: {clamped}')
+        #     print(f'tip after clamp to radius={tip_new}')
 
         # ------ correct for coil or cut origin ------
         # if origin is cut or tip coiled too much, restart Update tip position and angle to current training set sample
         cond_coil = helpers_builders.coil(self.tip_angle_update_in_t[t], revolutions=1.5)
-        cond_cut_origin = np.linalg.norm(self.tip_pos_update_in_t[t, :]) < Strctr.L
+        # cond_cut_origin = np.linalg.norm(self.tip_pos_update_in_t[t, :]) < Strctr.L
+
+        before_tip_tminus1 = helpers_builders._get_before_tip(self.tip_pos_update_in_t[t-1, :],
+                                                              self.tip_angle_update_in_t[t-1], Strctr.L, xp=np)
+        before_tip_t = helpers_builders._get_before_tip(self.tip_pos_update_in_t[t, :], self.tip_angle_update_in_t[t],
+                                                        Strctr.L, xp=np)
+        cond_cut_origin = helpers_builders.swept_last_edge_crosses_first_edge(before_prev=before_tip_tminus1,
+                                                                              tip_prev=self.tip_pos_in_t[t-1, :],
+                                                                              before_new=before_tip_t,
+                                                                              tip_new=self.tip_pos_update_in_t[t, :],
+                                                                              L=Strctr.L, include_endpoints=False)
+
         if (correct_for_coil and cond_coil) or (correct_for_cut_origin and cond_cut_origin):
             if cond_coil:
                 print('coiled up too much')
@@ -464,6 +486,7 @@ class SupervisorClass:
             print(f'setting update tip position as{self.tip_pos_update_in_t[t, :]}')
             self.tip_angle_update_in_t[t] = self.tip_angle_in_t[t]
             print(f'setting update tip angle as{self.tip_angle_update_in_t[t]}')
+            prev_total_angle = 0.0  # reset previous total angle for total angle calculation in time=t
 
         if not self.supress_prints:
             delta_tip_after_corr = self.tip_pos_update_in_t[t, :] - self.tip_pos_update_in_t[t-1, :]
@@ -514,15 +537,20 @@ class SupervisorClass:
         3 floats of change in tip position during update
         """
         sgnx = np.sign(self.tip_pos_update_in_t[t - 1, 0])
-        sgny = np.sign(self.tip_pos_update_in_t[t - 1, 0])
-        # sgny = np.sign(self.tip_pos_update_in_t[t-1, 1])
+        # sgny = np.sign(self.tip_pos_update_in_t[t - 1, 0])
+        sgny = np.sign(self.tip_pos_update_in_t[t-1, 1])
         if sgnx == 0.0:
             sgnx = 1
         if sgny == 0.0:
             sgny = 1
-        delta_tip_y = - self.alpha * self.loss[0] * Strctr.hinges * Variabs.norm_pos * sgnx
-        delta_tip_x = + self.alpha * self.loss[0] * Strctr.hinges * Variabs.norm_pos * sgny
-        delta_angle = - self.alpha * self.loss[1] * Variabs.norm_angle * np.pi
+        # delta_tip_x = + self.alpha * self.loss[0] * Strctr.hinges * Variabs.norm_pos * sgnx
+        # delta_tip_y = - self.alpha * self.loss[0] * Strctr.hinges * Variabs.norm_pos * sgnx
+        # delta_tip_x = - self.alpha * self.loss[0] * (-sgny) * Strctr.hinges * Variabs.norm_pos
+        # delta_tip_y = - self.alpha * self.loss[0] * (+sgnx) * Strctr.hinges * Variabs.norm_pos
+        delta_tip_x = - self.alpha * self.loss[0] * (-sgny) * Variabs.norm_pos
+        delta_tip_y = - self.alpha * self.loss[0] * (+sgnx) * Variabs.norm_pos
+        # delta_angle = - self.alpha * self.loss[1] * Variabs.norm_angle * np.pi
+        delta_angle = - self.alpha * self.loss[1] * Variabs.norm_angle
         return delta_tip_x, delta_tip_y, delta_angle
 
     def _delta_radial_one_to_one(self, t, Strctr, Variabs, State, current_tip_pos, current_tip_angle):

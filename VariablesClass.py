@@ -82,7 +82,7 @@ class VariablesClass(eqx.Module):
         
         # normalizations for update values
         self.norm_pos = float(L)
-        self.norm_angle = float(np.pi/2)
+        self.norm_angle = float(np.pi)
 
         self.k_type = CFG.Variabs.k_type  # static
 
@@ -107,8 +107,8 @@ class VariablesClass(eqx.Module):
             self.torque = tau_of_theta
             self.k_stretch = np.asarray(CFG.Eq.k_stretch_ratio * np.max(ks), np.float32)
             thresh_scalar = CFG.Variabs.thresh
-            tau_plus = float(np.abs(self.torque(self.norm_angle)))
-            tau_minus = float(np.abs(self.torque(-self.norm_angle)))
+            tau_plus = float(np.abs(self.torque(np.pi/4)))
+            tau_minus = float(np.abs(self.torque(-np.pi/4)))
             self.norm_torque = np.mean([tau_plus, tau_minus])
         else:
             raise ValueError(f"Unknown k_type: {CFG.Variabs.k_type}")

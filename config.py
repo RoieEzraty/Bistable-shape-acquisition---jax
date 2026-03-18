@@ -70,7 +70,7 @@ class VariablesConfig:
             # object.__setattr__(self, "tau_file", "single_hinge_files/Stress_Strain_1myl1tp_flipped_Feb26_2_average.csv")
             # object.__setattr__(self, "tau_file", "single_hinge_files/Mar9_filled_average.csv")
             object.__setattr__(self, "tau_file", "single_hinge_files/Mar12_dl90.csv")
-            object.__setattr__(self, "thresh", 1.22)  # Mar12 dl90 
+            object.__setattr__(self, "thresh", 1.24)  # Mar12 dl90 
             # object.__setattr__(self, "thresh", 1.99)  # Feb23
             # object.__setattr__(self, "thresh", 1.58)
             # object.__setattr__(self, "thresh", 1.9)  # Feb22 measurements from just before Red South
@@ -94,7 +94,7 @@ class VariablesConfig:
 
     # numerical stability
     contact_scale: float = 100  # max experimental torque and torque upon edge contact ratio, for numerical stability
-    # contact_scale: float = 4  # max experimental torque and torque upon edge contact ratio, for numerical stability
+    # contact_scale: float = 1  # max experimental torque and torque upon edge contact ratio, for numerical stability
 
 
 # -----------------------------
@@ -131,8 +131,8 @@ class EquilibriumConfig:
             object.__setattr__(self, "damping", 4.0)
             object.__setattr__(self, "mass", 5e-3)
         elif self.material in {"Leon_metal", "Roie_metal"}:
-            object.__setattr__(self, "k_stretch_ratio", 2e4)
-            # object.__setattr__(self, "k_stretch_ratio", 2e2)
+            # object.__setattr__(self, "k_stretch_ratio", 2e4)
+            object.__setattr__(self, "k_stretch_ratio", 9e3)
             object.__setattr__(self, "T_eq", 0.04)
             # object.__setattr__(self, "T_eq", 0.06)
             # object.__setattr__(self, "damping", 4.0)
@@ -147,22 +147,22 @@ class EquilibriumConfig:
 # -----------------------------
 @dataclass(frozen=True)
 class TrainingConfig:
-    T: int = 26  # total training set time (not time to reach equilibrium during every step)
+    T: int = 100  # total training set time (not time to reach equilibrium during every step)
 
     # desired_buckle_type: str = 'random'
     # desired_buckle_type: str = 'opposite'
     # desired_buckle_type: str = 'straight'
     desired_buckle_type: str = 'specified'
-    
+
     if desired_buckle_type == 'random':
         desired_buckle_rand_key: int = 169  # key for seed of random sampling of buckle pattern
     elif desired_buckle_type == 'specified':
         # desired_buckle_pattern: tuple = (1, -1, -1, -1, -1)  # which shims should be buckled up, initially
-        desired_buckle_pattern: tuple = (-1, -1, -1, -1)  # which shims should be buckled up, initially
+        desired_buckle_pattern: tuple = (-1, -1, 1, 1)  # which shims should be buckled up, initially
         # desired_buckle_pattern: tuple = (-1, 1, 1, 1)  # which shims should be buckled up, initially
 
     # init_buckle_pattern: tuple = (-1, -1, -1, -1, 1)  # which shims should be buckled up, initially
-    init_buckle_pattern: tuple = (-1, -1, 1, -1)  # which shims should be buckled up, initially
+    init_buckle_pattern: tuple = (-1, 1, 1, 1)  # which shims should be buckled up, initially
     # init_buckle_pattern: tuple = (1, 1, 1, -1)  # which shims should be buckled up, initially
     # init_buckle_pattern: tuple = (1)  # which shims should be buckled up, initially
 
@@ -174,8 +174,8 @@ class TrainingConfig:
     # dataset_sampling = 'stress strain'
 
     # # tip values to buckle shims - 'BEASTAL' for the BEASTAL scheme, else 'one_to_one'
-    # update_scheme: str = 'one_to_one'  # direct normalized loss, equal to num of outputs
-    update_scheme: str = 'radial_one_to_one'  # evolve tip angle and large radius due to instantaneous loss
+    update_scheme: str = 'one_to_one'  # direct normalized loss, equal to num of outputs
+    # update_scheme: str = 'radial_one_to_one'  # evolve tip angle and large radius due to instantaneous loss
     # update_scheme: str = 'BEASTAL'  # update using the BEASTAL scheme (with pseudoinverse of the incidence matrix).
     # update_scheme: str = 'BEASTAL_no_pinv'  # update using (y_j)(Loss_j), no psuedo inv of the incidence matrix.
     # update_scheme: str = 'radial_halfway_BEASTAL'  # evolve tip angle and large radius due to instantaneous loss
@@ -188,9 +188,9 @@ class TrainingConfig:
     if update_scheme == 'radial_BEASTAL' and not normalize_step:
         alpha: float = 1.0  # learning rate
     elif normalize_step:
-        alpha: float = 1.0
+        alpha = 0.2
     else:
-        alpha: float = 0.12  # learning rate
+        alpha = 0.12  # learning rate
 
     control_tip: bool = True  # imposed tip position in measurement and update. If False, tip is free
     control_first_edge: bool = True  # if True, fix nodes (0, 1) to zero. if Flase, just the first

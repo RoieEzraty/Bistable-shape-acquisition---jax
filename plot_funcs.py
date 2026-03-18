@@ -9,6 +9,7 @@ from matplotlib.animation import FuncAnimation, PillowWriter  # for GIF export
 from scipy.signal import savgol_filter
 
 from typing import List, Union
+from numpy.typing import NDArray
 
 import colors, helpers_builders
 
@@ -221,7 +222,7 @@ def animate_arm_w_arcs(traj_pos, L, frames=10, interval_ms=30, save_path=None, f
     return fig, anim
 
 
-def loss_and_buckle_in_t(loss_MSE_in_t, buckle_in_t, F_meas_in_t, F_des_in_t, start=0, end=None) -> None:
+def loss_and_buckle_in_t(loss_MSE_in_t, buckle_in_t, F_meas_in_t, F_des_in_t, start=0, end=None, save_path: str = None) -> None:
     """
     Plot (top->bottom):
       1) measured forces (solid) vs desired forces (dotted) over training steps
@@ -264,13 +265,13 @@ def loss_and_buckle_in_t(loss_MSE_in_t, buckle_in_t, F_meas_in_t, F_des_in_t, st
     axes[0].set_ylabel("Force [mN]")
     axes[0].legend(ncol=2)
     axes[0].xaxis.set_major_locator(MaxNLocator(integer=True))
-    axes[0].set_ylim([-130, 330])
+    axes[0].set_ylim([-200, 500])
 
     # -------- subplot 1: loss --------
     axes[1].plot(t, loss_MSE_in_t[start:end])
     axes[1].set_ylabel("Loss")
     axes[1].xaxis.set_major_locator(MaxNLocator(integer=True))
-    axes[1].set_ylim([-0.02, 5.2])
+    axes[1].set_ylim([-0.02, 6.2])
 
     # -------- subplot 2: buckle states --------
     H = buckle_in_t.shape[0]
@@ -283,6 +284,10 @@ def loss_and_buckle_in_t(loss_MSE_in_t, buckle_in_t, F_meas_in_t, F_des_in_t, st
     axes[2].xaxis.set_major_locator(MaxNLocator(integer=True))
 
     plt.tight_layout()
+
+    if save_path is not None:
+        plt.savefig(save_path, dpi=300, bbox_inches="tight")
+
     plt.show()
 
 
@@ -367,6 +372,43 @@ def plot_compare_sim_exp_stress_strain(exp_dfs: List[pd.DataFrame], sim_df: pd.D
     plt.legend(legend_labels, fontsize=font_size)
     plt.show()
 
+
+# ----------------------------
+# Post Processing
+# ----------------------------
+def plot_success_matrix(M: NDArray):
+
+    colors_lst, _, custom_cmap = colors.color_scheme()
+
+    labels = []
+    for i in range(16):
+        b = format(i, "04b")
+        labels.append(b)
+
+    plt.figure(figsize=(5, 5))
+
+    M_masked = np.ma.masked_where(np.triu(np.ones_like(M), k=0), M)
+
+    im = plt.imshow(M_masked, cmap=custom_cmap, vmin=0, vmax=4, origin="lower")
+    # im = plt.imshow(M, cmap=custom_cmap, vmin=0, vmax=4, origin="lower")
+
+    plt.xticks(range(16), labels, rotation=90)
+    plt.yticks(range(16), labels)
+
+    plt.xlabel("desired buckle")
+    plt.ylabel("initial buckle")
+
+    plt.title("Training success matrix")
+
+    # plt.colorbar(label="success")
+    legend_elements = [patches.Patch(facecolor=custom_cmap(im.norm(0)), label="Success"),
+                       patches.Patch(facecolor=custom_cmap(im.norm(1)), label="Missing"),
+                       patches.Patch(facecolor=custom_cmap(im.norm(2)), label="Failure")]
+
+    plt.legend(handles=legend_elements, loc="upper left", bbox_to_anchor=(1.02, 1))
+
+    plt.tight_layout()
+    plt.show()
 
 # # ==========
 # # NOT IN USE

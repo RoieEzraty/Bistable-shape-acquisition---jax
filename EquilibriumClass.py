@@ -92,7 +92,7 @@ class EquilibriumClass(eqx.Module):
 
     # ---- state / derived ----
     rest_lengths: jax.Array                          # (H+1,) edge rest lengths (from initial pos)
-    jnp_init_pos: jax.Array = eqx.field(init=False)  # (hinges+2, 2) integer coordinates
+    jnp_init_pos: jax.Array                          # (hinges+2, 2) integer coordinates
     buckle_arr: jax.Array                            # (H,) ∈ {+1,-1} per hinge/shim (direction of stiff side)
     time_points: jax.Array                           # (T_eq, ) time steps for simulating equilibrium configuration
     
@@ -781,10 +781,15 @@ class EquilibriumClass(eqx.Module):
         # Better: explicitly pull from init_pos:
         tip_init = init_pos[-1, :]                      # (2,)
         before_tip_init = init_pos[-2, :]                   # (2,)
-        theta_init = jnp.arctan2(tip_init[1]-before_tip_init[1], tip_init[0]-before_tip_init[0])  # angle of last edge
+        # wrapped angle of last edge, unwrap later since theta_fin is known
+        theta_init_wrapped = jnp.arctan2(tip_init[1]-before_tip_init[1], tip_init[0]-before_tip_init[0])
 
         tip_fin = jnp.asarray(tip_pos, dtype=init_pos.dtype).reshape((2,))
-        theta_fin = jnp.asarray(tip_angle, dtype=init_pos.dtype) if tip_angle is not None else theta_init
+        theta_fin = jnp.asarray(tip_angle, dtype=init_pos.dtype) if tip_angle is not None else theta_init_wrapped
+
+        # Unwrap theta_init so it is the equivalent angle closest to theta_fin
+        two_pi = jnp.asarray(2.0 * jnp.pi, dtype=init_pos.dtype)
+        theta_init = theta_init_wrapped + two_pi * jnp.round((theta_fin - theta_init_wrapped) / two_pi)
 
         T_total = self.time_points[-1]
         T_ramp = 0.33 * T_total

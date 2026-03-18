@@ -311,10 +311,9 @@ def _correct_big_stretch_robot_style(tip_pos: NDArray[np.float_], tip_angle: flo
     -------
     tip_pos_corrected : ndarray, (2,), Corrected tip position if clamping was applied, otherwise returns original tip_pos.
     """
-    if not supress_prints:
-        print(f'update vals before correction={tip_pos},{tip_angle}')
     # Compute the location of the node before the tip
-    before_last = array([tip_pos[0] - L * np.cos(tip_angle), tip_pos[1] - L * np.sin(tip_angle)])
+    # before_last = array([tip_pos[0] - L * np.cos(tip_angle), tip_pos[1] - L * np.sin(tip_angle)])
+    before_last = _get_before_tip(tip_pos, tip_angle, L)
 
     # Second node from the base sits at (L, 0)
     second_node = array([L, 0.0], dtype=float)
@@ -325,20 +324,41 @@ def _correct_big_stretch_robot_style(tip_pos: NDArray[np.float_], tip_angle: flo
     R_eff = effective_radius(R_free, L, total_angle, tip_angle, supress_prints=supress_prints)
 
     if not supress_prints:
+        print(f'update vals before correction={tip_pos},{tip_angle}')
         print(f'r_chain{r_chain}')
         print(f'R_eff{R_eff}')
 
-    x2, y2 = None, None
+    # # old before Mar17
+    # x2, y2 = None, None
 
-    if r_chain >= (R_eff - margin*L):
-        scale = (R_eff - margin*L) / r_chain
-        x2 = second_node[0] + (tip_pos[0]-second_node[0]) * scale
-        y2 = second_node[1] + (tip_pos[1]-second_node[1]) * scale
-        if not supress_prints:
-            print(f'clamped from x={tip_pos[0]},y={tip_pos[1]} to x={x2},y={y2}')
-        return array([x2, y2])
-    else:
+    # if r_chain >= (R_eff - margin*L):
+    #     scale = (R_eff - margin*L) / r_chain
+    #     x2 = second_node[0] + (tip_pos[0]-second_node[0]) * scale
+    #     y2 = second_node[1] + (tip_pos[1]-second_node[1]) * scale
+    #     if not supress_prints:
+    #         print(f'clamped from x={tip_pos[0]},y={tip_pos[1]} to x={x2},y={y2}')
+    #     return array([x2, y2])
+    # else:
+    #     return tip_pos
+
+    # # new after Mar17
+    if r_chain <= max(0.0, R_eff - margin*L):
         return tip_pos
+
+    # clamp BEFORE-TIP, not TIP
+    scale = (R_eff - margin*L) / r_chain
+    before_new = second_node + disp * scale
+
+    # reconstruct tip from clamped before-tip and prescribed tip angle
+    tip_new = before_new + L * np.array([np.cos(tip_angle), np.sin(tip_angle)], dtype=float)
+
+    if not supress_prints:
+        print(
+            f"clamped from x={tip_pos[0]},y={tip_pos[1]} "
+            f"to x={tip_new[0]},y={tip_new[1]}"
+        )
+
+    return tip_new
 
 
 def effective_radius(R: float, L: float, total_angle: float, tip_angle: float, margin: float = 0.0, 
@@ -366,22 +386,153 @@ def effective_radius(R: float, L: float, total_angle: float, tip_angle: float, m
     -------
     R_eff - float,  Effective maximal reachable radius after accounting for coil-induced shrinkage.
     """
-    # total_angle should be *unwrapped* (can exceed 360)
-    delta = float(np.abs(total_angle - tip_angle))  # radians, unwrapped
     two_pi = 2.0 * np.pi
+
+    # ------ tip ------
+    delta = float(np.abs(total_angle - tip_angle))  # radians, unwrapped
+    
     n_rev = int(np.floor(delta / two_pi))
     rem = delta - n_rev * two_pi  # in [0, 2π)
 
-    shrink_full = (2.0 * L) * n_rev
+    shrink_full_tip = (2.0 * L) * n_rev
     
-    shrink_partial = L * (1.0 - np.cos(rem / 2.0))  # in [0, 2L)
+    shrink_partial_tip = L * (1.0 - np.cos(rem / 2.0))  # in [0, 2L)
     # shrink_partial = L * (1.0 - np.cos(rem))  # in [0, 2L)
     if not supress_prints:
-        print('shrink due to revolutions', shrink_full)
-        print('shrink remainder in [mm]', shrink_partial)
+        print('shrink due to full tip revolutions [mm]', shrink_full_tip)
+        print('shrink due to partial tip revolution [mm]', shrink_partial_tip)
 
-    shrink = shrink_full + shrink_partial
+    # ------ total angle ------
+    n_halfturns = int(np.floor((np.abs(total_angle) + np.pi) / (2.0 * np.pi)))
+    shrink_full_total_angle = (1.0 * L) * n_halfturns
+    if not supress_prints:
+        print('shrink due to total angle revolutions around base [mm]', shrink_full_total_angle)
+
+    shrink = shrink_full_tip + shrink_partial_tip + shrink_full_total_angle
     return max(0.0, (R - margin) - shrink)
+
+
+def swept_last_edge_crosses_first_edge(before_prev: NDArray[np.float_], tip_prev: NDArray[np.float_],
+                                       before_new: NDArray[np.float_], tip_new: NDArray[np.float_], L: float,
+                                       *, eps: float = 1e-12, include_endpoints: bool = False) -> bool:
+    """
+    Return whether the quadrilateral swept by the last edge crosses the first edge.
+
+    The swept quadrilateral is taken as:
+        before_prev -> tip_prev -> tip_new -> before_new
+
+    The first edge is:
+        [ [0,0], [L,0] ]
+
+    Parameters
+    ----------
+    before_prev, tip_prev, before_new, tip_new
+        Endpoints of the old and new last edge, each shape (2,).
+    L
+        Edge length of the first segment.
+    eps
+        Numerical tolerance.
+    include_endpoints
+        Whether mere touching counts as crossing.
+
+    Returns
+    -------
+    bool
+        True if the first edge intersects the swept quadrilateral.
+    """
+    first_a = np.array([0.0, 0.0], dtype=float)
+    first_b = np.array([float(L), 0.0], dtype=float)
+
+    quad = np.array([before_prev, tip_prev, tip_new, before_new], dtype=float)
+
+    # Check intersection with all 4 boundary edges of the swept quadrilateral
+    for i in range(4):
+        q0 = quad[i]
+        q1 = quad[(i + 1) % 4]
+        if _segments_intersect(first_a, first_b, q0, q1, eps=eps, include_endpoints=include_endpoints,):
+            return True
+    return False
+
+
+def avoid_first_edge_crossing_same_step(*, before_prev: NDArray[np.float_], tip_prev: NDArray[np.float_],
+                                        angle_prev: float, before_raw: NDArray[np.float_],
+                                        tip_raw: NDArray[np.float_], angle_raw: float, L: float,
+                                        include_endpoints: bool = False, eps: float = 1e-12,
+                                        safety: float = 1e-4, max_iter: int = 40) -> tuple[NDArray[np.float_],
+                                                                                           float, bool]:
+    """
+    Backtrack along the already proposed update step until the swept last edge
+    no longer crosses the first edge.
+
+    The returned point lies on the segment from (tip_prev, angle_prev) to
+    (tip_raw, angle_raw), so the direction/sign of the original update is preserved.
+
+    Parameters
+    ----------
+    before_prev, tip_prev
+        Previous accepted last-edge endpoints.
+    angle_prev
+        Previous accepted tip angle [rad].
+    before_raw, tip_raw
+        Proposed new last-edge endpoints before origin-cross correction.
+    angle_raw
+        Proposed new tip angle [rad].
+    L
+        Edge length.
+    include_endpoints
+        Passed to `swept_last_edge_crosses_first_edge`.
+    eps
+        Numerical tolerance.
+    safety
+        Fractional backoff from the crossing boundary.
+    max_iter
+        Number of bisection iterations.
+
+    Returns
+    -------
+    tip_new
+        Safe corrected tip position.
+    angle_new
+        Safe corrected tip angle.
+    corrected
+        True iff backtracking was applied.
+    """
+    before_prev = np.asarray(before_prev, float).reshape(2,)
+    tip_prev = np.asarray(tip_prev, float).reshape(2,)
+    before_raw = np.asarray(before_raw, float).reshape(2,)
+    tip_raw = np.asarray(tip_raw, float).reshape(2,)
+
+    crosses_raw = swept_last_edge_crosses_first_edge(before_prev=before_prev, tip_prev=tip_prev, before_new=before_raw,
+                                                     tip_new=tip_raw, L=L, include_endpoints=include_endpoints,
+                                                     eps=eps)
+    if not crosses_raw:
+        return tip_raw, float(angle_raw), False
+
+    lo = 0.0
+    hi = 1.0
+
+    for _ in range(max_iter):
+        mid = 0.5 * (lo + hi)
+
+        tip_mid = tip_prev + mid * (tip_raw - tip_prev)
+        angle_mid = angle_prev + mid * (angle_raw - angle_prev)
+        before_mid = tip_mid - L * np.array([np.cos(angle_mid), np.sin(angle_mid)], dtype=float)
+
+        crosses_mid = swept_last_edge_crosses_first_edge(before_prev=before_prev, tip_prev=tip_prev,
+                                                         before_new=before_mid, tip_new=tip_mid,
+                                                         L=L, include_endpoints=include_endpoints, eps=eps)
+
+        if crosses_mid:
+            hi = mid
+        else:
+            lo = mid
+
+    s = max(0.0, lo - safety)
+
+    tip_new = tip_prev + s * (tip_raw - tip_prev)
+    angle_new = angle_prev + s * (angle_raw - angle_prev)
+
+    return tip_new, float(angle_new), True
 
 
 def coil(angle: float, revolutions: float = 1.5):
@@ -539,6 +690,77 @@ def _point_segment_closest(p: jax.array, a: jax.array, b: jax.array, eps: float 
     d = p - c
     d2 = jnp.dot(d, d)
     return d, d2, t  # d = (p-c)
+
+
+def _on_segment(p: NDArray[np.float_], q: NDArray[np.float_], r: NDArray[np.float_], *, eps: float = 1e-12) -> bool:
+    """
+    Return whether q lies on the closed segment [p, r].
+    """
+    return (min(p[0], r[0]) - eps <= q[0] <= max(p[0], r[0]) + eps and min(p[1], r[1]) - eps <= q[1] <= max(p[1], r[1]) + eps)
+
+
+def _segments_intersect(a: NDArray[np.float_], b: NDArray[np.float_], c: NDArray[np.float_], d: NDArray[np.float_],
+                        *, eps: float = 1e-12, include_endpoints: bool = True) -> bool:
+    """
+    Return whether the closed segments [a,b] and [c,d] intersect.
+
+    Parameters
+    ----------
+    a, b, c, d
+        Segment endpoints, each shape (2,).
+    eps
+        Numerical tolerance.
+    include_endpoints
+        Whether touching at endpoints / collinear touching counts as intersection.
+
+    Returns
+    -------
+    bool
+        True if the segments intersect.
+    """
+    a = np.asarray(a, dtype=float)
+    b = np.asarray(b, dtype=float)
+    c = np.asarray(c, dtype=float)
+    d = np.asarray(d, dtype=float)
+
+    o1 = _orient(a, b, c)
+    o2 = _orient(a, b, d)
+    o3 = _orient(c, d, a)
+    o4 = _orient(c, d, b)
+
+    # Proper crossing
+    if ((o1 > eps and o2 < -eps) or (o1 < -eps and o2 > eps)) and \
+       ((o3 > eps and o4 < -eps) or (o3 < -eps and o4 > eps)):
+        return True
+
+    if not include_endpoints:
+        return False
+
+    # Touching / collinear cases
+    if abs(o1) <= eps and _on_segment(a, c, b, eps=eps):
+        return True
+    if abs(o2) <= eps and _on_segment(a, d, b, eps=eps):
+        return True
+    if abs(o3) <= eps and _on_segment(c, a, d, eps=eps):
+        return True
+    if abs(o4) <= eps and _on_segment(c, b, d, eps=eps):
+        return True
+
+    return False
+
+
+def _orient(p: NDArray[np.float_], q: NDArray[np.float_], r: NDArray[np.float_]) -> float:
+    """
+    Signed 2D orientation / cross product of pq with pr.
+
+    Returns
+    -------
+    float
+        > 0 for counter-clockwise turn,
+        < 0 for clockwise turn,
+        = 0 for collinear points.
+    """
+    return float((q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]))
 
 
 # ---------------------------------------------------------------
@@ -704,6 +926,18 @@ def _get_scalar_in_orthogonal_dir(vec: NDArray[np.floating], angle: float) -> fl
     scalar : float, Scalar projection of `vec` onto the orthogonal direction.
     """
     return -vec[0]*np.sin(angle) + vec[1]*np.cos(angle)
+
+
+# ---------------------------------------------------------------
+# Strings
+# ---------------------------------------------------------------
+def buckle_to_index(arr: NDArray) -> NDArray:
+    """
+    Convert [-1,1,1,-1] → integer index 0..15
+    (-1 -> 0 , +1 -> 1)
+    """
+    bits = [(1 if x == 1 else 0) for x in arr]
+    return bits[0]*8 + bits[1]*4 + bits[2]*2 + bits[3]
 
 
 # # ==========

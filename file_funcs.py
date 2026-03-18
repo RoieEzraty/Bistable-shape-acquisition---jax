@@ -8,6 +8,7 @@ from pathlib import Path
 from scipy.signal import savgol_filter
 import csv
 import copy
+import re
 
 from typing import Tuple, List
 from numpy import array, zeros
@@ -25,53 +26,10 @@ if TYPE_CHECKING:
 # ===================================================
 # file_funcs - functions to assist with file conversions etc.
 # ===================================================
-def export_predetermined(Sprvsr: "SupervisorClass", State: "StateClass", filename: str = None) -> None:
-    """
-    Export a predetermined trajectory and its simulated forces to a CSV file.
 
-    Parameters
-    ----------
-    Sprvsr   - SupervisorClass, for `tip_pos_in_t`, `tip_angle_in_t` and unit conversion factors.
-    State    - StateClass, for force histories `Fx_in_t`, `Fy_in_t`, and final buckle configuration.
-    filename - Optional[str], output CSV filename. If None, name is generated automatically from the buckle configuration.
-
-    Notes
-    -----
-    - If `filename` not provided, default filename based on buckle configuration in `State.buckle_arr`, where buckle = -1 → 0
-    - Only first `T` entries of `State.Fx_in_t` and `State.Fy_in_t` exported, where `T = len(Sprvsr.tip_pos_in_t)`.
-    """
-    # ------ init and scale sizes
-    T = Sprvsr.tip_pos_in_t.shape[0]
-    
-    # convert to [mN] and [deg]
-    tip_pos_in_t = Sprvsr.tip_pos_in_t * Sprvsr.convert_pos
-    tip_angle_in_t = Sprvsr.tip_angle_in_t * Sprvsr.convert_angle
-    Fx_afo_pos = State.Fx_in_t[:T] * Sprvsr.convert_F
-    Fy_afo_pos = State.Fy_in_t[:T] * Sprvsr.convert_F
-
-    # ------ pandas dataframe ------
-    df = pd.DataFrame({
-        "x_tip": tip_pos_in_t[:, 0],
-        "y_tip": tip_pos_in_t[:, 1],
-        "tip_angle_deg": tip_angle_in_t,
-        "F_x": Fx_afo_pos,
-        "F_y": Fy_afo_pos,
-    })
-
-    # ------ filename ------
-    if filename is not None:
-        pass 
-    else:
-        buckle = copy.copy(State.buckle_arr)
-        buckle[State.buckle_arr == -1] = 0
-        buckle_str = ''.join(buckle.reshape(-1).astype(str))
-        filename = f"buckle={buckle_str}.csv"  # filename example "buckle=0001.csv"
-    out_path = Path(filename)
-
-    # ------ save ------
-    df.to_csv(out_path, index=False)
-
-
+# ---------------------------------------------------------------
+# Imports
+# ---------------------------------------------------------------
 def load_pos_force(path: str, mod: Literal["dict", "arrays"] = "dict", 
                    stretch_factor: Optional[float] = None) -> Union[List[Dict[str, Any]], 
                                                                     Tuple[NDArray[np.float64], NDArray[np.float64], 
@@ -162,105 +120,52 @@ def load_pos_force(path: str, mod: Literal["dict", "arrays"] = "dict",
         raise ValueError(f"Unknown mode: {mod}")
 
 
-def build_torque_and_k_from_file(path: str, *, contact: bool = True, angles_in_degrees: bool = True, 
-                                 savgol_window: Optional[int] = None, 
-                                 contact_scale: float = 1e2,) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray,
-                                                                       Callable[[jnp.ndarray], jnp.ndarray], 
-                                                                       Callable[[jnp.ndarray], jnp.ndarray]]:
+# ---------------------------------------------------------------
+# Exports
+# ---------------------------------------------------------------
+def export_predetermined(Sprvsr: "SupervisorClass", State: "StateClass", filename: str = None) -> None:
     """
-    Load torque–angle measurements from file and construct JAX-compatible interpolation functions for torque and stiffness.
-    Stiffness ``k = dτ/dθ``
+    Export a predetermined trajectory and its simulated forces to a CSV file.
 
     Parameters
     ----------
-    path              - str, path to the text/CSV file containing two columns: angle and torque.
-    contact           - bool, If True, extend torque function outside measured range to represent contact-induced divergence.
-    angles_in_degrees - bool, If True, convert angles from degrees to radians.
-    savgol_window     - Optional[int], window length for Savitzky–Golay smoothing of the stiffness curve. Must be odd integer > 2.
-    contact_scale     - float, contact scaling factor relative to maximal measured torque.
-
-    Returns
-    -------
-    theta_grid      - jnp.ndarray, shape (N,), sorted vector of angles (radians).
-    torque_grid     - jnp.ndarray, shape (N,), torque samples over theta.
-    k_grid          - jnp.ndarray, shape (N,), local stiffness as numeric derivative of torque w.r.t. theta.
-    torque_of_theta - callable, JAX function theta -> torque interpolation including diverging forces at contact.
-    k_of_theta      - callable, JAX function theta -> stiffness interpolation.
+    Sprvsr   - SupervisorClass, for `tip_pos_in_t`, `tip_angle_in_t` and unit conversion factors.
+    State    - StateClass, for force histories `Fx_in_t`, `Fy_in_t`, and final buckle configuration.
+    filename - Optional[str], output CSV filename. If None, name is generated automatically from the buckle configuration.
 
     Notes
     -----
-    - Negative stiffness values clipped to small positive value (``1e-3``).
-    - Contact occurs outside the measured range.
+    - If `filename` not provided, default filename based on buckle configuration in `State.buckle_arr`, where buckle = -1 → 0
+    - Only first `T` entries of `State.Fx_in_t` and `State.Fy_in_t` exported, where `T = len(Sprvsr.tip_pos_in_t)`.
     """
-    # ------ load as numpy, sort, unique------
-    try:
-        data = np.loadtxt(path)                # shape (N, 2)
-    except ValueError:
-        data = np.loadtxt(path, delimiter=',')
-    theta = data[:, 0]
-    tau = data[:, 1]
+    # ------ init and scale sizes
+    T = Sprvsr.tip_pos_in_t.shape[0]
+    
+    # convert to [mN] and [deg]
+    tip_pos_in_t = Sprvsr.tip_pos_in_t * Sprvsr.convert_pos
+    tip_angle_in_t = Sprvsr.tip_angle_in_t * Sprvsr.convert_angle
+    Fx_afo_pos = State.Fx_in_t[:T] * Sprvsr.convert_F
+    Fy_afo_pos = State.Fy_in_t[:T] * Sprvsr.convert_F
 
-    if path in {"single_hinge_files/Roie_metal_singleMylar_short.csv", 
-                "single_hinge_files/Stress_Strain_steel_1myl1tp_short.csv", 
-                "single_hinge_files/Stress_Strain_1myl1tp_otherEnd_short.csv"}:  # flip axes
-        tau = -tau
+    # ------ pandas dataframe ------
+    df = pd.DataFrame({
+        "x_tip": tip_pos_in_t[:, 0],
+        "y_tip": tip_pos_in_t[:, 1],
+        "tip_angle_deg": tip_angle_in_t,
+        "F_x": Fx_afo_pos,
+        "F_y": Fy_afo_pos,
+    })
 
-    # degrees -> radians if needed
-    if angles_in_degrees:
-        theta = np.deg2rad(theta)
+    # ------ filename ------
+    if filename is not None:
+        pass
+    else:
+        buckle_str = correct_buckle_string(State.buckle_arr)
+        filename = f"buckle={buckle_str}.csv"  # filename example "buckle=0001.csv"
+    out_path = Path(filename)
 
-    # sort & unique (interp requires monotonic x)
-    order = np.argsort(theta)
-    theta = theta[order]
-    tau = tau[order]
-    # collapse duplicates (if any)
-    theta_u, idx = np.unique(theta, return_index=True)
-    tau_u = tau[idx]
-
-    # ------ numeric derivative: k = d(tau)/d(theta) ------
-    k = np.gradient(tau_u, theta_u)
-
-    # optional light smoothing of k (pure NumPy, outside JAX)
-    if savgol_window is not None and savgol_window > 2 and savgol_window % 2 == 1:
-        try:
-            k = savgol_filter(k, window_length=savgol_window, polyorder=4, mode="interp")
-        except Exception:
-            print('SciPy isnt available, just skip smoothing')
-
-    # ------ JAX arrays ------
-    theta_grid = jnp.asarray(theta_u, dtype=jnp.float32)
-    torque_grid = jnp.asarray(tau_u, dtype=jnp.float32)
-    k_grid = jnp.asarray(k, dtype=jnp.float32)
-    k_grid = k_grid.at[k_grid < 0].set(10e-4)  # for numerical stability, singular point of experimental negative k
-
-    # ----- linear interpolators (JAX) ------
-    def torque_of_theta(theta_query: jnp.ndarray) -> jnp.ndarray:
-        # masks for outside vs inside range
-        above = theta_query > theta_grid[-1]
-        below = theta_query < theta_grid[0]
-        th = _clamp(theta_query, theta_grid[0], theta_grid[-1])
-        tau = jnp.interp(th, theta_grid, torque_grid)  # torque
-        if contact:  # account for plates in contact, torque diverges
-            # masks for outside vs inside range
-            above = theta_query > theta_grid[-1]
-            below = theta_query < theta_grid[0]
-            above_parabola = contact_scale * jnp.max(k_grid) * (theta_query - theta_grid[-1])**2 + jnp.max(torque_grid)
-            below_parabola = - contact_scale * jnp.max(k_grid) * (theta_query - theta_grid[0])**2 + jnp.min(torque_grid)
-
-            # tau = jnp.where(above, contact_scale * jnp.max(torque_grid), tau)
-            # tau = jnp.where(below, contact_scale * jnp.min(torque_grid), tau)
-            tau = jnp.where(above, above_parabola, tau)
-            tau = jnp.where(below, below_parabola, tau)
-        return tau
-
-    def k_of_theta(theta_query: jnp.ndarray) -> jnp.ndarray:
-        th = _clamp(theta_query, theta_grid[0], theta_grid[-1])
-        return jnp.interp(th, theta_grid, k_grid)
-
-    def _clamp(x, xmin, xmax):
-        return jnp.clip(x, xmin, xmax)
-
-    return theta_grid, torque_grid, k_grid, torque_of_theta, k_of_theta
+    # ------ save ------
+    df.to_csv(out_path, index=False)
 
 
 def export_training_csv(path_csv: str, Strctr: "StructureClass", Sprvsr: "SupervisorClass", T: Optional[int] = None,
@@ -361,6 +266,150 @@ def export_training_npz(path_npz: str, **arrays):
     path_npz = Path(path_npz)
     path_npz.parent.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(path_npz, **arrays)
+
+
+# ---------------------------------------------------------------
+# Post-processing files
+# ---------------------------------------------------------------
+def build_success_matrix(folder: Path) -> NDArray:
+    """
+    0 - succesfull training
+    1 - didn't train on this path
+    2 - unsuccessfull training
+    """
+    # 16x16 success matrix
+    M = np.zeros((16, 16)) + 1.0
+    for file in folder.glob("final_loss_*.csv"):
+
+        name = file.stem
+
+        # extract loss
+        loss = float(re.search(r"final_loss_([0-9.]+)", name).group(1))
+
+        # extract buckle patterns
+        init = list(map(int, re.search(r"init_\[(.*?)\]", name).group(1).split()))
+        desired = list(map(int, re.search(r"desired\[(.*?)\]", name).group(1).split()))
+
+        i = helpers_builders.buckle_to_index(init)
+        j = helpers_builders.buckle_to_index(desired)
+
+        # success condition
+        M[i, j] = 0 if loss < 1e-6 else 2
+        # M[j, i] = M[i, j]
+    return M
+
+
+# ---------------------------------------------------------------
+# Build functions from file
+# ---------------------------------------------------------------
+def build_torque_and_k_from_file(path: str, *, contact: bool = True, angles_in_degrees: bool = True, 
+                                 savgol_window: Optional[int] = None, 
+                                 contact_scale: float = 1e2,) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray,
+                                                                       Callable[[jnp.ndarray], jnp.ndarray], 
+                                                                       Callable[[jnp.ndarray], jnp.ndarray]]:
+    """
+    Load torque–angle measurements from file and construct JAX-compatible interpolation functions for torque and stiffness.
+    Stiffness ``k = dτ/dθ``
+
+    Parameters
+    ----------
+    path              - str, path to the text/CSV file containing two columns: angle and torque.
+    contact           - bool, If True, extend torque function outside measured range to represent contact-induced divergence.
+    angles_in_degrees - bool, If True, convert angles from degrees to radians.
+    savgol_window     - Optional[int], window length for Savitzky–Golay smoothing of the stiffness curve. Must be odd integer > 2.
+    contact_scale     - float, contact scaling factor relative to maximal measured torque.
+
+    Returns
+    -------
+    theta_grid      - jnp.ndarray, shape (N,), sorted vector of angles (radians).
+    torque_grid     - jnp.ndarray, shape (N,), torque samples over theta.
+    k_grid          - jnp.ndarray, shape (N,), local stiffness as numeric derivative of torque w.r.t. theta.
+    torque_of_theta - callable, JAX function theta -> torque interpolation including diverging forces at contact.
+    k_of_theta      - callable, JAX function theta -> stiffness interpolation.
+
+    Notes
+    -----
+    - Negative stiffness values clipped to small positive value (``1e-3``).
+    - Contact occurs outside the measured range.
+    """
+    # ------ load as numpy, sort, unique------
+    try:
+        data = np.loadtxt(path)                # shape (N, 2)
+    except ValueError:
+        data = np.loadtxt(path, delimiter=',')
+    theta = data[:, 0]
+    tau = data[:, 1]
+
+    if path in {"single_hinge_files/Roie_metal_singleMylar_short.csv", 
+                "single_hinge_files/Stress_Strain_steel_1myl1tp_short.csv", 
+                "single_hinge_files/Stress_Strain_1myl1tp_otherEnd_short.csv"}:  # flip axes
+        tau = -tau
+
+    # degrees -> radians if needed
+    if angles_in_degrees:
+        theta = np.deg2rad(theta)
+
+    # sort & unique (interp requires monotonic x)
+    order = np.argsort(theta)
+    theta = theta[order]
+    tau = tau[order]
+    # collapse duplicates (if any)
+    theta_u, idx = np.unique(theta, return_index=True)
+    tau_u = tau[idx]
+
+    # ------ numeric derivative: k = d(tau)/d(theta) ------
+    k = np.gradient(tau_u, theta_u)
+
+    # optional light smoothing of k (pure NumPy, outside JAX)
+    if savgol_window is not None and savgol_window > 2 and savgol_window % 2 == 1:
+        try:
+            k = savgol_filter(k, window_length=savgol_window, polyorder=4, mode="interp")
+        except Exception:
+            print('SciPy isnt available, just skip smoothing')
+
+    # ------ JAX arrays ------
+    theta_grid = jnp.asarray(theta_u, dtype=jnp.float32)
+    torque_grid = jnp.asarray(tau_u, dtype=jnp.float32)
+    k_grid = jnp.asarray(k, dtype=jnp.float32)
+    k_grid = k_grid.at[k_grid < 0].set(10e-4)  # for numerical stability, singular point of experimental negative k
+
+    # ----- linear interpolators (JAX) ------
+    def torque_of_theta(theta_query: jnp.ndarray) -> jnp.ndarray:
+        # masks for outside vs inside range
+        th = _clamp(theta_query, theta_grid[0], theta_grid[-1])
+        tau = jnp.interp(th, theta_grid, torque_grid)  # torque
+        if contact:  # account for plates in contact, torque diverges
+            # masks for outside vs inside range
+            above = theta_query > theta_grid[-1]
+            below = theta_query < theta_grid[0]
+            above_parabola = contact_scale * jnp.max(k_grid) * (theta_query - theta_grid[-1])**2 + jnp.max(torque_grid)
+            below_parabola = - contact_scale * jnp.max(k_grid) * (theta_query - theta_grid[0])**2 + jnp.min(torque_grid)
+
+            # tau = jnp.where(above, contact_scale * jnp.max(torque_grid), tau)
+            # tau = jnp.where(below, contact_scale * jnp.min(torque_grid), tau)
+            tau = jnp.where(above, above_parabola, tau)
+            tau = jnp.where(below, below_parabola, tau)
+        return tau
+
+    def k_of_theta(theta_query: jnp.ndarray) -> jnp.ndarray:
+        th = _clamp(theta_query, theta_grid[0], theta_grid[-1])
+        return jnp.interp(th, theta_grid, k_grid)
+
+    def _clamp(x, xmin, xmax):
+        return jnp.clip(x, xmin, xmax)
+
+    return theta_grid, torque_grid, k_grid, torque_of_theta, k_of_theta
+
+
+# -----------------------------
+# File helpers
+# -----------------------------
+
+def correct_buckle_string(buckle_arr: NDArray):
+    buckle = copy.copy(buckle_arr)
+    buckle[buckle_arr == -1] = 0
+    buckle_str = ''.join(buckle.reshape(-1).astype(str))
+    return buckle_str
 
 
 # # ==========
