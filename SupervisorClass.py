@@ -343,7 +343,7 @@ class SupervisorClass:
         self.loss_MSE = np.sqrt(np.sum(self.loss**2))
         self.loss_MSE_in_t[t] = self.loss_MSE
 
-    def calc_update_tip(self, t: int, Strctr: "StructureClass", Variabs: "VariablesClass", State: "StateClass",
+    def calc_update_tip(self, t: int, Strctr: "StructureClass", Variabs: "VariablesClass",
                         current_tip_pos: Optional[np.ndarray] = None,
                         prev_tip_update_pos: Optional[np.ndarray] = None,
                         current_tip_angle: Optional[float] = None,
@@ -378,7 +378,7 @@ class SupervisorClass:
         fn = dispatch.get(self.update_scheme, None)  # function to calculate delta tip and angle from update_scheme
         if fn is None:
             raise ValueError(f"Unknown update_scheme='{self.update_scheme}'")
-        delta_tip_x, delta_tip_y, delta_angle = fn(t, Strctr, Variabs, State, current_tip_pos=current_tip_pos,
+        delta_tip_x, delta_tip_y, delta_angle = fn(t, Strctr, Variabs, current_tip_pos=current_tip_pos,
                                                    current_tip_angle=current_tip_angle)
         delta_tip = array([delta_tip_x, delta_tip_y])  # assemble into 3d array
         if not self.supress_prints:
@@ -477,16 +477,31 @@ class SupervisorClass:
                                                                               tip_new=self.tip_pos_update_in_t[t, :],
                                                                               L=Strctr.L, include_endpoints=False)
 
-        if (correct_for_coil and cond_coil) or (correct_for_cut_origin and cond_cut_origin):
-            if cond_coil:
-                print('coiled up too much')
-            if cond_cut_origin:
-                print('cut origin')
+        if correct_for_coil and cond_coil:
+            print('coiled up too much')            
             self.tip_pos_update_in_t[t, :] = self.tip_pos_in_t[t, :]
             print(f'setting update tip position as{self.tip_pos_update_in_t[t, :]}')
             self.tip_angle_update_in_t[t] = self.tip_angle_in_t[t]
             print(f'setting update tip angle as{self.tip_angle_update_in_t[t]}')
             prev_total_angle = 0.0  # reset previous total angle for total angle calculation in time=t
+
+        if correct_for_cut_origin and cond_cut_origin:
+            print('origin is cut')
+            tip_safe, angle_safe, corrected = helpers_builders.avoid_first_edge_crossing_same_step(
+                before_prev=before_tip_tminus1,
+                tip_prev=self.tip_pos_update_in_t[t-1, :],
+                angle_prev=self.tip_angle_update_in_t[t-1],
+                before_raw=before_tip_t,
+                tip_raw=self.tip_pos_update_in_t[t, :],
+                angle_raw=self.tip_angle_update_in_t[t],
+                L=Strctr.L,
+                include_endpoints=False,
+                safety=1e-3,
+            )
+            self.tip_pos_update_in_t[t, :] = tip_safe
+            self.tip_angle_update_in_t[t] = angle_safe
+            print(f'setting update tip position as{self.tip_pos_update_in_t[t, :]}')
+            print(f'setting update tip angle as{self.tip_angle_update_in_t[t]}')
 
         if not self.supress_prints:
             delta_tip_after_corr = self.tip_pos_update_in_t[t, :] - self.tip_pos_update_in_t[t-1, :]
@@ -521,7 +536,7 @@ class SupervisorClass:
             # "radial_halfway_BEASTAL": self._delta_radial_halfway_BEASTAL,
         }
 
-    def _delta_one_to_one(self, t, Strctr, Variabs, State, current_tip_pos, current_tip_angle):
+    def _delta_one_to_one(self, t, Strctr, Variabs, current_tip_pos, current_tip_angle):
         """
         change tip directly from loss, no pseudo inverse, calculations in cartesian coordinates
         dx = +alpha*loss_x*sign(y)
@@ -553,7 +568,7 @@ class SupervisorClass:
         delta_angle = - self.alpha * self.loss[1] * Variabs.norm_angle
         return delta_tip_x, delta_tip_y, delta_angle
 
-    def _delta_radial_one_to_one(self, t, Strctr, Variabs, State, current_tip_pos, current_tip_angle):
+    def _delta_radial_one_to_one(self, t, Strctr, Variabs, current_tip_pos, current_tip_angle):
         """
         change tip directly from loss, no pseudo inverse, calculations in polar coordinates
         dx = -alpha*loss_Theta*y!
