@@ -478,30 +478,32 @@ class SupervisorClass:
                                                                               L=Strctr.L, include_endpoints=False)
 
         if correct_for_coil and cond_coil:
-            print('coiled up too much')            
+            print('coiled up too much')
             self.tip_pos_update_in_t[t, :] = self.tip_pos_in_t[t, :]
-            print(f'setting update tip position as{self.tip_pos_update_in_t[t, :]}')
             self.tip_angle_update_in_t[t] = self.tip_angle_in_t[t]
-            print(f'setting update tip angle as{self.tip_angle_update_in_t[t]}')
+            print(f'setting update tip pos={self.tip_pos_update_in_t[t, :]}, angle={self.tip_angle_update_in_t[t]}')
             prev_total_angle = 0.0  # reset previous total angle for total angle calculation in time=t
 
         if correct_for_cut_origin and cond_cut_origin:
             print('origin is cut')
-            tip_safe, angle_safe, corrected = helpers_builders.avoid_first_edge_crossing_same_step(
-                before_prev=before_tip_tminus1,
-                tip_prev=self.tip_pos_update_in_t[t-1, :],
-                angle_prev=self.tip_angle_update_in_t[t-1],
-                before_raw=before_tip_t,
-                tip_raw=self.tip_pos_update_in_t[t, :],
-                angle_raw=self.tip_angle_update_in_t[t],
-                L=Strctr.L,
-                include_endpoints=False,
-                safety=1e-3,
-            )
-            self.tip_pos_update_in_t[t, :] = tip_safe
-            self.tip_angle_update_in_t[t] = angle_safe
-            print(f'setting update tip position as{self.tip_pos_update_in_t[t, :]}')
-            print(f'setting update tip angle as{self.tip_angle_update_in_t[t]}')
+            # tip_safe, angle_safe, corrected = helpers_builders.avoid_first_edge_crossing_same_step(
+            #     before_prev=before_tip_tminus1,
+            #     tip_prev=self.tip_pos_update_in_t[t-1, :],
+            #     angle_prev=self.tip_angle_update_in_t[t-1],
+            #     before_raw=before_tip_t,
+            #     tip_raw=self.tip_pos_update_in_t[t, :],
+            #     angle_raw=self.tip_angle_update_in_t[t],
+            #     L=Strctr.L,
+            #     include_endpoints=False,
+            #     safety=1e-3,
+            # )
+            # delta_tip_slide = helpers_builders.evade_first_edge_by_sliding(tip_prev=self.tip_pos_update_in_t[t-1, :],
+            #                                                                delta_tip_raw=delta_tip,
+            #                                                                L=Strctr.L)
+            # self.tip_pos_update_in_t[t, :] = self.tip_pos_update_in_t[t-1, :] + delta_tip_slide
+            self.tip_pos_update_in_t[t, :] = self.tip_pos_in_t[t, :]
+            self.tip_angle_update_in_t[t] = self.tip_angle_in_t[t]
+            print(f'setting update tip pos={self.tip_pos_update_in_t[t, :]}, angle={self.tip_angle_update_in_t[t]}')
 
         if not self.supress_prints:
             delta_tip_after_corr = self.tip_pos_update_in_t[t, :] - self.tip_pos_update_in_t[t-1, :]

@@ -454,85 +454,153 @@ def swept_last_edge_crosses_first_edge(before_prev: NDArray[np.float_], tip_prev
     return False
 
 
-def avoid_first_edge_crossing_same_step(*, before_prev: NDArray[np.float_], tip_prev: NDArray[np.float_],
-                                        angle_prev: float, before_raw: NDArray[np.float_],
-                                        tip_raw: NDArray[np.float_], angle_raw: float, L: float,
-                                        include_endpoints: bool = False, eps: float = 1e-12,
-                                        safety: float = 1e-4, max_iter: int = 40) -> tuple[NDArray[np.float_],
-                                                                                           float, bool]:
-    """
-    Backtrack along the already proposed update step until the swept last edge
-    no longer crosses the first edge.
+# def avoid_first_edge_crossing_same_step(*, before_prev: NDArray[np.float_], tip_prev: NDArray[np.float_],
+#                                         angle_prev: float, before_raw: NDArray[np.float_],
+#                                         tip_raw: NDArray[np.float_], angle_raw: float, L: float,
+#                                         include_endpoints: bool = False, eps: float = 1e-12,
+#                                         safety: float = 1e-4, max_iter: int = 40) -> tuple[NDArray[np.float_],
+#                                                                                            float, bool]:
+#     """
+#     Backtrack along the already proposed update step until the swept last edge
+#     no longer crosses the first edge.
 
-    The returned point lies on the segment from (tip_prev, angle_prev) to
-    (tip_raw, angle_raw), so the direction/sign of the original update is preserved.
+#     The returned point lies on the segment from (tip_prev, angle_prev) to
+#     (tip_raw, angle_raw), so the direction/sign of the original update is preserved.
+
+#     Parameters
+#     ----------
+#     before_prev, tip_prev
+#         Previous accepted last-edge endpoints.
+#     angle_prev
+#         Previous accepted tip angle [rad].
+#     before_raw, tip_raw
+#         Proposed new last-edge endpoints before origin-cross correction.
+#     angle_raw
+#         Proposed new tip angle [rad].
+#     L
+#         Edge length.
+#     include_endpoints
+#         Passed to `swept_last_edge_crosses_first_edge`.
+#     eps
+#         Numerical tolerance.
+#     safety
+#         Fractional backoff from the crossing boundary.
+#     max_iter
+#         Number of bisection iterations.
+
+#     Returns
+#     -------
+#     tip_new
+#         Safe corrected tip position.
+#     angle_new
+#         Safe corrected tip angle.
+#     corrected
+#         True iff backtracking was applied.
+#     """
+#     before_prev = np.asarray(before_prev, float).reshape(2,)
+#     tip_prev = np.asarray(tip_prev, float).reshape(2,)
+#     before_raw = np.asarray(before_raw, float).reshape(2,)
+#     tip_raw = np.asarray(tip_raw, float).reshape(2,)
+
+#     crosses_raw = swept_last_edge_crosses_first_edge(before_prev=before_prev, tip_prev=tip_prev, before_new=before_raw,
+#                                                      tip_new=tip_raw, L=L, include_endpoints=include_endpoints,
+#                                                      eps=eps)
+#     if not crosses_raw:
+#         return tip_raw, float(angle_raw), False
+
+#     lo = 0.0
+#     hi = 1.0
+
+#     for _ in range(max_iter):
+#         mid = 0.5 * (lo + hi)
+
+#         tip_mid = tip_prev + mid * (tip_raw - tip_prev)
+#         angle_mid = angle_prev + mid * (angle_raw - angle_prev)
+#         before_mid = tip_mid - L * np.array([np.cos(angle_mid), np.sin(angle_mid)], dtype=float)
+
+#         crosses_mid = swept_last_edge_crosses_first_edge(before_prev=before_prev, tip_prev=tip_prev,
+#                                                          before_new=before_mid, tip_new=tip_mid,
+#                                                          L=L, include_endpoints=include_endpoints, eps=eps)
+
+#         if crosses_mid:
+#             hi = mid
+#         else:
+#             lo = mid
+
+#     s = max(0.0, lo - safety)
+
+#     tip_new = tip_prev + s * (tip_raw - tip_prev)
+#     angle_new = angle_prev + s * (angle_raw - angle_prev)
+
+#     return tip_new, float(angle_new), True
+
+def evade_first_edge_by_sliding(tip_prev: NDArray[np.float_], delta_tip_raw: NDArray[np.float_],
+                                L: float, *, eps: float = 1e-12) -> NDArray[np.float_]:
+    """
+    Replace an inward motion toward the first edge by a tangential motion
+    around the nearest point on the first edge.
 
     Parameters
     ----------
-    before_prev, tip_prev
-        Previous accepted last-edge endpoints.
-    angle_prev
-        Previous accepted tip angle [rad].
-    before_raw, tip_raw
-        Proposed new last-edge endpoints before origin-cross correction.
-    angle_raw
-        Proposed new tip angle [rad].
+    tip_prev
+        Previous accepted tip position, shape (2,).
+    delta_tip_raw
+        Raw proposed tip displacement, shape (2,).
     L
-        Edge length.
-    include_endpoints
-        Passed to `swept_last_edge_crosses_first_edge`.
+        Length of the first edge, which lies on [(0,0), (L,0)].
     eps
-        Numerical tolerance.
-    safety
-        Fractional backoff from the crossing boundary.
-    max_iter
-        Number of bisection iterations.
+        Small tolerance.
 
     Returns
     -------
-    tip_new
-        Safe corrected tip position.
-    angle_new
-        Safe corrected tip angle.
-    corrected
-        True iff backtracking was applied.
+    delta_tip_safe
+        Modified displacement that slides tangentially around the first edge.
     """
-    before_prev = np.asarray(before_prev, float).reshape(2,)
-    tip_prev = np.asarray(tip_prev, float).reshape(2,)
-    before_raw = np.asarray(before_raw, float).reshape(2,)
-    tip_raw = np.asarray(tip_raw, float).reshape(2,)
+    tip_prev = np.asarray(tip_prev, dtype=float).reshape(2,)
+    delta_tip_raw = np.asarray(delta_tip_raw, dtype=float).reshape(2,)
 
-    crosses_raw = swept_last_edge_crosses_first_edge(before_prev=before_prev, tip_prev=tip_prev, before_new=before_raw,
-                                                     tip_new=tip_raw, L=L, include_endpoints=include_endpoints,
-                                                     eps=eps)
-    if not crosses_raw:
-        return tip_raw, float(angle_raw), False
+    # Closest point on the first edge segment
+    c = np.array([np.clip(tip_prev[0], 0.0, L), 0.0], dtype=float)
 
-    lo = 0.0
-    hi = 1.0
+    r = tip_prev - c
+    r_norm = np.linalg.norm(r)
 
-    for _ in range(max_iter):
-        mid = 0.5 * (lo + hi)
+    if r_norm < eps:
+        # Degenerate case: exactly on the segment; pick horizontal escape
+        return np.array([-np.linalg.norm(delta_tip_raw), 0.0], dtype=float)
 
-        tip_mid = tip_prev + mid * (tip_raw - tip_prev)
-        angle_mid = angle_prev + mid * (angle_raw - angle_prev)
-        before_mid = tip_mid - L * np.array([np.cos(angle_mid), np.sin(angle_mid)], dtype=float)
+    r_hat = r / r_norm
 
-        crosses_mid = swept_last_edge_crosses_first_edge(before_prev=before_prev, tip_prev=tip_prev,
-                                                         before_new=before_mid, tip_new=tip_mid,
-                                                         L=L, include_endpoints=include_endpoints, eps=eps)
+    # Split raw motion into radial + tangential parts
+    radial_mag = np.dot(delta_tip_raw, r_hat)
+    delta_rad = radial_mag * r_hat
+    delta_tan_pref = delta_tip_raw - delta_rad
 
-        if crosses_mid:
-            hi = mid
+    # If already not moving inward, keep it
+    if radial_mag >= 0.0:
+        return delta_tip_raw
+
+    # Build the two tangential directions
+    t_ccw = np.array([-r_hat[1],  r_hat[0]], dtype=float)
+    t_cw  = np.array([ r_hat[1], -r_hat[0]], dtype=float)
+
+    # Choose tangent most aligned with intended tangential component
+    if np.linalg.norm(delta_tan_pref) > eps:
+        if np.dot(delta_tan_pref, t_ccw) >= np.dot(delta_tan_pref, t_cw):
+            t_hat = t_ccw
         else:
-            lo = mid
+            t_hat = t_cw
+        tan_mag = np.linalg.norm(delta_tan_pref)
+    else:
+        # No tangential preference in raw motion:
+        # choose the direction that moves away from the nearer endpoint
+        if c[0] < 0.5 * L:
+            t_hat = t_cw   # near origin -> tends to go left when below axis
+        else:
+            t_hat = t_ccw
+        tan_mag = np.linalg.norm(delta_tip_raw)
 
-    s = max(0.0, lo - safety)
-
-    tip_new = tip_prev + s * (tip_raw - tip_prev)
-    angle_new = angle_prev + s * (angle_raw - angle_prev)
-
-    return tip_new, float(angle_new), True
+    return tan_mag * t_hat
 
 
 def coil(angle: float, revolutions: float = 1.5):
