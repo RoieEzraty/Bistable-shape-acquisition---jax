@@ -22,14 +22,17 @@ np.set_printoptions(precision=4, suppress=True)
 # ---------------------------------------------------------------
 # Convenience: move from jax to numpy arrays and vice-verse
 # ---------------------------------------------------------------
-def jax2numpy(arr: jax.Array) -> NDArray[np.float_]:
+def jax2numpy(arr: jax.Array, dtype=float) -> NDArray[np.float_]:
     """
     Convert JAX array to NumPy array.
 
     Breaks JAX's tracing, so should only be used at the boundaries of your pipeline.
     """
     # return np.asarray(arr)
-    return np.asarray(jax.device_get(arr))
+    if dtype == float:
+        return np.asarray(jax.device_get(arr))
+    else:
+        return np.asarray(jax.device_get(arr), dtype=int)
 
 
 def numpy2jax(arr: NDArray[np.float_]) -> jnp.ndarray:
@@ -1004,7 +1007,10 @@ def buckle_to_index(arr: NDArray) -> NDArray:
     Convert [-1,1,1,-1] → integer index 0..15
     (-1 -> 0 , +1 -> 1)
     """
-    bits = [(1 if x == 1 else 0) for x in arr]
+    if len(arr) == 4:
+        bits = arr
+    else:
+        bits = [(1 if x == 1 else 0) for x in arr]
     return bits[0]*8 + bits[1]*4 + bits[2]*2 + bits[3]
 
 

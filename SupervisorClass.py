@@ -390,7 +390,8 @@ class SupervisorClass:
             # old version up to Feb22
             step_size = np.linalg.norm(np.append(delta_tip, delta_angle))
             # print(f'step_size={step_size}')
-            tradeoff_pos_angle = 1/2
+            # tradeoff_pos_angle = 1/2
+            tradeoff_pos_angle = 2
             delta_tip = copy.copy(delta_tip)/step_size*self.alpha
             delta_angle = copy.copy(delta_angle)/step_size*self.alpha * tradeoff_pos_angle
 
@@ -553,9 +554,12 @@ class SupervisorClass:
         --------
         3 floats of change in tip position during update
         """
-        sgnx = np.sign(self.tip_pos_update_in_t[t - 1, 0])
+        sgnx = np.sign(self.tip_pos_update_in_t[t-1, 0])
         # sgny = np.sign(self.tip_pos_update_in_t[t - 1, 0])
         sgny = np.sign(self.tip_pos_update_in_t[t-1, 1])
+        sgntheta_meas = np.sign(self.tip_angle_in_t[t])
+        sgnlossx = np.sign(self.loss[0])
+        sgnlossy = np.sign(self.loss[1])
         if sgnx == 0.0:
             sgnx = 1
         if sgny == 0.0:
@@ -564,10 +568,17 @@ class SupervisorClass:
         # delta_tip_y = - self.alpha * self.loss[0] * Strctr.hinges * Variabs.norm_pos * sgnx
         # delta_tip_x = - self.alpha * self.loss[0] * (-sgny) * Strctr.hinges * Variabs.norm_pos
         # delta_tip_y = - self.alpha * self.loss[0] * (+sgnx) * Strctr.hinges * Variabs.norm_pos
-        delta_tip_x = - self.alpha * self.loss[0] * (-sgny) * Variabs.norm_pos
-        delta_tip_y = - self.alpha * self.loss[0] * (+sgnx) * Variabs.norm_pos
-        # delta_angle = - self.alpha * self.loss[1] * Variabs.norm_angle * np.pi
-        delta_angle = - self.alpha * self.loss[1] * Variabs.norm_angle
+        delta_tip_x = - self.alpha * self.loss[0] * (-sgny) * Variabs.norm_pos  # up to Mar17
+        delta_tip_y = - self.alpha * self.loss[0] * (+sgnx) * Variabs.norm_pos  # up to Mar17
+        # delta_tip_x = - self.alpha * self.loss[0] * sgnlossy * (-sgny) * Variabs.norm_pos  # up to Mar17
+        # delta_tip_y = - self.alpha * self.loss[0] * sgnlossy * (+sgnx) * Variabs.norm_pos  # up to Mar17
+        # delta_tip_x = - self.alpha * self.loss[0] * (-sgntheta_meas) * (-sgny) * Variabs.norm_pos  # Mar18 improve_training
+        # delta_tip_y = - self.alpha * self.loss[0] * (-sgntheta_meas) * (+sgnx) * Variabs.norm_pos  # Mar18 improve_training
+        # delta_tip_x = - self.alpha * self.loss[0] * (-sgnlossx * sgnlossy) * (-sgny) * Variabs.norm_pos
+        # delta_tip_y = - self.alpha * self.loss[0] * (-sgnlossx * sgnlossy) * (+sgnx) * Variabs.norm_pos  # up to Mar17
+        delta_angle = - self.alpha * self.loss[1] * Variabs.norm_angle * np.pi
+        # delta_angle = - self.alpha * self.loss[1] * Variabs.norm_angle  # up to Mar17
+        # delta_angle = - self.alpha * self.loss[1] * (-sgnlossx) * Variabs.norm_angle  # 
         return delta_tip_x, delta_tip_y, delta_angle
 
     def _delta_radial_one_to_one(self, t, Strctr, Variabs, current_tip_pos, current_tip_angle):

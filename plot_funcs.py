@@ -4,12 +4,14 @@ import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 import pandas as pd
 
+from IPython.display import HTML
 from matplotlib import patches
 from matplotlib.animation import FuncAnimation, PillowWriter  # for GIF export
 from scipy.signal import savgol_filter
 
 from typing import List, Union
 from numpy.typing import NDArray
+from typing import TYPE_CHECKING, Callable, Union, Optional
 
 import colors, helpers_builders
 
@@ -99,8 +101,7 @@ def plot_arm(pos_vec: np.ndarray, buckle: np.ndarray, L: float, modality: str, s
         plt.show()
 
 
-def animate_arm_w_arcs(traj_pos, L, frames=10, interval_ms=30, save_path=None, fps=30, show_inline=False,
-                       buckle_traj=None) -> None:
+def animate_arm_w_arcs(traj_pos, L, frames=10, interval_ms=30, save_path=None, fps=30, buckle_traj=None):
     """
     Animate an N-link arm over time, optionally drawing hinge arcs.
 
@@ -196,14 +197,7 @@ def animate_arm_w_arcs(traj_pos, L, frames=10, interval_ms=30, save_path=None, f
 
         return line, scat, tip_text, *arc_patches
 
-    anim = FuncAnimation(
-        fig,
-        update,
-        frames=T,
-        init_func=init,
-        interval=interval_ms,
-        blit=True,
-    )
+    anim = FuncAnimation(fig, update, frames=T, init_func=init, interval=interval_ms, blit=True)
 
     if save_path is not None:
         if save_path.lower().endswith(".gif"):
@@ -213,16 +207,13 @@ def animate_arm_w_arcs(traj_pos, L, frames=10, interval_ms=30, save_path=None, f
         else:
             raise ValueError("save_path must end with .gif or .mp4")
 
-    if show_inline:
-        from IPython.display import HTML
-
-        return HTML(anim.to_jshtml())
-
     plt.close(fig)
     return fig, anim
 
 
-def loss_and_buckle_in_t(loss_MSE_in_t, buckle_in_t, F_meas_in_t, F_des_in_t, start=0, end=None, save_path: str = None) -> None:
+def loss_and_buckle_in_t(tip_pos_in_t, tip_angle_in_t, loss_in_t, buckle_in_t, F_meas_in_t, F_des_in_t, 
+                         tip_pos_update_in_t, tip_angle_update_in_t, start=0, end=None,
+                         save_path: Optional[str] = None) -> None:
     """
     Plot (top->bottom):
       1) measured forces (solid) vs desired forces (dotted) over training steps
@@ -231,7 +222,7 @@ def loss_and_buckle_in_t(loss_MSE_in_t, buckle_in_t, F_meas_in_t, F_des_in_t, st
 
     Parameters
     ----------
-    loss_MSE_in_t - np.ndarray, shape (T, 2)
+    loss_in_t - np.ndarray, shape (T, 2)
     buckle_in_t   - np.ndarray, shape (H, 1, T)  (as in your current indexing)
     F_meas_in_t   - np.ndarray, shape (T, 2)
     F_des_in_t    - np.ndarray, shape (T, 2)
@@ -242,7 +233,7 @@ def loss_and_buckle_in_t(loss_MSE_in_t, buckle_in_t, F_meas_in_t, F_des_in_t, st
     colors_lst, _, _ = colors.color_scheme()
 
     # -------- time vector / slicing --------
-    T = np.size(loss_MSE_in_t)
+    T = np.shape(loss_in_t)[0]
     if end is None or end > T:
         end = T
     if start < 0:
@@ -251,37 +242,107 @@ def loss_and_buckle_in_t(loss_MSE_in_t, buckle_in_t, F_meas_in_t, F_des_in_t, st
     t = np.arange(start, end)
 
     # -------- instantiate plot --------
-    fig, axes = plt.subplots(3, 1, figsize=(6, 9), sharex=True)
+    fig, axes = plt.subplots(5, 1, figsize=(6, 9), sharex=True)
 
-    # -------- subplot 0: forces --------
+    # -------- subplot 0: positions --------
+    # axes[0].plot(t, tip_pos_in_t[start:end, 0], color=colors_lst[1], linestyle='-', label=r"$tip_x$ meas")
+    # axes[0].plot(t, tip_pos_in_t[start:end, 1], color=colors_lst[2], linestyle='-', label=r"$tip_y$ meas")
+    # axes[0].plot(t, tip_angle_in_t[start:end], color=colors_lst[3], label=r"$\theta$ meas")
+
+    # # dashed at 0
+    # axes[0].plot(t, np.zeros(end-start), color='k', linestyle='--')
+
+    # axes[0].set_ylabel("pos [mm]")
+    # axes[0].legend(ncol=2)
+    # axes[0].xaxis.set_major_locator(MaxNLocator(integer=True))
+
+    ax = axes[0]
+
+    # ---- left axis: position ----
+    ax.plot(t, tip_pos_in_t[start:end, 1], color=colors_lst[2], linestyle='-', label=r"$tip_y$ meas")
+
+    ax.set_ylabel(r"$tip_y\left[mm\right]$")
+    ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+
+    # ---- right axis: angle ----
+    ax2 = ax.twinx()
+
+    ax2.plot(t, tip_angle_in_t[start:end],
+             color=colors_lst[3], label=r"$\theta$ meas")
+
+    ax2.set_ylabel(r"$\theta\left[rad\right]$")
+
+    # ---- combined legend ----
+    lines = ax.get_lines() + ax2.get_lines()
+    labels = [l.get_label() for l in lines]
+    ax.legend(lines, labels, ncol=2)
+
+    # dashed at 0
+    ax.plot(t, np.zeros(end-start), color='k', linestyle='--')
+
+    # -------- subplot 1: positions --------
     # measured (solid)
-    axes[0].plot(t, F_meas_in_t[0, start:end], color=colors_lst[1], linestyle='-', label=r"$F_x$ meas")
-    axes[0].plot(t, F_meas_in_t[1, start:end], color=colors_lst[2], linestyle='-', label=r"$F_y$ meas")
+    axes[1].plot(t, F_meas_in_t[0, start:end], color=colors_lst[1], linestyle='-', label=r"$F_x$ meas")
+    axes[1].plot(t, F_meas_in_t[1, start:end], color=colors_lst[2], linestyle='-', label=r"$F_y$ meas")
 
     # desired (dotted)
-    axes[0].plot(t, F_des_in_t[0, start:end], color=colors_lst[1], linestyle=':', label=r"$F_x$ des")
-    axes[0].plot(t, F_des_in_t[1, start:end], color=colors_lst[2], linestyle=':', label=r"$F_y$ des")
+    axes[1].plot(t, F_des_in_t[0, start:end], color=colors_lst[1], linestyle=':', label=r"$F_x$ des")
+    axes[1].plot(t, F_des_in_t[1, start:end], color=colors_lst[2], linestyle=':', label=r"$F_y$ des")
 
-    axes[0].set_ylabel("Force [mN]")
-    axes[0].legend(ncol=2)
-    axes[0].xaxis.set_major_locator(MaxNLocator(integer=True))
-    axes[0].set_ylim([-200, 500])
+    # dashed at 0
+    axes[1].plot(t, np.zeros(end-start), color='k', linestyle='--')
+
+    axes[1].set_ylabel("Force [mN]")
+    axes[1].legend(ncol=2)
+    axes[1].xaxis.set_major_locator(MaxNLocator(integer=True))
+    axes[1].set_ylim([-200, 500])
 
     # -------- subplot 1: loss --------
-    axes[1].plot(t, loss_MSE_in_t[start:end])
-    axes[1].set_ylabel("Loss")
-    axes[1].xaxis.set_major_locator(MaxNLocator(integer=True))
-    axes[1].set_ylim([-0.02, 6.2])
+    axes[2].plot(t, loss_in_t[start:end, 0], color=colors_lst[1])
+    axes[2].plot(t, loss_in_t[start:end, 1], color=colors_lst[2])
+    loss_MSE_in_t = np.sqrt(np.sum(loss_in_t**2, axis=1))
+    axes[2].plot(t, loss_MSE_in_t[start:end])
+
+    # dashed at 0
+    axes[2].plot(t, np.zeros(end-start), color='k', linestyle='--')
+
+    axes[2].set_ylabel("Loss")
+    axes[2].legend([r'$L_x$', r'$L_y$', r'$\|L\|$'])
+    axes[2].xaxis.set_major_locator(MaxNLocator(integer=True))
+    axes[2].set_ylim([-2.0, 2.0])
+
+    # ------ subplot 4: delta tip update ------
+    ax3 = axes[3]
+    ax3.plot(t[1:], tip_pos_update_in_t[1+start:end, 0] - tip_pos_update_in_t[start:end-1, 0],
+             label=r"$\Delta tip_x^{\,!}\left[mm\right]$")
+    ax3.plot(t[1:], tip_pos_update_in_t[1+start:end, 1] - tip_pos_update_in_t[start:end-1, 1],
+             label=r"$\Delta tip_y^{\,!}\left[mm\right]$")
+    ax3.set_ylabel(r"$\Delta tip^{\,!}\left[mm\right]$")
+    ax3.xaxis.set_major_locator(MaxNLocator(integer=True))
+
+    # ---- right axis: angle ----
+    ax3_2 = ax3.twinx()
+    ax3_2.plot(t[1:], tip_angle_update_in_t[1+start:end] - tip_angle_update_in_t[start:end-1],
+               color=colors_lst[3], label=r"$\Delta\theta^{\,!}\left[rad\right]$")
+    ax3_2.set_ylabel(r"$\Delta\theta^{\,!}\left[rad\right]$")
+
+    lines = ax3.get_lines() + ax3_2.get_lines()
+    labels = [l.get_label() for l in lines]
+    ax3.legend(lines, labels, ncol=2)
+
+    # dashed at 0
+    axes[3].plot(t, np.zeros(end-start), color='k', linestyle='--')
+
 
     # -------- subplot 2: buckle states --------
     H = buckle_in_t.shape[0]
     for i in range(H):
-        axes[2].plot(t, buckle_in_t[i, 0, start:end], label=f"hinge {i+1}")
+        axes[4].plot(t, buckle_in_t[i, 0, start:end], label=f"hinge {i+1}")
 
-    axes[2].set_ylabel("buckle")
-    axes[2].set_xlabel("t")
-    axes[2].legend()
-    axes[2].xaxis.set_major_locator(MaxNLocator(integer=True))
+    axes[4].set_ylabel("buckle")
+    axes[4].set_xlabel("t")
+    axes[4].legend()
+    axes[4].xaxis.set_major_locator(MaxNLocator(integer=True))
 
     plt.tight_layout()
 

@@ -271,7 +271,7 @@ def export_training_npz(path_npz: str, **arrays):
 # ---------------------------------------------------------------
 # Post-processing files
 # ---------------------------------------------------------------
-def build_success_matrix(folder: Path) -> NDArray:
+def build_success_matrix(folder: Path, old=False) -> NDArray:
     """
     0 - succesfull training
     1 - didn't train on this path
@@ -287,8 +287,16 @@ def build_success_matrix(folder: Path) -> NDArray:
         loss = float(re.search(r"final_loss_([0-9.]+)", name).group(1))
 
         # extract buckle patterns
-        init = list(map(int, re.search(r"init_\[(.*?)\]", name).group(1).split()))
-        desired = list(map(int, re.search(r"desired\[(.*?)\]", name).group(1).split()))
+        if old:
+            init = list(map(int, re.search(r"init_\[(.*?)\]", name).group(1).split()))
+            desired = list(map(int, re.search(r"desired\[(.*?)\]", name).group(1).split()))
+        else:
+            # extract buckle patterns as strings like "0001"
+            init_str = re.search(r"init_([01]+)", name).group(1)
+            desired_str = re.search(r"desired([01]+)", name).group(1)
+            # convert 0/1 strings to the ±1 format expected by buckle_to_index
+            init = [1 if ch == "1" else 0 for ch in init_str]
+            desired = [1 if ch == "1" else 0 for ch in desired_str]
 
         i = helpers_builders.buckle_to_index(init)
         j = helpers_builders.buckle_to_index(desired)
