@@ -255,8 +255,10 @@ class SupervisorClass:
         # tip positions and angles for specified tip dataset
         if sampling == 'uniform':
             rng = np.random.default_rng(CFG.Train.rand_key_dataset)
-            low = array([(Strctr.edges - 0.5) * Strctr.L, -Strctr.L * 1 / 3, -np.pi / 5])  # lowest allowed value
-            high = array([(Strctr.edges - 0.01) * Strctr.L, Strctr.L * 1 / 3, np.pi / 5])  # highest allowed value
+            low = array([(Strctr.edges - 1.0) * Strctr.L, -Strctr.L * 2 / 3, -np.pi / 5])  # lowest allowed value
+            high = array([(Strctr.edges - 0.4) * Strctr.L, Strctr.L * 2 / 3, np.pi / 5])  # highest allowed value
+            # low = array([(Strctr.edges - 0.5) * Strctr.L, -Strctr.L * 1 / 3, -np.pi / 5])  # lowest allowed value
+            # high = array([(Strctr.edges - 0.01) * Strctr.L, Strctr.L * 1 / 3, np.pi / 5])  # highest allowed value
             samples = rng.uniform(low, high, size=(self.T, 3)).astype(np.float32)  # (T, 3) sample size
             self.tip_pos_in_t = samples[:, :2]  # (T, 2)
             self.tip_angle_in_t = samples[:, 2]  # (T,)
@@ -576,8 +578,8 @@ class SupervisorClass:
         # delta_tip_y = - self.alpha * self.loss[0] * (-sgntheta_meas) * (+sgnx) * Variabs.norm_pos  # Mar18 improve_training
         # delta_tip_x = - self.alpha * self.loss[0] * (-sgnlossx * sgnlossy) * (-sgny) * Variabs.norm_pos
         # delta_tip_y = - self.alpha * self.loss[0] * (-sgnlossx * sgnlossy) * (+sgnx) * Variabs.norm_pos  # up to Mar17
-        delta_angle = - self.alpha * self.loss[1] * Variabs.norm_angle * np.pi
-        # delta_angle = - self.alpha * self.loss[1] * Variabs.norm_angle  # up to Mar17
+        # delta_angle = - self.alpha * self.loss[1] * Variabs.norm_angle * np.pi
+        delta_angle = - self.alpha * self.loss[1] * Variabs.norm_angle  # up to Mar17
         # delta_angle = - self.alpha * self.loss[1] * (-sgnlossx) * Variabs.norm_angle  # 
         return delta_tip_x, delta_tip_y, delta_angle
 

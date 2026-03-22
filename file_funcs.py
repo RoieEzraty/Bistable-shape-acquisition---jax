@@ -271,39 +271,38 @@ def export_training_npz(path_npz: str, **arrays):
 # ---------------------------------------------------------------
 # Post-processing files
 # ---------------------------------------------------------------
-def build_success_matrix(folder: Path, old=False) -> NDArray:
+def build_success_matrix(folder: Path, old: bool = False) -> NDArray:
     """
-    0 - succesfull training
+    0 - successful training
     1 - didn't train on this path
-    2 - unsuccessfull training
+    2 - unsuccessful training
     """
-    # 16x16 success matrix
     M = np.zeros((16, 16)) + 1.0
-    for file in folder.glob("final_loss_*.csv"):
 
+    for file in folder.glob("final_loss_*.csv"):
         name = file.stem
 
         # extract loss
         loss = float(re.search(r"final_loss_([0-9.]+)", name).group(1))
 
         # extract buckle patterns
-        if old:
+        if old:  # buckle in the form [-1  1  1 -1]
             init = list(map(int, re.search(r"init_\[(.*?)\]", name).group(1).split()))
             desired = list(map(int, re.search(r"desired\[(.*?)\]", name).group(1).split()))
-        else:
-            # extract buckle patterns as strings like "0001"
-            init_str = re.search(r"init_([01]+)", name).group(1)
-            desired_str = re.search(r"desired([01]+)", name).group(1)
-            # convert 0/1 strings to the ±1 format expected by buckle_to_index
-            init = [1 if ch == "1" else 0 for ch in init_str]
-            desired = [1 if ch == "1" else 0 for ch in desired_str]
+        else:  # buckle in the form 0110
+            init_bits = re.search(r"init_([01]+)", name).group(1)
+            desired_bits = re.search(r"desired([01]+)", name).group(1)
+
+            # buckle_to_index accepts either 0/1 or -1/+1 effectively,
+            # because it maps x == 1 -> 1, else -> 0
+            init = [int(ch) for ch in init_bits]
+            desired = [int(ch) for ch in desired_bits]
 
         i = helpers_builders.buckle_to_index(init)
         j = helpers_builders.buckle_to_index(desired)
 
-        # success condition
         M[i, j] = 0 if loss < 1e-6 else 2
-        # M[j, i] = M[i, j]
+
     return M
 
 

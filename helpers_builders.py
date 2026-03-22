@@ -1007,10 +1007,7 @@ def buckle_to_index(arr: NDArray) -> NDArray:
     Convert [-1,1,1,-1] → integer index 0..15
     (-1 -> 0 , +1 -> 1)
     """
-    if len(arr) == 4:
-        bits = arr
-    else:
-        bits = [(1 if x == 1 else 0) for x in arr]
+    bits = [(1 if x == 1 else 0) for x in arr]
     return bits[0]*8 + bits[1]*4 + bits[2]*2 + bits[3]
 
 
