@@ -123,7 +123,7 @@ def load_pos_force(path: str, mod: Literal["dict", "arrays"] = "dict",
 # ---------------------------------------------------------------
 # Exports
 # ---------------------------------------------------------------
-def export_predetermined(Sprvsr: "SupervisorClass", State: "StateClass", filename: str = None) -> None:
+def export_predetermined(Sprvsr: "SupervisorClass", State: "StateClass", filename: str = None, order: str = 'fwd') -> None:
     """
     Export a predetermined trajectory and its simulated forces to a CSV file.
 
@@ -138,14 +138,25 @@ def export_predetermined(Sprvsr: "SupervisorClass", State: "StateClass", filenam
     - If `filename` not provided, default filename based on buckle configuration in `State.buckle_arr`, where buckle = -1 → 0
     - Only first `T` entries of `State.Fx_in_t` and `State.Fy_in_t` exported, where `T = len(Sprvsr.tip_pos_in_t)`.
     """
-    # ------ init and scale sizes
-    T = Sprvsr.tip_pos_in_t.shape[0]
-    
-    # convert to [mN] and [deg]
-    tip_pos_in_t = Sprvsr.tip_pos_in_t * Sprvsr.convert_pos
-    tip_angle_in_t = Sprvsr.tip_angle_in_t * Sprvsr.convert_angle
-    Fx_afo_pos = State.Fx_in_t[:T] * Sprvsr.convert_F
-    Fy_afo_pos = State.Fy_in_t[:T] * Sprvsr.convert_F
+    if order == 'fwd':
+        # ------ init and scale sizes
+        T = Sprvsr.tip_pos_in_t.shape[0]
+
+        # convert to [mN] and [deg]
+        tip_pos_in_t = Sprvsr.tip_pos_in_t * Sprvsr.convert_pos
+        tip_angle_in_t = Sprvsr.tip_angle_in_t * Sprvsr.convert_angle
+        Fx_afo_pos = State.Fx_in_t[:T] * Sprvsr.convert_F
+        Fy_afo_pos = State.Fy_in_t[:T] * Sprvsr.convert_F
+
+    elif order == 'fwd_and_bcwrd':
+        # ------ init and scale sizes
+        T = 2*Sprvsr.tip_pos_in_t.shape[0]
+
+        # convert to [mN] and [deg]
+        tip_pos_in_t = np.append(Sprvsr.tip_pos_in_t, Sprvsr.tip_pos_in_t[::-1, :], axis=0) * Sprvsr.convert_pos
+        tip_angle_in_t = np.append(Sprvsr.tip_angle_in_t, Sprvsr.tip_angle_in_t[::-1]) * Sprvsr.convert_angle
+        Fx_afo_pos = State.Fx_in_t[:T] * Sprvsr.convert_F
+        Fy_afo_pos = State.Fy_in_t[:T] * Sprvsr.convert_F
 
     # ------ pandas dataframe ------
     df = pd.DataFrame({

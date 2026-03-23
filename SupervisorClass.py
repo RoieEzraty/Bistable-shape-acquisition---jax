@@ -251,6 +251,8 @@ class SupervisorClass:
         """
         # save as variable
         self.dataset_sampling = sampling
+        if sampling == 'predetermined':
+            self.dataset_file = CFG.Train.dataset_file
 
         # tip positions and angles for specified tip dataset
         if sampling == 'uniform':
@@ -271,9 +273,9 @@ class SupervisorClass:
                                                                                             total_angle=0.0, R_free=self.R_free,
                                                                                             L=Strctr.L, margin=0.1,
                                                                                             supress_prints=self.supress_prints)
-        elif sampling in {'flat', 'almost_flat', 'specified'}:
+        elif sampling in {'flat', 'almost_flat', 'specified', 'predetermined'}:
             end = float(Strctr.edges*Strctr.L)
-            if sampling == 'flat':
+            if sampling in {'flat', 'predetermined'}:
                 tip_pos = array([end, 0], dtype=np.float32)
                 tip_angle = 0.0
             elif sampling == 'almost_flat':
@@ -293,7 +295,7 @@ class SupervisorClass:
             noisy_zeros_arr = np.zeros_like(tip_arr) + dist_noise  # shape (T,)
             self.tip_pos_in_t[:] = np.column_stack((tip_arr, noisy_zeros_arr))  # shape (T, 2)
             self.tip_angle_in_t[:] = angle_noise
-        elif sampling == "tile":
+        elif sampling == 'tile':
             self.tip_pos_in_t[:] = np.tile(tip_pos, (self.T // len(tip_pos) + 1, 1))[:self.T]
             tip_angles_block = np.repeat(tip_angle, tip_pos.shape[0])
             self.tip_angle_in_t[:] = np.tile(tip_angles_block, self.T // len(tip_angles_block) + 1)[:self.T]
@@ -392,8 +394,11 @@ class SupervisorClass:
             # old version up to Feb22
             step_size = np.linalg.norm(np.append(delta_tip, delta_angle))
             # print(f'step_size={step_size}')
-            # tradeoff_pos_angle = 1/2
-            tradeoff_pos_angle = 2
+            if self.update_scheme == 'loss_diff':
+                tradeoff_pos_angle = 1
+            else:
+                # tradeoff_pos_angle = 1/2
+                tradeoff_pos_angle = 2
             delta_tip = copy.copy(delta_tip)/step_size*self.alpha
             delta_angle = copy.copy(delta_angle)/step_size*self.alpha * tradeoff_pos_angle
 
@@ -480,12 +485,15 @@ class SupervisorClass:
                                                                               tip_new=self.tip_pos_update_in_t[t, :],
                                                                               L=Strctr.L, include_endpoints=False)
 
+        self.restart = False
+
         if correct_for_coil and cond_coil:
             print('coiled up too much')
             self.tip_pos_update_in_t[t, :] = self.tip_pos_in_t[t, :]
             self.tip_angle_update_in_t[t] = self.tip_angle_in_t[t]
             print(f'setting update tip pos={self.tip_pos_update_in_t[t, :]}, angle={self.tip_angle_update_in_t[t]}')
             prev_total_angle = 0.0  # reset previous total angle for total angle calculation in time=t
+            self.restart = True  # restart positions in Eq
 
         if correct_for_cut_origin and cond_cut_origin:
             print('origin is cut')
@@ -507,6 +515,8 @@ class SupervisorClass:
             self.tip_pos_update_in_t[t, :] = self.tip_pos_in_t[t, :]
             self.tip_angle_update_in_t[t] = self.tip_angle_in_t[t]
             print(f'setting update tip pos={self.tip_pos_update_in_t[t, :]}, angle={self.tip_angle_update_in_t[t]}')
+            prev_total_angle = 0.0  # reset previous total angle for total angle calculation in time=t
+            self.restart = True  # restart positions in Eq
 
         if not self.supress_prints:
             delta_tip_after_corr = self.tip_pos_update_in_t[t, :] - self.tip_pos_update_in_t[t-1, :]
@@ -535,6 +545,7 @@ class SupervisorClass:
         return {
             "one_to_one": self._delta_one_to_one,
             "radial_one_to_one": self._delta_radial_one_to_one,
+            "loss_diff": self._delta_loss_diff
             # "BEASTAL": self._delta_BEASTAL,
             # "radial_BEASTAL": self._delta_radial_BEASTAL,
             # "BEASTAL_no_pinv": self._delta_BEASTAL_no_pinv,
@@ -581,6 +592,23 @@ class SupervisorClass:
         # delta_angle = - self.alpha * self.loss[1] * Variabs.norm_angle * np.pi
         delta_angle = - self.alpha * self.loss[1] * Variabs.norm_angle  # up to Mar17
         # delta_angle = - self.alpha * self.loss[1] * (-sgnlossx) * Variabs.norm_angle  # 
+        return delta_tip_x, delta_tip_y, delta_angle
+
+    def _delta_loss_diff(self, t, Strctr, Variabs, current_tip_pos, current_tip_angle):
+        sgnx = np.sign(self.tip_pos_update_in_t[t-1, 0])
+        sgny = np.sign(self.tip_pos_update_in_t[t-1, 1])
+        sgnLossx = np.sign(self.loss[0])
+        if sgnx == 0.0:
+            sgnx = 1
+        if sgny == 0.0:
+            sgny = 1
+        loss_diff = self.loss[0] - self.loss[1]
+        loss_add = self.loss[0] + self.loss[1]
+        # delta_tip_x = - self.alpha * loss_diff * sgnLossx * (-sgny) * Variabs.norm_pos  # Mar23
+        # delta_tip_y = - self.alpha * loss_diff * sgnLossx * (+sgnx) * Variabs.norm_pos  # Mar23
+        delta_tip_x = - self.alpha * loss_diff * (-sgny) * Variabs.norm_pos  # Mar23
+        delta_tip_y = - self.alpha * loss_diff * (+sgnx) * Variabs.norm_pos  # Mar23
+        delta_angle = - self.alpha * loss_add * Variabs.norm_angle  # up to Mar23
         return delta_tip_x, delta_tip_y, delta_angle
 
     def _delta_radial_one_to_one(self, t, Strctr, Variabs, current_tip_pos, current_tip_angle):

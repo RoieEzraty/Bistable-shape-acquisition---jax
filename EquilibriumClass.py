@@ -173,7 +173,7 @@ class EquilibriumClass(eqx.Module):
             Time history of nodal positions over the integration time grid.
         vel_in_t : jax.Array, shape (T_eq_samples, N, 2)
             Time history of nodal velocities over the integration time grid.
-        potential_force_in_t : jax.Array, shape (T_eq_samples, n_coords)
+        forces: jax.Array, shape (N,)
             Time history of the internal reaction forces (stretch + bending) [mN]
             on each positional DOF, evaluated along the trajectory.
 

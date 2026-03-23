@@ -5,7 +5,7 @@ import time
 from numpy.typing import NDArray
 from typing import TYPE_CHECKING, Tuple, Optional
 
-import plot_funcs, file_funcs
+import plot_funcs, file_funcs, helpers_builders
 
 from StructureClass import StructureClass
 from VariablesClass import VariablesClass
@@ -264,16 +264,16 @@ def measure_determined_pos_from_file(Strctr: "StructureClass", Variabs: "Variabl
     # ------ Initialize simulation -------
     # simulated forces
     n = P.shape[0]
-    F_x_vec = np.zeros(n, dtype=float)
-    F_y_vec = np.zeros(n, dtype=float)
+    F_x_vec = np.zeros(2*n, dtype=float)
+    F_y_vec = np.zeros(2*n, dtype=float)
     State = StateClass(Strctr, Sprvsr, buckle_arr=buckle)
 
-    # Tip calibration offset (avoid allocating each loop)
+    # Tip calibration simulation-to-experiment
     tip_offset = np.array([-0.003, 0.0], dtype=float)
 
     prev_final_pos = None  # warm-start position for next step
 
-    # ------ loop ------
+    # ------ loop forward ------
     for i in range(n):
         tip_pos = P[i, :2] + tip_offset
         tip_angle = float(P[i, 2])
@@ -288,8 +288,26 @@ def measure_determined_pos_from_file(Strctr: "StructureClass", Variabs: "Variabl
         # Warm start next iteration from last equilibrium position of this trajectory
         prev_final_pos = pos_traj[-1]
 
+    # reset pos
+    prev_final_pos = helpers_builders._initiate_pos(Strctr.edges+1, Strctr.L)  # warm-start position for next step
+
+    # ------ loop backward ------
+    for i in range(n):
+        tip_pos = P[n-(i+1), :2] + tip_offset
+        tip_angle = float(P[n-(i+1), 2])
+
+        pos_traj, final_F = one_shot(Strctr, Variabs, Sprvsr, State, CFG, buckle, tip_pos, tip_angle, 
+                                     init_pos=prev_final_pos, t=n+i)
+
+        # Record simulated forces (State updated inside one_shot)
+        F_x_vec[n+i] = State.Fx
+        F_y_vec[n+i] = State.Fy
+
+        # Warm start next iteration from last equilibrium position of this trajectory
+        prev_final_pos = pos_traj[-1]
+
     # ------ export ------
-    file_funcs.export_predetermined(Sprvsr, State)
+    file_funcs.export_predetermined(Sprvsr, State, order='fwd_and_bcwrd')
     return State, P, F_x_vec, F_y_vec, F_x_vec_exp, F_y_vec_exp
 
 

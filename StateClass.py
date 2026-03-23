@@ -137,7 +137,7 @@ class StateClass:
                             None = a straight chain is initialized.
         buckle_arr        - ndarray, optional. Buckle state from the equilibrium solver.
                             None =  initialized `helpers_builders._initiate_buckle`.
-        Forces            - (2 * nodes,) jax.Array, optional. Force vector from the equilibrium solver. 
+        Forces            - (2 * nodes,) or (2, ), jax.Array, optional. Force vector from the equilibrium solver.
         """
         # ------- positions -------
         if pos_arr is not None:
@@ -156,18 +156,22 @@ class StateClass:
 
         # ------- Force normal on wall -------
         if Forces is not None:
-            # forces are sum over 2 final nodes, each axis on its own
-            if Strctr.hinges > 1:
-                self.Fx = Forces[-4] + Forces[-2]
-                self.Fy = Forces[-3] + Forces[-1]
-                # self.Fx = Forces[-4]
-                # self.Fy = Forces[-3]
-                # print('new force calculated')
+            if np.size(Forces) == 2:  # forces already in the right shape
+                self.Fx = Forces[0]
+                self.Fy = Forces[1]
             else:
-                self.Fx = Forces[-2]
-                self.Fy = Forces[-1]
-            # self.Fx = Forces[-4]  # only final node
-            # self.Fy = Forces[-3]  # only final node
+                # forces are sum over 2 final nodes, each axis on its own
+                if Strctr.hinges > 1:
+                    self.Fx = Forces[-4] + Forces[-2]
+                    self.Fy = Forces[-3] + Forces[-1]
+                    # self.Fx = Forces[-4]
+                    # self.Fy = Forces[-3]
+                    # print('new force calculated')
+                else:
+                    self.Fx = Forces[-2]
+                    self.Fy = Forces[-1]
+                # self.Fx = Forces[-4]  # only final node
+                # self.Fy = Forces[-3]  # only final node
         else:
             Forces = array([0, 0, 0, 0])
             self.Fx = 0

@@ -282,12 +282,12 @@ def loss_and_buckle_in_t(tip_pos_in_t, tip_angle_in_t, loss_in_t, buckle_in_t, F
 
     # -------- subplot 1: positions --------
     # measured (solid)
-    axes[1].plot(t, F_meas_in_t[0, start:end], color=colors_lst[1], linestyle='-', label=r"$F_x$ meas")
-    axes[1].plot(t, F_meas_in_t[1, start:end], color=colors_lst[2], linestyle='-', label=r"$F_y$ meas")
+    axes[1].plot(t, F_meas_in_t[0, start+1:end+1], color=colors_lst[1], linestyle='-', label=r"$F_x$ meas")
+    axes[1].plot(t, F_meas_in_t[1, start+1:end+1], color=colors_lst[2], linestyle='-', label=r"$F_y$ meas")
 
     # desired (dotted)
-    axes[1].plot(t, F_des_in_t[0, start:end], color=colors_lst[1], linestyle=':', label=r"$F_x$ des")
-    axes[1].plot(t, F_des_in_t[1, start:end], color=colors_lst[2], linestyle=':', label=r"$F_y$ des")
+    axes[1].plot(t, F_des_in_t[0, start+1:end+1], color=colors_lst[1], linestyle=':', label=r"$F_x$ des")
+    axes[1].plot(t, F_des_in_t[1, start+1:end+1], color=colors_lst[2], linestyle=':', label=r"$F_y$ des")
 
     # dashed at 0
     axes[1].plot(t, np.zeros(end-start), color='k', linestyle='--')
@@ -298,10 +298,10 @@ def loss_and_buckle_in_t(tip_pos_in_t, tip_angle_in_t, loss_in_t, buckle_in_t, F
     axes[1].set_ylim([-200, 500])
 
     # -------- subplot 1: loss --------
-    axes[2].plot(t, loss_in_t[start:end, 0], color=colors_lst[1])
-    axes[2].plot(t, loss_in_t[start:end, 1], color=colors_lst[2])
+    axes[2].plot(t, loss_in_t[start+1:end+1, 0], color=colors_lst[1])
+    axes[2].plot(t, loss_in_t[start+1:end+1, 1], color=colors_lst[2])
     loss_MSE_in_t = np.sqrt(np.sum(loss_in_t**2, axis=1))
-    axes[2].plot(t, loss_MSE_in_t[start:end])
+    axes[2].plot(t, loss_MSE_in_t[start+1:end+1])
 
     # dashed at 0
     axes[2].plot(t, np.zeros(end-start), color='k', linestyle='--')
@@ -313,16 +313,16 @@ def loss_and_buckle_in_t(tip_pos_in_t, tip_angle_in_t, loss_in_t, buckle_in_t, F
 
     # ------ subplot 4: delta tip update ------
     ax3 = axes[3]
-    ax3.plot(t[1:], tip_pos_update_in_t[1+start:end, 0] - tip_pos_update_in_t[start:end-1, 0],
+    ax3.plot(t[:], tip_pos_update_in_t[start+1:end+1, 0] - tip_pos_update_in_t[start:end, 0],
              label=r"$\Delta tip_x^{\,!}\left[mm\right]$")
-    ax3.plot(t[1:], tip_pos_update_in_t[1+start:end, 1] - tip_pos_update_in_t[start:end-1, 1],
+    ax3.plot(t[:], tip_pos_update_in_t[start+1:end+1, 1] - tip_pos_update_in_t[start:end, 1],
              label=r"$\Delta tip_y^{\,!}\left[mm\right]$")
     ax3.set_ylabel(r"$\Delta tip^{\,!}\left[mm\right]$")
     ax3.xaxis.set_major_locator(MaxNLocator(integer=True))
 
     # ---- right axis: angle ----
     ax3_2 = ax3.twinx()
-    ax3_2.plot(t[1:], tip_angle_update_in_t[1+start:end] - tip_angle_update_in_t[start:end-1],
+    ax3_2.plot(t[:], tip_angle_update_in_t[start+1:end+1] - tip_angle_update_in_t[start:end],
                color=colors_lst[3], label=r"$\Delta\theta^{\,!}\left[rad\right]$")
     ax3_2.set_ylabel(r"$\Delta\theta^{\,!}\left[rad\right]$")
 

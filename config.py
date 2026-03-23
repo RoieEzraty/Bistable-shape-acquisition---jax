@@ -158,23 +158,27 @@ class TrainingConfig:
         desired_buckle_rand_key: int = 169  # key for seed of random sampling of buckle pattern
     elif desired_buckle_type == 'specified':
         # desired_buckle_pattern: tuple = (1, -1, -1, -1, -1)  # which shims should be buckled up, initially
-        desired_buckle_pattern: tuple = (1, 1, 1, -1)  # which shims should be buckled up, initially
+        desired_buckle_pattern: tuple = (-1, -1, -1, 1)  # which shims should be buckled up, initially
         # desired_buckle_pattern: tuple = (-1, 1, 1, 1)  # which shims should be buckled up, initially
 
     # init_buckle_pattern: tuple = (-1, -1, -1, -1, 1)  # which shims should be buckled up, initially
-    init_buckle_pattern: tuple = (1, 1, -1, 1)  # which shims should be buckled up, initially
+    init_buckle_pattern: tuple = (1, 1, 1, -1)  # which shims should be buckled up, initially
     # init_buckle_pattern: tuple = (1, 1, 1, -1)  # which shims should be buckled up, initially
     # init_buckle_pattern: tuple = (1)  # which shims should be buckled up, initially
 
-    dataset_sampling: str = 'uniform'  # random uniform vals for x, y, angle
+    # dataset_sampling: str = 'uniform'  # random uniform vals for x, y, angle
+    dataset_sampling: str = 'predetermined'  # every training step t import measuremed forces through predetermined trajectory
     # dataset_sampling: str = 'specified'  # constant
     # dataset_sampling: str = 'tile'  # constant
     # dataset_sampling = 'almost_flat'  # flat piece w a bit of constant noise, single measurement
     # dataset_sampling = 'flat'  # flat piece, single measurement
     # dataset_sampling = 'stress strain'
 
+    dataset_file: str = r"Predetermined trajectory\Mar23\buckle={}.csv"
+
     # # tip values to buckle shims - 'BEASTAL' for the BEASTAL scheme, else 'one_to_one'
-    update_scheme: str = 'one_to_one'  # direct normalized loss, equal to num of outputs
+    # update_scheme: str = 'one_to_one'  # direct normalized loss, equal to num of outputs
+    update_scheme: str = 'loss_diff'  # difference of x and y loss components
     # update_scheme: str = 'radial_one_to_one'  # evolve tip angle and large radius due to instantaneous loss
     # update_scheme: str = 'BEASTAL'  # update using the BEASTAL scheme (with pseudoinverse of the incidence matrix).
     # update_scheme: str = 'BEASTAL_no_pinv'  # update using (y_j)(Loss_j), no psuedo inv of the incidence matrix.
@@ -182,15 +186,15 @@ class TrainingConfig:
     # update_scheme: str = 'radial_BEASTAL'  # update using BEASTAL (pseudoinverse of 2x2 incidence matrix),
                                              # calculated in total and tip angles
 
-    normalize_step: bool = True
-    # normalize_step: bool = False
+    # normalize_step: bool = True
+    normalize_step: bool = False
 
     if update_scheme == 'radial_BEASTAL' and not normalize_step:
         alpha: float = 1.0  # learning rate
     elif normalize_step:
         alpha = 0.2
     else:
-        alpha = 0.12  # learning rate
+        alpha = 0.2  # learning rate
 
     control_tip: bool = True  # imposed tip position in measurement and update. If False, tip is free
     control_first_edge: bool = True  # if True, fix nodes (0, 1) to zero. if Flase, just the first
