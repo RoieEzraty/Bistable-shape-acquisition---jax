@@ -162,7 +162,7 @@ class TrainingConfig:
         # desired_buckle_pattern: tuple = (-1, 1, 1, 1)  # which shims should be buckled up, initially
 
     # init_buckle_pattern: tuple = (-1, -1, -1, -1, 1)  # which shims should be buckled up, initially
-    init_buckle_pattern: tuple = (1, 1, 1, -1)  # which shims should be buckled up, initially
+    init_buckle_pattern: tuple = (1, -1, -1, 1)  # which shims should be buckled up, initially
     # init_buckle_pattern: tuple = (1, 1, 1, -1)  # which shims should be buckled up, initially
     # init_buckle_pattern: tuple = (1)  # which shims should be buckled up, initially
 

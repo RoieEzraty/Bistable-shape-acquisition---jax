@@ -348,10 +348,7 @@ class SupervisorClass:
         self.loss_MSE_in_t[t] = self.loss_MSE
 
     def calc_update_tip(self, t: int, Strctr: "StructureClass", Variabs: "VariablesClass",
-                        current_tip_pos: Optional[np.ndarray] = None,
-                        prev_tip_update_pos: Optional[np.ndarray] = None,
-                        current_tip_angle: Optional[float] = None,
-                        prev_tip_update_angle: Optional[float] = None,
+                        State_meas: "StateClass", State_des: "StateClass",
                         correct_for_total_angle: Optional[bool] = False,
                         correct_for_coil: Optional[bool] = True,
                         correct_for_cut_origin: Optional[bool] = True) -> None:
@@ -382,8 +379,7 @@ class SupervisorClass:
         fn = dispatch.get(self.update_scheme, None)  # function to calculate delta tip and angle from update_scheme
         if fn is None:
             raise ValueError(f"Unknown update_scheme='{self.update_scheme}'")
-        delta_tip_x, delta_tip_y, delta_angle = fn(t, Strctr, Variabs, current_tip_pos=current_tip_pos,
-                                                   current_tip_angle=current_tip_angle)
+        delta_tip_x, delta_tip_y, delta_angle = fn(t, Strctr, Variabs, State_meas, State_des)
         delta_tip = array([delta_tip_x, delta_tip_y])  # assemble into 3d array
         if not self.supress_prints:
             print(f'delta_tip before corr {delta_tip}')
@@ -415,16 +411,12 @@ class SupervisorClass:
 
         # ------ insert into vectors in time ------
         # insert into tip_pos_update
-        if prev_tip_update_pos is None:
+        if t == 1:
+            prev_tip_update_pos = self.tip_pos_in_t[t, :]
+            prev_tip_update_angle = self.tip_angle_in_t[t]
+        else:
             prev_tip_update_pos = self.tip_pos_update_in_t[t-1, :]
-        if prev_tip_update_angle is None:
             prev_tip_update_angle = self.tip_angle_update_in_t[t-1]
-
-        # Angle update (only if enabled)
-        if prev_tip_update_angle is None and t > 0:
-            prev_tip_update_angle = float(self.tip_angle_update_in_t[t - 1])
-        elif prev_tip_update_angle is None:
-            prev_tip_update_angle = current_tip_angle
 
         if not self.supress_prints:
             print(f'prev_tip_update_pos{prev_tip_update_pos}')
@@ -552,7 +544,7 @@ class SupervisorClass:
             # "radial_halfway_BEASTAL": self._delta_radial_halfway_BEASTAL,
         }
 
-    def _delta_one_to_one(self, t, Strctr, Variabs, current_tip_pos, current_tip_angle):
+    def _delta_one_to_one(self, t, Strctr, Variabs, State_meas, State_des):
         """
         change tip directly from loss, no pseudo inverse, calculations in cartesian coordinates
         dx = +alpha*loss_x*sign(y)
@@ -591,13 +583,14 @@ class SupervisorClass:
         # delta_tip_y = - self.alpha * self.loss[0] * (-sgnlossx * sgnlossy) * (+sgnx) * Variabs.norm_pos  # up to Mar17
         # delta_angle = - self.alpha * self.loss[1] * Variabs.norm_angle * np.pi
         delta_angle = - self.alpha * self.loss[1] * Variabs.norm_angle  # up to Mar17
-        # delta_angle = - self.alpha * self.loss[1] * (-sgnlossx) * Variabs.norm_angle  # 
+        # delta_angle = - self.alpha * self.loss[1] * (-sgnlossx) * Variabs.norm_angle  #
         return delta_tip_x, delta_tip_y, delta_angle
 
-    def _delta_loss_diff(self, t, Strctr, Variabs, current_tip_pos, current_tip_angle):
+    def _delta_loss_diff(self, t, Strctr, Variabs, State_meas, State_des):
         sgnx = np.sign(self.tip_pos_update_in_t[t-1, 0])
         sgny = np.sign(self.tip_pos_update_in_t[t-1, 1])
         sgnLossx = np.sign(self.loss[0])
+        sgnFy_des = np.sign(State_des.Fy)
         if sgnx == 0.0:
             sgnx = 1
         if sgny == 0.0:
@@ -611,7 +604,7 @@ class SupervisorClass:
         delta_angle = - self.alpha * loss_add * Variabs.norm_angle  # up to Mar23
         return delta_tip_x, delta_tip_y, delta_angle
 
-    def _delta_radial_one_to_one(self, t, Strctr, Variabs, current_tip_pos, current_tip_angle):
+    def _delta_radial_one_to_one(self, t, Strctr, Variabs, State_meas, State_des):
         """
         change tip directly from loss, no pseudo inverse, calculations in polar coordinates
         dx = -alpha*loss_Theta*y!
@@ -629,8 +622,8 @@ class SupervisorClass:
         3 floats of change in tip position during update
         """
         if t == 1:
-            prev_total_angle = helpers_builders._get_total_angle(current_tip_pos, 0.0, Strctr.L)
-            tip_update = current_tip_pos
+            prev_total_angle = helpers_builders._get_total_angle(self.tip_pos_in_t[t], 0.0, Strctr.L)
+            tip_update = self.tip_pos_in_t[t]
         else:
             prev_total_angle = self.total_angle_update_in_t[t - 1]
             tip_update = self.tip_pos_update_in_t[t - 1, :]
@@ -638,7 +631,7 @@ class SupervisorClass:
         # loss in direction perpindicular to the total chain angle, measured from end of 2nd link
         loss_total_angle = helpers_builders._get_scalar_in_orthogonal_dir(self.loss, prev_total_angle)
         # loss in direction perp. to just the tip angle
-        loss_tip = helpers_builders._get_scalar_in_orthogonal_dir(self.loss, current_tip_angle)
+        loss_tip = helpers_builders._get_scalar_in_orthogonal_dir(self.loss, self.tip_angle_in_t[t])
 
         delta_tip_x = (- self.alpha * loss_total_angle) * tip_update[1]
         delta_tip_y = (- self.alpha * loss_total_angle) * -tip_update[0]
