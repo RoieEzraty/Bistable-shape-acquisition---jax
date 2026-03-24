@@ -472,7 +472,7 @@ class SupervisorClass:
         before_tip_t = helpers_builders._get_before_tip(self.tip_pos_update_in_t[t, :], self.tip_angle_update_in_t[t],
                                                         Strctr.L, xp=np)
         cond_cut_origin = helpers_builders.swept_last_edge_crosses_first_edge(before_prev=before_tip_tminus1,
-                                                                              tip_prev=self.tip_pos_in_t[t-1, :],
+                                                                              tip_prev=self.tip_pos_update_in_t[t-1, :],
                                                                               before_new=before_tip_t,
                                                                               tip_new=self.tip_pos_update_in_t[t, :],
                                                                               L=Strctr.L, include_endpoints=False)
@@ -590,6 +590,7 @@ class SupervisorClass:
         sgnx = np.sign(self.tip_pos_update_in_t[t-1, 0])
         sgny = np.sign(self.tip_pos_update_in_t[t-1, 1])
         sgnLossx = np.sign(self.loss[0])
+        sgnLossy = np.sign(self.loss[1])
         sgnFy_des = np.sign(State_des.Fy)
         if sgnx == 0.0:
             sgnx = 1
@@ -599,9 +600,9 @@ class SupervisorClass:
         loss_add = self.loss[0] + self.loss[1]
         # delta_tip_x = - self.alpha * loss_diff * sgnLossx * (-sgny) * Variabs.norm_pos  # Mar23
         # delta_tip_y = - self.alpha * loss_diff * sgnLossx * (+sgnx) * Variabs.norm_pos  # Mar23
-        delta_tip_x = - self.alpha * loss_diff * (-sgny) * Variabs.norm_pos  # Mar23
-        delta_tip_y = - self.alpha * loss_diff * (+sgnx) * Variabs.norm_pos  # Mar23
-        delta_angle = - self.alpha * loss_add * Variabs.norm_angle  # up to Mar23
+        delta_tip_x = - self.alpha * loss_diff * sgnLossx * (-sgnLossy) * (-sgny) * Variabs.norm_pos  # Mar23
+        delta_tip_y = - self.alpha * loss_diff * sgnLossx * (-sgnLossy) * (+sgnx) * Variabs.norm_pos  # Mar23
+        delta_angle = - self.alpha * loss_add * sgnLossx * Variabs.norm_angle  # up to Mar23
         return delta_tip_x, delta_tip_y, delta_angle
 
     def _delta_radial_one_to_one(self, t, Strctr, Variabs, State_meas, State_des):
