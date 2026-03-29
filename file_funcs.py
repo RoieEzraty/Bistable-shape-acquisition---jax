@@ -123,7 +123,8 @@ def load_pos_force(path: str, mod: Literal["dict", "arrays"] = "dict",
 # ---------------------------------------------------------------
 # Exports
 # ---------------------------------------------------------------
-def export_predetermined(Sprvsr: "SupervisorClass", State: "StateClass", filename: str = None, order: str = 'fwd') -> None:
+def export_predetermined(Sprvsr: "SupervisorClass", State: "StateClass", filename: Optional[str] = None,
+                         order: Optional[str] = 'fwd', stretch_factor: Optional[float] = None) -> None:
     """
     Export a predetermined trajectory and its simulated forces to a CSV file.
 
@@ -157,6 +158,10 @@ def export_predetermined(Sprvsr: "SupervisorClass", State: "StateClass", filenam
         tip_angle_in_t = np.append(Sprvsr.tip_angle_in_t, Sprvsr.tip_angle_in_t[::-1]) * Sprvsr.convert_angle
         Fx_afo_pos = State.Fx_in_t[:T] * Sprvsr.convert_F
         Fy_afo_pos = State.Fy_in_t[:T] * Sprvsr.convert_F
+
+    # -------- convert positions from [m] to [mm] or vice verse ------
+    if stretch_factor is not None:
+        tip_pos_in_t = tip_pos_in_t * stretch_factor
 
     # ------ pandas dataframe ------
     df = pd.DataFrame({

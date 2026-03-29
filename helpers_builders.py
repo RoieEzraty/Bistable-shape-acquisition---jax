@@ -457,6 +457,21 @@ def swept_last_edge_crosses_first_edge(before_prev: NDArray[np.float_], tip_prev
     return False
 
 
+def _origin_cut_side(before_prev: NDArray[np.float_], tip_prev: NDArray[np.float_],
+                     before_new: NDArray[np.float_], tip_new: NDArray[np.float_]) -> float:
+    """
+    Determine from which side the swept last edge crosses the first edge.
+    Negative -> from below, positive -> from above.
+    """
+    y_mean = 0.25 * (before_prev[1] + tip_prev[1] + before_new[1] + tip_new[1])
+
+    # fallback if almost perfectly symmetric
+    if abs(y_mean) < 1e-12:
+        y_mean = 0.5 * (tip_prev[1] + tip_new[1])
+
+    return float(np.sign(y_mean)) if abs(y_mean) > 1e-12 else 1.0
+
+
 # def avoid_first_edge_crossing_same_step(*, before_prev: NDArray[np.float_], tip_prev: NDArray[np.float_],
 #                                         angle_prev: float, before_raw: NDArray[np.float_],
 #                                         tip_raw: NDArray[np.float_], angle_raw: float, L: float,

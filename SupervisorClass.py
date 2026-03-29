@@ -172,6 +172,12 @@ class SupervisorClass:
 
         self.supress_prints = supress_prints
 
+        # tip restart bookkeeping for origin-cut handling
+        self.origin_cut_restart_count = 0          # consecutive origin-cut restarts
+        self.last_restart_reason = None            # None | "origin_cut" | "coil"
+        self.origin_restart_base_frac = 0.6       # base vertical offset in units of L
+        self.origin_restart_step_frac = 0.6       # extra offset per repeated cut, in units of L
+
     # ---------------------------------------------------------------
     # Imposed mask boolean
     # ---------------------------------------------------------------
@@ -324,7 +330,7 @@ class SupervisorClass:
 
         Parameters:
         -----------
-        Variabs : VariablesClass, using: 
+        Variabs : VariablesClass, using:
                   - norm_force: float typical force calculated in Variabs.init
         t       : {0:self.T} current time step
         Fx      : float force in global x direction
@@ -346,6 +352,19 @@ class SupervisorClass:
         # same for Mean Squared Error
         self.loss_MSE = np.sqrt(np.sum(self.loss**2))
         self.loss_MSE_in_t[t] = self.loss_MSE
+
+    def calc_concavity(self, F_meas_full_traj, F_des_full_traj):
+        """
+        """
+        loss_x_full = F_des_full_traj[:, 0] - F_meas_full_traj[:, 0]
+        middle = int(np.floor(len(loss_x_full)/2))
+        abs_mean_loss = np.mean(np.abs(loss_x_full))
+        if abs_mean_loss < 10**(-6):  # if loss is zero
+            self.concavity = 0.0
+        else:
+            self.concavity = -((loss_x_full[0] + loss_x_full[-1]) -
+                               (loss_x_full[middle-1] + loss_x_full[middle])) / (2 * abs_mean_loss)
+        print('concavity=', self.concavity)
 
     def calc_update_tip(self, t: int, Strctr: "StructureClass", Variabs: "VariablesClass",
                         State_meas: "StateClass", State_des: "StateClass",
@@ -463,19 +482,29 @@ class SupervisorClass:
         #     print(f'tip after clamp to radius={tip_new}')
 
         # ------ correct for coil or cut origin ------
-        # if origin is cut or tip coiled too much, restart Update tip position and angle to current training set sample
         cond_coil = helpers_builders.coil(self.tip_angle_update_in_t[t], revolutions=1.5)
-        # cond_cut_origin = np.linalg.norm(self.tip_pos_update_in_t[t, :]) < Strctr.L
 
-        before_tip_tminus1 = helpers_builders._get_before_tip(self.tip_pos_update_in_t[t-1, :],
-                                                              self.tip_angle_update_in_t[t-1], Strctr.L, xp=np)
-        before_tip_t = helpers_builders._get_before_tip(self.tip_pos_update_in_t[t, :], self.tip_angle_update_in_t[t],
-                                                        Strctr.L, xp=np)
-        cond_cut_origin = helpers_builders.swept_last_edge_crosses_first_edge(before_prev=before_tip_tminus1,
-                                                                              tip_prev=self.tip_pos_update_in_t[t-1, :],
-                                                                              before_new=before_tip_t,
-                                                                              tip_new=self.tip_pos_update_in_t[t, :],
-                                                                              L=Strctr.L, include_endpoints=False)
+        before_tip_tminus1 = helpers_builders._get_before_tip(
+            self.tip_pos_update_in_t[t-1, :],
+            self.tip_angle_update_in_t[t-1],
+            Strctr.L,
+            xp=np,
+        )
+        before_tip_t = helpers_builders._get_before_tip(
+            self.tip_pos_update_in_t[t, :],
+            self.tip_angle_update_in_t[t],
+            Strctr.L,
+            xp=np,
+        )
+
+        cond_cut_origin = helpers_builders.swept_last_edge_crosses_first_edge(
+            before_prev=before_tip_tminus1,
+            tip_prev=self.tip_pos_update_in_t[t-1, :],   # <- important fix
+            before_new=before_tip_t,
+            tip_new=self.tip_pos_update_in_t[t, :],
+            L=Strctr.L,
+            include_endpoints=False,
+        )
 
         self.restart = False
 
@@ -483,32 +512,31 @@ class SupervisorClass:
             print('coiled up too much')
             self.tip_pos_update_in_t[t, :] = self.tip_pos_in_t[t, :]
             self.tip_angle_update_in_t[t] = self.tip_angle_in_t[t]
+            self.total_angle_update_in_t[t] = 0.0
             print(f'setting update tip pos={self.tip_pos_update_in_t[t, :]}, angle={self.tip_angle_update_in_t[t]}')
-            prev_total_angle = 0.0  # reset previous total angle for total angle calculation in time=t
-            self.restart = True  # restart positions in Eq
+            prev_total_angle = 0.0
+            self.restart = True
+            self.last_restart_reason = "coil"
+            self.origin_cut_restart_count = 0
 
         if correct_for_cut_origin and cond_cut_origin:
             print('origin is cut')
-            # tip_safe, angle_safe, corrected = helpers_builders.avoid_first_edge_crossing_same_step(
-            #     before_prev=before_tip_tminus1,
-            #     tip_prev=self.tip_pos_update_in_t[t-1, :],
-            #     angle_prev=self.tip_angle_update_in_t[t-1],
-            #     before_raw=before_tip_t,
-            #     tip_raw=self.tip_pos_update_in_t[t, :],
-            #     angle_raw=self.tip_angle_update_in_t[t],
-            #     L=Strctr.L,
-            #     include_endpoints=False,
-            #     safety=1e-3,
-            # )
-            # delta_tip_slide = helpers_builders.evade_first_edge_by_sliding(tip_prev=self.tip_pos_update_in_t[t-1, :],
-            #                                                                delta_tip_raw=delta_tip,
-            #                                                                L=Strctr.L)
-            # self.tip_pos_update_in_t[t, :] = self.tip_pos_update_in_t[t-1, :] + delta_tip_slide
-            self.tip_pos_update_in_t[t, :] = self.tip_pos_in_t[t, :]
-            self.tip_angle_update_in_t[t] = self.tip_angle_in_t[t]
+
+            side_sign = helpers_builders._origin_cut_side(
+                before_prev=before_tip_tminus1,
+                tip_prev=self.tip_pos_update_in_t[t-1, :],
+                before_new=before_tip_t,
+                tip_new=self.tip_pos_update_in_t[t, :],
+            )
+
+            # from below -> restart slightly below, from above -> slightly above
+            self.origin_cut_restart_count += 1
+
+            self._restart_flat_with_y_bias(t, Strctr, side_sign=side_sign)
+
             print(f'setting update tip pos={self.tip_pos_update_in_t[t, :]}, angle={self.tip_angle_update_in_t[t]}')
-            prev_total_angle = 0.0  # reset previous total angle for total angle calculation in time=t
-            self.restart = True  # restart positions in Eq
+            prev_total_angle = 0.0
+            self.last_restart_reason = "origin_cut"
 
         if not self.supress_prints:
             delta_tip_after_corr = self.tip_pos_update_in_t[t, :] - self.tip_pos_update_in_t[t-1, :]
@@ -525,6 +553,27 @@ class SupervisorClass:
     # ---------------------------------------------------------------
     # Helpers (numpy)
     # ---------------------------------------------------------------
+    def _restart_flat_with_y_bias(self, t: int, Strctr: "StructureClass", side_sign: float) -> None:
+        """
+        Restart from flat, but bias the tip slightly above/below the x-axis.
+        Repeated origin cuts increase the vertical bias magnitude.
+        """
+        mag = (self.origin_restart_base_frac + 
+               max(0, self.origin_cut_restart_count - 1) * self.origin_restart_step_frac) * Strctr.L
+
+        y_restart = float(side_sign) * mag
+        x_restart = float(Strctr.edges * Strctr.L - mag)
+        tip_restart = np.array([x_restart, y_restart], dtype=np.float32)
+        total_angle_restart = helpers_builders._get_total_angle(tip_restart, prev_total_angle=0.0, L=Strctr.L)
+
+        self.tip_pos_update_in_t[t, :] = tip_restart
+        self.tip_angle_update_in_t[t] = total_angle_restart
+        self.total_angle_update_in_t[t] = total_angle_restart
+        self.restart = True
+
+        if not self.supress_prints:
+            print(f"cut origin for the {self.origin_cut_restart_count} time")
+
     def _get_delta_dispatch(self):
         """
         Map update_scheme -> function that computes (delta_tip_x, delta_tip_y, delta_angle).
@@ -537,7 +586,8 @@ class SupervisorClass:
         return {
             "one_to_one": self._delta_one_to_one,
             "radial_one_to_one": self._delta_radial_one_to_one,
-            "loss_diff": self._delta_loss_diff
+            "loss_diff": self._delta_loss_diff,
+            "lossx_concavity": self._lossx_concavity
             # "BEASTAL": self._delta_BEASTAL,
             # "radial_BEASTAL": self._delta_radial_BEASTAL,
             # "BEASTAL_no_pinv": self._delta_BEASTAL_no_pinv,
@@ -600,9 +650,25 @@ class SupervisorClass:
         loss_add = self.loss[0] + self.loss[1]
         # delta_tip_x = - self.alpha * loss_diff * sgnLossx * (-sgny) * Variabs.norm_pos  # Mar23
         # delta_tip_y = - self.alpha * loss_diff * sgnLossx * (+sgnx) * Variabs.norm_pos  # Mar23
-        delta_tip_x = - self.alpha * loss_diff * sgnLossx * (-sgnLossy) * (-sgny) * Variabs.norm_pos  # Mar23
-        delta_tip_y = - self.alpha * loss_diff * sgnLossx * (-sgnLossy) * (+sgnx) * Variabs.norm_pos  # Mar23
-        delta_angle = - self.alpha * loss_add * sgnLossx * Variabs.norm_angle  # up to Mar23
+        delta_tip_x = - self.alpha * loss_diff * sgnLossx * (-sgnLossy) * (-sgny) * Variabs.norm_pos  # Mar24
+        delta_tip_y = - self.alpha * loss_diff * sgnLossx * (-sgnLossy) * (+sgnx) * Variabs.norm_pos  # Mar24
+
+        # delta_angle = - self.alpha * loss_add * Variabs.norm_angle  # Mar23
+        delta_angle = - self.alpha * loss_add * sgnLossx * (-sgnLossy) * Variabs.norm_angle  # Mar24
+        return delta_tip_x, delta_tip_y, delta_angle
+
+    def _lossx_concavity(self, t, Strctr, Variabs, State_meas, State_des):
+        sgnx = np.sign(self.tip_pos_update_in_t[t-1, 0])
+        sgny = np.sign(self.tip_pos_update_in_t[t-1, 1])
+        if sgnx == 0.0:
+            sgnx = 1
+        if sgny == 0.0:
+            sgny = 1
+        sgnLossy = np.sign(self.loss[1])
+        delta_tip_x = - self.alpha * (-self.loss[1]) * (-sgny) * Variabs.norm_pos  # Mar25
+        delta_tip_y = - self.alpha * (-self.loss[1]) * (+sgnx) * Variabs.norm_pos  # Mar25
+
+        delta_angle = - self.alpha * (-self.concavity) * Variabs.norm_angle  # Mar24
         return delta_tip_x, delta_tip_y, delta_angle
 
     def _delta_radial_one_to_one(self, t, Strctr, Variabs, State_meas, State_des):

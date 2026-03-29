@@ -278,7 +278,7 @@ def measure_determined_pos_from_file(Strctr: "StructureClass", Variabs: "Variabl
         tip_pos = P[i, :2] + tip_offset
         tip_angle = float(P[i, 2])
 
-        pos_traj, final_F = one_shot(Strctr, Variabs, Sprvsr, State, CFG, buckle, tip_pos, tip_angle, 
+        pos_traj, final_F = one_shot(Strctr, Variabs, Sprvsr, State, CFG, buckle, tip_pos, tip_angle,
                                      init_pos=prev_final_pos, t=i)
 
         # Record simulated forces (State updated inside one_shot)
@@ -296,7 +296,7 @@ def measure_determined_pos_from_file(Strctr: "StructureClass", Variabs: "Variabl
         tip_pos = P[n-(i+1), :2] + tip_offset
         tip_angle = float(P[n-(i+1), 2])
 
-        pos_traj, final_F = one_shot(Strctr, Variabs, Sprvsr, State, CFG, buckle, tip_pos, tip_angle, 
+        pos_traj, final_F = one_shot(Strctr, Variabs, Sprvsr, State, CFG, buckle, tip_pos, tip_angle,
                                      init_pos=prev_final_pos, t=n+i)
 
         # Record simulated forces (State updated inside one_shot)
@@ -307,7 +307,7 @@ def measure_determined_pos_from_file(Strctr: "StructureClass", Variabs: "Variabl
         prev_final_pos = pos_traj[-1]
 
     # ------ export ------
-    file_funcs.export_predetermined(Sprvsr, State, order='fwd_and_bcwrd')
+    file_funcs.export_predetermined(Sprvsr, State, order='fwd_and_bcwrd', stretch_factor=stretch_factor)
     return State, P, F_x_vec, F_y_vec, F_x_vec_exp, F_y_vec_exp
 
 
