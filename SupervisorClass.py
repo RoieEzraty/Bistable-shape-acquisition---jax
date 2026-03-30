@@ -170,10 +170,15 @@ class SupervisorClass:
         self.convert_angle = CFG.Train.convert_angle
         self.convert_F = CFG.Train.convert_F
 
+        # prints during run if True
         self.supress_prints = supress_prints
+
+        # invert tip changes if training fails
+        self.invert_delta_tip = False
 
         # tip restart bookkeeping for origin-cut handling
         self.origin_cut_restart_count = 0          # consecutive origin-cut restarts
+        self.coil_count = 0  # consecutive restarts due to tip coiling
         self.last_restart_reason = None            # None | "origin_cut" | "coil"
         self.origin_restart_base_frac = 0.6       # base vertical offset in units of L
         self.origin_restart_step_frac = 0.6       # extra offset per repeated cut, in units of L
@@ -364,7 +369,6 @@ class SupervisorClass:
         else:
             self.concavity = -((loss_x_full[0] + loss_x_full[-1]) -
                                (loss_x_full[middle-1] + loss_x_full[middle])) / (2 * abs_mean_loss)
-        print('concavity=', self.concavity)
 
     def calc_update_tip(self, t: int, Strctr: "StructureClass", Variabs: "VariablesClass",
                         State_meas: "StateClass", State_des: "StateClass",
@@ -442,8 +446,12 @@ class SupervisorClass:
             print(f'prev_tip_update_angle{prev_tip_update_angle}')
 
         # add to tip position in time
-        self.tip_pos_update_in_t[t, :] = prev_tip_update_pos + delta_tip
-        self.tip_angle_update_in_t[t] = prev_tip_update_angle + float(delta_angle)
+        if self.invert_delta_tip is False:  # straight addition, no inversion
+            self.tip_pos_update_in_t[t, :] = prev_tip_update_pos + delta_tip
+            self.tip_angle_update_in_t[t] = prev_tip_update_angle + float(delta_angle)
+        else:  # inversion
+            self.tip_pos_update_in_t[t, :] = prev_tip_update_pos + (-delta_tip)
+            self.tip_angle_update_in_t[t] = prev_tip_update_angle + (-float(delta_angle))
 
         # ------ correct for total angle ------
         # add change in tip angle to the total angle from the origin
@@ -484,27 +492,16 @@ class SupervisorClass:
         # ------ correct for coil or cut origin ------
         cond_coil = helpers_builders.coil(self.tip_angle_update_in_t[t], revolutions=1.5)
 
-        before_tip_tminus1 = helpers_builders._get_before_tip(
-            self.tip_pos_update_in_t[t-1, :],
-            self.tip_angle_update_in_t[t-1],
-            Strctr.L,
-            xp=np,
-        )
-        before_tip_t = helpers_builders._get_before_tip(
-            self.tip_pos_update_in_t[t, :],
-            self.tip_angle_update_in_t[t],
-            Strctr.L,
-            xp=np,
-        )
+        before_tip_tminus1 = helpers_builders._get_before_tip(self.tip_pos_update_in_t[t-1, :],
+                                                              self.tip_angle_update_in_t[t-1], Strctr.L, xp=np)
+        before_tip_t = helpers_builders._get_before_tip(self.tip_pos_update_in_t[t, :], self.tip_angle_update_in_t[t],
+                                                        Strctr.L, xp=np)
 
-        cond_cut_origin = helpers_builders.swept_last_edge_crosses_first_edge(
-            before_prev=before_tip_tminus1,
-            tip_prev=self.tip_pos_update_in_t[t-1, :],   # <- important fix
-            before_new=before_tip_t,
-            tip_new=self.tip_pos_update_in_t[t, :],
-            L=Strctr.L,
-            include_endpoints=False,
-        )
+        cond_cut_origin = helpers_builders.swept_last_edge_crosses_first_edge(before_prev=before_tip_tminus1,
+                                                                              tip_prev=self.tip_pos_update_in_t[t-1, :],
+                                                                              before_new=before_tip_t,
+                                                                              tip_new=self.tip_pos_update_in_t[t, :],
+                                                                              L=Strctr.L, include_endpoints=False)
 
         self.restart = False
 
@@ -518,17 +515,17 @@ class SupervisorClass:
             self.restart = True
             self.last_restart_reason = "coil"
             self.origin_cut_restart_count = 0
+            self.coil_count += 1
 
         if correct_for_cut_origin and cond_cut_origin:
             print('origin is cut')
 
-            side_sign = helpers_builders._origin_cut_side(
-                before_prev=before_tip_tminus1,
-                tip_prev=self.tip_pos_update_in_t[t-1, :],
-                before_new=before_tip_t,
-                tip_new=self.tip_pos_update_in_t[t, :],
-            )
+            side_sign = helpers_builders._origin_cut_side(before_prev=before_tip_tminus1,
+                                                          tip_prev=self.tip_pos_update_in_t[t-1, :],
+                                                          before_new=before_tip_t,
+                                                          tip_new=self.tip_pos_update_in_t[t, :])
 
+            self.coil_count = 0
             # from below -> restart slightly below, from above -> slightly above
             self.origin_cut_restart_count += 1
 
@@ -538,6 +535,11 @@ class SupervisorClass:
             prev_total_angle = 0.0
             self.last_restart_reason = "origin_cut"
 
+        # invert sign of tip change if training fails
+        if self.coil_count > 1 or self.origin_cut_restart_count > 1:
+            print(f'inverting tip sign at time t={t}')
+            self.invert_delta_tip = True
+
         if not self.supress_prints:
             delta_tip_after_corr = self.tip_pos_update_in_t[t, :] - self.tip_pos_update_in_t[t-1, :]
             delta_angle_after_corr = self.tip_angle_update_in_t[t] - self.tip_angle_update_in_t[t-1]
@@ -545,8 +547,8 @@ class SupervisorClass:
             print(f'delta_angle after correcting coil and cut origin {delta_angle_after_corr}')
 
         # ------ update total angle -------
-        self.total_angle_update_in_t[t] = helpers_builders._get_total_angle(self.tip_pos_update_in_t[t, :], prev_total_angle,
-                                                                            Strctr.L)
+        self.total_angle_update_in_t[t] = helpers_builders._get_total_angle(self.tip_pos_update_in_t[t, :],
+                                                                            prev_total_angle, Strctr.L)
         if not self.supress_prints:
             print(f'total angle end of calc_update {self.total_angle_update_in_t[t]}')
 
@@ -648,13 +650,13 @@ class SupervisorClass:
             sgny = 1
         loss_diff = self.loss[0] - self.loss[1]
         loss_add = self.loss[0] + self.loss[1]
-        # delta_tip_x = - self.alpha * loss_diff * sgnLossx * (-sgny) * Variabs.norm_pos  # Mar23
-        # delta_tip_y = - self.alpha * loss_diff * sgnLossx * (+sgnx) * Variabs.norm_pos  # Mar23
-        delta_tip_x = - self.alpha * loss_diff * sgnLossx * (-sgnLossy) * (-sgny) * Variabs.norm_pos  # Mar24
-        delta_tip_y = - self.alpha * loss_diff * sgnLossx * (-sgnLossy) * (+sgnx) * Variabs.norm_pos  # Mar24
+        delta_tip_x = - self.alpha * loss_diff * sgnLossx * (-sgny) * Variabs.norm_pos  # Mar23
+        delta_tip_y = - self.alpha * loss_diff * sgnLossx * (+sgnx) * Variabs.norm_pos  # Mar23
+        # delta_tip_x = - self.alpha * loss_diff * sgnLossx * (-sgnLossy) * (-sgny) * Variabs.norm_pos  # Mar24
+        # delta_tip_y = - self.alpha * loss_diff * sgnLossx * (-sgnLossy) * (+sgnx) * Variabs.norm_pos  # Mar24
 
-        # delta_angle = - self.alpha * loss_add * Variabs.norm_angle  # Mar23
-        delta_angle = - self.alpha * loss_add * sgnLossx * (-sgnLossy) * Variabs.norm_angle  # Mar24
+        delta_angle = - self.alpha * loss_add * Variabs.norm_angle  # Mar23
+        # delta_angle = - self.alpha * loss_add * sgnLossx * (-sgnLossy) * Variabs.norm_angle  # Mar24
         return delta_tip_x, delta_tip_y, delta_angle
 
     def _lossx_concavity(self, t, Strctr, Variabs, State_meas, State_des):

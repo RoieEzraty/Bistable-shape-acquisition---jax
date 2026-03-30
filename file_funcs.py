@@ -93,24 +93,26 @@ def load_pos_force(path: str, mod: Literal["dict", "arrays"] = "dict",
 
             for r in reader:
                 # ---- time ----
-                t_val = helpers_builders._get_first_in_file(r, ["t_unix", "time", "t"], name="time", allow_missing=True)
+                t_val, _ = helpers_builders._get_first_in_file(r, ["t_unix", "time", "t"], name="time", allow_missing=True)
                 if t_val is not None:
                     T.append(t_val)
 
                 # ---- position / tip pose ----
-                x = helpers_builders._get_first_in_file(r, ["pos_x", "x_tip", "Px"], name="x")
-                y = helpers_builders._get_first_in_file(r, ["pos_y", "y_tip", "Py"], name="y")
-                theta = helpers_builders._get_first_in_file(r, ["theta", "tip_angle_rad", "tip_angle_deg", "pos_z"], name="theta")
+                x, _ = helpers_builders._get_first_in_file(r, ["pos_x", "x_tip", "Px"], name="x")
+                y, _ = helpers_builders._get_first_in_file(r, ["pos_y", "y_tip", "Py"], name="y")
+                theta, theta_key = helpers_builders._get_first_in_file(r, ["theta", "tip_angle_rad", "tip_angle_deg", "pos_z"], name="theta")
 
                 if stretch_factor is not None:
                     x *= stretch_factor
                     y *= stretch_factor
+                if theta_key != "tip_angle_rad":
+                    theta = np.deg2rad(theta)
 
-                P.append([x, y, np.deg2rad(theta)])
+                P.append([x, y, theta])
 
                 # ---- forces ----
-                Fx = helpers_builders._get_first_in_file(r, ["force_x", "F_x", "Fx"], name="Fx")
-                Fy = helpers_builders._get_first_in_file(r, ["force_y", "F_y", "Fy"], name="Fy")
+                Fx, _ = helpers_builders._get_first_in_file(r, ["force_x", "F_x", "Fx"], name="Fx")
+                Fy, _ = helpers_builders._get_first_in_file(r, ["force_y", "F_y", "Fy"], name="Fy")
 
                 F.append([Fx, Fy])
 

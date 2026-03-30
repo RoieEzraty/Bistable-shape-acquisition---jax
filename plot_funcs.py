@@ -333,7 +333,6 @@ def loss_and_buckle_in_t(tip_pos_in_t, tip_angle_in_t, loss_in_t, buckle_in_t, F
     # dashed at 0
     axes[3].plot(t, np.zeros(end-start), color='k', linestyle='--')
 
-
     # -------- subplot 2: buckle states --------
     H = buckle_in_t.shape[0]
     for i in range(H):
@@ -347,9 +346,10 @@ def loss_and_buckle_in_t(tip_pos_in_t, tip_angle_in_t, loss_in_t, buckle_in_t, F
     plt.tight_layout()
 
     if save_path is not None:
-        plt.savefig(save_path, dpi=300, bbox_inches="tight")
+        fig.savefig(save_path, dpi=300, bbox_inches="tight")
 
     plt.show()
+    plt.close(fig)
 
 
 def plot_tau_afo_theta(torque_func) -> None:

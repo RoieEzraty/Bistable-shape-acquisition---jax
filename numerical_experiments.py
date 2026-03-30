@@ -214,7 +214,8 @@ def compress_to_tip_pos(Strctr: "StructureClass", Variabs: "VariablesClass", Spr
 # ---------------------------------------------------------------
 def measure_determined_pos_from_file(Strctr: "StructureClass", Variabs: "VariablesClass", Sprvsr: "SupervisorClass",
                                      CFG: ExperimentConfig, path: str, buckle: NDArray,
-                                     stretch_factor: Optional[float] = None) -> Tuple[NDArray, NDArray, NDArray]:
+                                     stretch_factor: Optional[float] = None,
+                                     order='fwd_and_bcwrd') -> Tuple[NDArray, NDArray, NDArray]:
     """
     tip performs prescribed trajectory from a CSV file, measure simulated tip forces. Export results to csv,
 
@@ -288,26 +289,27 @@ def measure_determined_pos_from_file(Strctr: "StructureClass", Variabs: "Variabl
         # Warm start next iteration from last equilibrium position of this trajectory
         prev_final_pos = pos_traj[-1]
 
-    # reset pos
-    prev_final_pos = helpers_builders._initiate_pos(Strctr.edges+1, Strctr.L)  # warm-start position for next step
+    if order == 'fwd_and_bcwrd':
+        # reset pos
+        prev_final_pos = helpers_builders._initiate_pos(Strctr.edges+1, Strctr.L)  # warm-start position for next step
 
-    # ------ loop backward ------
-    for i in range(n):
-        tip_pos = P[n-(i+1), :2] + tip_offset
-        tip_angle = float(P[n-(i+1), 2])
+        # ------ loop backward ------
+        for i in range(n):
+            tip_pos = P[n-(i+1), :2] + tip_offset
+            tip_angle = float(P[n-(i+1), 2])
 
-        pos_traj, final_F = one_shot(Strctr, Variabs, Sprvsr, State, CFG, buckle, tip_pos, tip_angle,
-                                     init_pos=prev_final_pos, t=n+i)
+            pos_traj, final_F = one_shot(Strctr, Variabs, Sprvsr, State, CFG, buckle, tip_pos, tip_angle,
+                                         init_pos=prev_final_pos, t=n+i)
 
-        # Record simulated forces (State updated inside one_shot)
-        F_x_vec[n+i] = State.Fx
-        F_y_vec[n+i] = State.Fy
+            # Record simulated forces (State updated inside one_shot)
+            F_x_vec[n+i] = State.Fx
+            F_y_vec[n+i] = State.Fy
 
-        # Warm start next iteration from last equilibrium position of this trajectory
-        prev_final_pos = pos_traj[-1]
+            # Warm start next iteration from last equilibrium position of this trajectory
+            prev_final_pos = pos_traj[-1]
 
     # ------ export ------
-    file_funcs.export_predetermined(Sprvsr, State, order='fwd_and_bcwrd', stretch_factor=stretch_factor)
+    file_funcs.export_predetermined(Sprvsr, State, order=order, stretch_factor=stretch_factor)
     return State, P, F_x_vec, F_y_vec, F_x_vec_exp, F_y_vec_exp
 
 

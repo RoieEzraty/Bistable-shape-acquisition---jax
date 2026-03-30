@@ -970,7 +970,7 @@ def _get_state_free_from_full(state_0: NDArray, fixed_mask: NDArray, imposed_mas
 
 
 def _get_first_in_file(r: Mapping[str, Union[str, float, int, None]], keys: Iterable[str], *, name: str = "",
-                       allow_missing: bool = False) -> Optional[float]:
+                       allow_missing: bool = False) -> Optional[tuple(float, str)]:
     """
     Extract first valid scalar value from a csv, using list of candidate keys. If no valid key is found: returns `None`
 
@@ -987,9 +987,9 @@ def _get_first_in_file(r: Mapping[str, Union[str, float, int, None]], keys: Iter
     """
     for k in keys:
         if k in r and r[k] not in ("", None):
-            return float(r[k])
+            return float(r[k]), k
     if allow_missing:
-        return None
+        return None, None
     raise KeyError(f"None of {keys} found for {name}")
 
 
