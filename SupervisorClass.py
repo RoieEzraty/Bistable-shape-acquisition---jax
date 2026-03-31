@@ -433,25 +433,25 @@ class SupervisorClass:
                 print(f'normalized angle to {float(delta_angle)}')
 
         # ------ insert into vectors in time ------
-        # insert into tip_pos_update
+        # get previous tip positions
         if t == 1:
             prev_tip_update_pos = self.tip_pos_in_t[t, :]
             prev_tip_update_angle = self.tip_angle_in_t[t]
         else:
             prev_tip_update_pos = self.tip_pos_update_in_t[t-1, :]
             prev_tip_update_angle = self.tip_angle_update_in_t[t-1]
-
         if not self.supress_prints:
             print(f'prev_tip_update_pos{prev_tip_update_pos}')
             print(f'prev_tip_update_angle{prev_tip_update_angle}')
 
-        # add to tip position in time
-        if self.invert_delta_tip is False:  # straight addition, no inversion
-            self.tip_pos_update_in_t[t, :] = prev_tip_update_pos + delta_tip
-            self.tip_angle_update_in_t[t] = prev_tip_update_angle + float(delta_angle)
-        else:  # inversion
-            self.tip_pos_update_in_t[t, :] = prev_tip_update_pos + (-delta_tip)
-            self.tip_angle_update_in_t[t] = prev_tip_update_angle + (-float(delta_angle))
+        # invert delta_tip if required
+        if self.invert_delta_tip is True:  # straight addition, no inversion
+            delta_tip = -delta_tip
+            delta_angle = -delta_angle
+
+        # add to tip update in time
+        self.tip_pos_update_in_t[t, :] = prev_tip_update_pos + delta_tip
+        self.tip_angle_update_in_t[t] = prev_tip_update_angle + float(delta_angle)
 
         # ------ correct for total angle ------
         # add change in tip angle to the total angle from the origin
@@ -519,26 +519,26 @@ class SupervisorClass:
 
         if correct_for_cut_origin and cond_cut_origin:
             print('origin is cut')
-
-            side_sign = helpers_builders._origin_cut_side(before_prev=before_tip_tminus1,
-                                                          tip_prev=self.tip_pos_update_in_t[t-1, :],
-                                                          before_new=before_tip_t,
-                                                          tip_new=self.tip_pos_update_in_t[t, :])
-
             self.coil_count = 0
-            # from below -> restart slightly below, from above -> slightly above
             self.origin_cut_restart_count += 1
 
-            self._restart_flat_with_y_bias(t, Strctr, side_sign=side_sign)
+            # # from below -> restart slightly below, from above -> slightly above
+            # side_sign = helpers_builders._origin_cut_side(before_prev=before_tip_tminus1,
+            #                                               tip_prev=self.tip_pos_update_in_t[t-1, :],
+            #                                               before_new=before_tip_t,
+            #                                               tip_new=self.tip_pos_update_in_t[t, :])
 
+            # sign is just from angle direction of tip
+            side_sign = np.sign(delta_angle)
+            self._restart_flat_with_y_bias(t, Strctr, side_sign=side_sign)
             print(f'setting update tip pos={self.tip_pos_update_in_t[t, :]}, angle={self.tip_angle_update_in_t[t]}')
             prev_total_angle = 0.0
             self.last_restart_reason = "origin_cut"
 
-        # invert sign of tip change if training fails
-        if self.coil_count > 1 or self.origin_cut_restart_count > 1:
-            print(f'inverting tip sign at time t={t}')
-            self.invert_delta_tip = True
+        # # invert sign of tip change if training fails
+        # if self.coil_count > 1 or self.origin_cut_restart_count > 1:
+        #     print(f'inverting tip sign at time t={t}')
+        #     self.invert_delta_tip = True
 
         if not self.supress_prints:
             delta_tip_after_corr = self.tip_pos_update_in_t[t, :] - self.tip_pos_update_in_t[t-1, :]

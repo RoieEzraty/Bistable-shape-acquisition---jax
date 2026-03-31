@@ -18,8 +18,8 @@ from config import ExperimentConfig
 # ---------------------------------------------------------------
 # Full training
 # ---------------------------------------------------------------
-def train(Strctr: StructureClass, Variabs: VariablesClass, Sprvsr: SupervisorClass, State_meas: StateClass,
-          State_update: StateClass, State_des: StateClass, CFG: ExperimentConfig):
+def train(Strctr: StructureClass, Variabs: VariablesClass, CFG: ExperimentConfig, init_buckle: NDArray,
+          desired_buckle: NDArray, invert_updates: bool = False):
     """
     Run the closed-loop training loop: measure → compute loss → update tip command → relax → buckle.
 
@@ -47,94 +47,112 @@ def train(Strctr: StructureClass, Variabs: VariablesClass, Sprvsr: SupervisorCla
     pos_in_t_meas   : ndarray, shape (T, nodes, 2) Measurement modality equilibrium node positions over training steps.
     pos_in_t_update : ndarray, shape (T, nodes, 2) Update modality equilibrium node positions over training steps.
     """
-    for t in range(1, Sprvsr.T):    
-        print('t=', t)   
-        
-        ## MEASUREMENT
-        print('===MEASUREMENT===')
-        
-        tip_pos = Sprvsr.tip_pos_in_t[t]
-        tip_angle = Sprvsr.tip_angle_in_t[t] 
-        # tip_pos = np.array([0.24, 0.033769])
-        # tip_angle = 0.54186946
-        # print('tip_pos=', tip_pos)
-        # print('tip_angle=', tip_angle)
-        
-        init_tip_update_pos = np.array([Strctr.L*Strctr.edges, 0.0])
-        init_tip_update_angle = 0.0
-        
-        # --- equilibrium - measured & desired---
-        Eq_meas = EquilibriumClass(Strctr, CFG, buckle_arr=State_meas.buckle_arr, pos_arr=State_meas.pos_arr)  # meausrement
-        Eq_des = EquilibriumClass(Strctr, CFG, buckle_arr=Sprvsr.desired_buckle_arr, pos_arr=State_des.pos_arr)  # desired
-        final_pos, pos_in_t, _, F_theta = Eq_meas.calculate_state(Variabs, Strctr, Sprvsr, init_pos=None,
-                                                                  tip_pos=tip_pos, tip_angle=tip_angle)
-        final_pos_des, pos_in_t_des, _, F_theta_des = Eq_des.calculate_state(Variabs, Strctr, Sprvsr, init_pos=None, 
-                                                                             tip_pos=tip_pos, tip_angle=tip_angle)
-    #     edge_lengths = vmap(lambda e: Strctr._get_edge_length(final_pos, e))(jnp.arange(Strctr.edges))
-    #     print('edge lengths', helpers_builders.numpify(edge_lengths))
+    # extra empty time steps for gif plotting
+    breath_for_gif = 3
 
-        # --- save sizes and plot - measured & desired ---
+    # ------ Initiate Supervisor sizes ------
+    Sprvsr = SupervisorClass(Strctr, CFG, supress_prints=True)
+    if invert_updates:
+        Sprvsr.invert_delta_tip = True
+        print('inverting delta tip')
+    Sprvsr.create_dataset(Strctr, CFG, CFG.Train.dataset_sampling)
+    # tip_pos = np.array([(Strctr.edges-0.01)*Strctr.L, 0])  # 2nd one for PPT presentation Feb2
+    # tip_angle = -0.02  # 2nd one for PPT presentation Feb2
+    # Sprvsr.tip_pos_in_t[1] = tip_pos
+    # Sprvsr.tip_angle_in_t[1] = tip_angle
+
+    # deisred buckle
+    Sprvsr.desired_buckle_arr = desired_buckle
+
+    # ------ state (straight chain, unit spacing => rest lengths = 1) ------
+    State_meas = StateClass(Strctr, Sprvsr, buckle_arr=init_buckle)  # meausrement modality
+    State_update = StateClass(Strctr, Sprvsr, buckle_arr=init_buckle)  # update modality
+    State_des = StateClass(Strctr, Sprvsr, buckle_arr=Sprvsr.desired_buckle_arr)  # desired state
+
+    # ------ initialize, no tip movement yet ------
+    Eq_meas = EquilibriumClass(Strctr, CFG, buckle_arr=State_meas.buckle_arr, pos_arr=State_meas.pos_arr)  # meausrement
+    Eq_des = EquilibriumClass(Strctr, CFG, buckle_arr=Sprvsr.desired_buckle_arr, pos_arr=State_des.pos_arr)  # desired state
+    State_meas._save_data(0, Strctr, State_meas.pos_arr, State_meas.buckle_arr)
+    State_update._save_data(0, Strctr, State_meas.pos_arr, State_update.buckle_arr)
+    State_des._save_data(0, Strctr, State_des.pos_arr, State_des.buckle_arr)
+
+    buckle_bool = False
+    meas_count = 0  # for tile
+
+    for t in range(1, Sprvsr.T - breath_for_gif):
+
+        ## MEASUREMENT
+
+        # ------ equilibrium - measured & desired ------
+        Eq_meas = EquilibriumClass(Strctr, CFG, buckle_arr=State_meas.buckle_arr, pos_arr=None)  # meausrement
+        Eq_des = EquilibriumClass(Strctr, CFG, buckle_arr=Sprvsr.desired_buckle_arr, pos_arr=None)  # desired state
+        if Sprvsr.dataset_sampling == 'predetermined':
+            meas_buckle = file_funcs.correct_buckle_string(np.asarray(State_meas.buckle_arr, dtype=int))
+            des_buckle = file_funcs.correct_buckle_string(np.asarray(State_des.buckle_arr, dtype=int))
+            file_path_meas = Sprvsr.dataset_file.format(meas_buckle)
+            file_path_des = Sprvsr.dataset_file.format(des_buckle)
+            _, P_meas, F_meas_full_traj = file_funcs.load_pos_force(file_path_meas, mod="arrays")
+            _, P_des, F_des_full_traj = file_funcs.load_pos_force(file_path_des, mod="arrays")
+            final_pos = State_meas.pos_arr_in_t[:, :, 0]
+            final_pos_des = State_des.pos_arr_in_t[:, :, 0]
+            F_theta = np.mean(F_meas_full_traj, axis=0)
+            F_theta_des = np.mean(F_des_full_traj, axis=0)
+            Sprvsr.calc_concavity(F_meas_full_traj, F_des_full_traj)
+        else:
+            if t == 1 or buckle_bool or CFG.Train.dataset_sampling != 'specified':
+                final_pos, pos_in_t, _, F_theta = Eq_meas.calculate_state(Variabs, Strctr, Sprvsr,
+                                                                          init_pos=None,
+                                                                          tip_pos=Sprvsr.tip_pos_in_t[t],
+                                                                          tip_angle=Sprvsr.tip_angle_in_t[t])
+                final_pos_des, pos_in_t_des, _, F_theta_des = Eq_des.calculate_state(Variabs, Strctr, Sprvsr,
+                                                                                     init_pos=None,
+                                                                                     tip_pos=Sprvsr.tip_pos_in_t[t],
+                                                                                     tip_angle=Sprvsr.tip_angle_in_t[t])
+
+        meas_count += 1
+
+        # ------ save sizes and plot - measured & desired ------
         State_meas._save_data(t, Strctr, final_pos, State_meas.buckle_arr, F_theta)
         State_des._save_data(t, Strctr, final_pos_des, State_des.buckle_arr, F_theta_des)
-        
+
         Sprvsr.set_desired(final_pos_des, State_des.Fx, State_des.Fy, t)
-        plot_funcs.plot_arm(final_pos, State_meas.buckle_arr, Strctr.L, modality="measurement")
-    #     print('potential F sum', F_theta)
-        plot_funcs.plot_arm(final_pos_des, State_des.buckle_arr, Strctr.L, modality="measurement")
-    #     print('potential F summed desired', F_theta_des)
-    #     # print('Forces', potential_force_in_t[-1])
-    #     print('Fx on tip, measurement', State_meas.Fx)
-    #     print('Fx on tip, desired', State_des.Fx)
-    #     print('Fy on tip, measurement', State_meas.Fy)
-    #     print('Fy on tip, desired', State_des.Fy)
-    # #     plt.plot(potential_force_in_t[-1,:], '.')
-    # #     plt.show()
-        
-        # ------- loss ------- 
+
+        # ------ loss ------
         Sprvsr.calc_loss(Variabs, t, State_meas.Fx, State_meas.Fy)
-        print('desired Fx=', Sprvsr.desired_Fx_in_t[t])
-        print('measured Fx=', State_meas.Fx)
-        print('loss', Sprvsr.loss)
-        
-        # ------- UPDATE ------- 
-        print('===UPDATE===')
-        
-        print('current_tip_pos =', tip_pos)
-        print('current_tip_angle =', tip_angle)
-        if t == 1:
-            Sprvsr.calc_update_tip(t, Strctr, Variabs, State_meas, current_tip_pos=tip_pos, current_tip_angle=tip_angle,
-                                   prev_tip_update_pos=init_tip_update_pos, prev_tip_update_angle=init_tip_update_angle,
-                                   correct_for_total_angle=True)
+
+        ## UPDATE
+        Sprvsr.calc_update_tip(t, Strctr, Variabs, State_meas, State_des, correct_for_total_angle=True,
+                               correct_for_coil=True, correct_for_cut_origin=True)
+
+        # ------ equilibrium -------
+        if Sprvsr.restart:
+            init_update_pos = helpers_builders._initiate_pos(Strctr.edges+1, Strctr.L)
         else:
-            Sprvsr.calc_update_tip(t, Strctr, Variabs, State_meas, current_tip_pos=tip_pos, current_tip_angle=tip_angle,
-                                   correct_for_total_angle=True)
+            init_update_pos = State_update.pos_arr
 
-        # --- equilibrium ---
-        # print('init_pos_update', State_update.pos_arr_in_t[:, :, t-1])
-        final_pos, pos_in_t_update, _, F_theta = Eq_meas.calculate_state(Variabs, Strctr, Sprvsr,
-                                                                         State_update.pos_arr_in_t[:, :, t-1],
-                                                                         tip_pos=Sprvsr.tip_pos_update_in_t[t],
-                                                                         tip_angle=Sprvsr.tip_angle_update_in_t[t])
+        final_pos_update, pos_in_t_update, _, F_theta_udpate = Eq_meas.calculate_state(Variabs, Strctr, Sprvsr,
+                                                                                       init_update_pos,
+                                                                                       tip_pos=Sprvsr.tip_pos_update_in_t[t],
+                                                                                       tip_angle=Sprvsr.tip_angle_update_in_t[t])
 
-        # --- save sizes and plot ---
-        State_update._save_data(t, Strctr, final_pos, State_update.buckle_arr, F_theta)
-        plot_funcs.plot_arm(final_pos, State_update.buckle_arr, Strctr.L, modality="update")
-    #     print('pre buckle', State_update.buckle_arr.T)
-        # print('energy', Eq.energy(Variabs, Strctr, final_pos)[-1])
-        
-        # --- shims buckle ---
-        State_update.buckle(Variabs, Strctr, t, State_measured=State_meas)      
-    #     Eq = EquilibriumClass(Strctr, T_eq, damping, mass, buckle_arr=helpers_builders.jaxify(State_update.buckle_arr),
-    #                           pos_arr=helpers_builders.jaxify(State_update.pos_arr))
-    #     print('post buckle', State_update.buckle_arr.T)
-    #     # print('post buckle update', State_update.buckle_arr)
-    #     # print('energy', Eq.energy(Variabs, Strctr, final_pos)[-1])
-        plot_funcs.plot_arm(final_pos, State_update.buckle_arr, Strctr.L, modality="update")
+        # ------ save sizes and plot ------
+        State_update._save_data(t, Strctr, final_pos_update, State_update.buckle_arr, F_theta)
 
-    pos_in_t_meas = np.moveaxis(State_meas.pos_arr_in_t, 2, 0)
-    pos_in_t_update = np.moveaxis(State_update.pos_arr_in_t, 2, 0)
+        # ------ shims buckle ------
+        buckle_bool = State_update.buckle(Variabs, Strctr, t, State_measured = State_meas)
+        if buckle_bool:
+            meas_count = 0
 
-    return pos_in_t_meas, pos_in_t_update
+        # break if training succeeded
+        if Sprvsr.loss_MSE <= 10**(-6):
+            Sprvsr.loss_MSE = 0.0
+            print('successful training')
+            # add fictitious times just for gif plot
+            for i in range(breath_for_gif):
+                State_update._save_data(t+breath_for_gif+1, Strctr, final_pos_update, State_update.buckle_arr, F_theta)
+            break
+
+    return Sprvsr, State_meas, State_des, State_update, Eq_meas, Eq_des, t
 
 
 # ---------------------------------------------------------------
