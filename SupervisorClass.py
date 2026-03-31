@@ -650,8 +650,8 @@ class SupervisorClass:
             sgny = 1
         loss_diff = self.loss[0] - self.loss[1]
         loss_add = self.loss[0] + self.loss[1]
-        delta_tip_x = - self.alpha * loss_diff * sgnLossx * (-sgny) * Variabs.norm_pos  # Mar23
-        delta_tip_y = - self.alpha * loss_diff * sgnLossx * (+sgnx) * Variabs.norm_pos  # Mar23
+        delta_tip_x = - self.alpha * loss_diff * (-sgny) * Variabs.norm_pos  # Mar23
+        delta_tip_y = - self.alpha * loss_diff * (+sgnx) * Variabs.norm_pos  # Mar23
         # delta_tip_x = - self.alpha * loss_diff * sgnLossx * (-sgnLossy) * (-sgny) * Variabs.norm_pos  # Mar24
         # delta_tip_y = - self.alpha * loss_diff * sgnLossx * (-sgnLossy) * (+sgnx) * Variabs.norm_pos  # Mar24
 

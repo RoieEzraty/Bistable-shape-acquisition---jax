@@ -158,11 +158,11 @@ class TrainingConfig:
         desired_buckle_rand_key: int = 169  # key for seed of random sampling of buckle pattern
     elif desired_buckle_type == 'specified':
         # desired_buckle_pattern: tuple = (1, -1, -1, -1, -1)  # which shims should be buckled up, initially
-        desired_buckle_pattern: tuple = (-1, -1, -1, -1)  # which shims should be buckled up, initially
+        desired_buckle_pattern: tuple = (-1, -1, 1, -1)  # which shims should be buckled up, initially
         # desired_buckle_pattern: tuple = (-1, 1, 1, 1)  # which shims should be buckled up, initially
 
     # init_buckle_pattern: tuple = (-1, -1, -1, -1, 1)  # which shims should be buckled up, initially
-    init_buckle_pattern: tuple = (-1, -1, -1, 1)  # which shims should be buckled up, initially
+    init_buckle_pattern: tuple = (-1, -1, 1, 1)  # which shims should be buckled up, initially
     # init_buckle_pattern: tuple = (1, 1, 1, -1)  # which shims should be buckled up, initially
     # init_buckle_pattern: tuple = (1)  # which shims should be buckled up, initially
 
@@ -196,7 +196,7 @@ class TrainingConfig:
     elif normalize_step:
         alpha = 0.25
     else:
-        alpha = 0.1  # learning rate
+        alpha = 0.2  # learning rate
 
     control_tip: bool = True  # imposed tip position in measurement and update. If False, tip is free
     control_first_edge: bool = True  # if True, fix nodes (0, 1) to zero. if Flase, just the first
