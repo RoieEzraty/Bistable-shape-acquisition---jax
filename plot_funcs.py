@@ -7,6 +7,7 @@ import pandas as pd
 from IPython.display import HTML
 from matplotlib import patches
 from matplotlib.animation import FuncAnimation, PillowWriter  # for GIF export
+from matplotlib.colors import BoundaryNorm
 from scipy.signal import savgol_filter
 
 from typing import List, Union
@@ -401,11 +402,11 @@ def plot_compare_sim_exp_stress_strain(exp_dfs: List[pd.DataFrame], sim_df: pd.D
       with window length 16 and polynomial order 4.
     - Simulation force is plotted as -Fx to match the experimental sign
       convention.
-    """  
+    """
     colors_lst, red, custom_cmap = colors.color_scheme()
-    plt.rcParams["axes.prop_cycle"] = plt.cycler("color", colors_lst) 
+    plt.rcParams["axes.prop_cycle"] = plt.cycler("color", colors_lst)
     font_size = 16
-    
+
     # experimental
     window = 16
     for i, exp_df in enumerate(exp_dfs):
@@ -448,7 +449,7 @@ def plot_success_matrix(M: NDArray):
 
     plt.figure(figsize=(5, 5))
 
-    M_masked = np.ma.masked_where(np.triu(np.ones_like(M), k=0), M)
+    M_masked = np.ma.masked_where(np.eye(M.shape[0], dtype=bool), M)
 
     im = plt.imshow(M_masked, cmap=custom_cmap, vmin=0, vmax=4, origin="lower")
     # im = plt.imshow(M, cmap=custom_cmap, vmin=0, vmax=4, origin="lower")
@@ -467,6 +468,55 @@ def plot_success_matrix(M: NDArray):
                        patches.Patch(facecolor=custom_cmap(im.norm(2)), label="Failure")]
 
     plt.legend(handles=legend_elements, loc="upper left", bbox_to_anchor=(1.02, 1))
+
+    plt.tight_layout()
+    plt.show()
+
+
+def plot_success_matrix_with_pathways(M_corr: np.ndarray, title: str = "Training success matrix (pathways corrected)"):
+    """
+    Codes:
+    0 - direct success
+    1 - missing
+    2 - direct failure
+    3 - indirect success via pathway
+    """
+    # direct success, missing, failure, indirect success
+    colors_lst, _, custom_cmap = colors.color_scheme()
+    # norm = BoundaryNorm([0, 1, 2, 3], custom_cmap.N)
+    # IMPORTANT: order = index value
+    # cmap = ListedColormap([
+    #     colors_lst[1],  # 0 → direct success
+    #     colors_lst[3],  # 1 → missing (even if hidden)
+    #     colors_lst[2],  # 2 → failure
+    #     colors_lst[0],  # 3 → pathway success
+    # ])
+
+    norm = BoundaryNorm([-0, 0.5, 1.5, 2.5, 3], custom_cmap.N)
+
+    M_corr_masked = np.ma.masked_where(np.eye(M_corr.shape[0], dtype=bool), M_corr)
+
+    fig, ax = plt.subplots(figsize=(6.0, 5.2))
+    # ax.imshow(M_corr_masked[::-1, :], cmap=custom_cmap, norm=norm, interpolation="none", aspect="equal")
+    ax.imshow(M_corr_masked[::-1, :], cmap=custom_cmap, norm=norm, interpolation="none", aspect="equal")
+
+    labels = [helpers_builders.index_to_buckle(i) for i in range(16)]
+    ax.set_xticks(np.arange(16))
+    ax.set_xticklabels(labels, rotation=90)
+    ax.set_yticks(np.arange(16))
+    ax.set_yticklabels(labels[::-1])
+
+    ax.set_xlabel("desired buckle")
+    ax.set_ylabel("initial buckle")
+    ax.set_title(title)
+
+    legend_handles = [
+        patches.Patch(facecolor=custom_cmap(norm(0)), label="Direct success"),
+        patches.Patch(facecolor=custom_cmap(norm(3)), label="Pathway success"),
+        # patches.Patch(facecolor=colors_lst[3], label="Missing"),
+        patches.Patch(facecolor=custom_cmap(norm(1)), label="Failure"),
+    ]
+    ax.legend(handles=legend_handles, bbox_to_anchor=(1.02, 1), loc="upper left")
 
     plt.tight_layout()
     plt.show()

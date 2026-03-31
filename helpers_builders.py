@@ -1026,6 +1026,11 @@ def buckle_to_index(arr: NDArray) -> NDArray:
     return bits[0]*8 + bits[1]*4 + bits[2]*2 + bits[3]
 
 
+def index_to_buckle(i: int, n_bits: int = 4) -> str:
+    """0 -> '0000', 15 -> '1111'"""
+    return format(i, f"0{n_bits}b")
+
+
 # # ==========
 # # NOT IN USE
 # # ==========

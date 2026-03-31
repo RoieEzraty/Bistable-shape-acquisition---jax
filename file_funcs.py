@@ -1,14 +1,15 @@
 from __future__ import annotations
 
+import csv
+import copy
+import re
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import jax.numpy as jnp
 from pathlib import Path
 from scipy.signal import savgol_filter
-import csv
-import copy
-import re
+from collections import deque
 
 from typing import Tuple, List
 from numpy import array, zeros
@@ -289,8 +290,20 @@ def export_training_npz(path_npz: str, **arrays):
 # ---------------------------------------------------------------
 # Post-processing files
 # ---------------------------------------------------------------
-def build_success_matrix(folder: Path, old: bool = False) -> NDArray:
+def build_success_matrix(folder: Path, old: bool = False, N: int = 16) -> NDArray:
     """
+    Parameters:
+    -----------
+    folder : path to folder where all the export_training.csv files are at, starting with "loss=..."
+    old    : boolean whether to use old files or not, new are since Mar2026.
+    N      : int, total number of states, 2^hinges
+
+    Returns:
+    --------
+    M : (N, N) success matrix 
+
+    Notes:
+    ------
     0 - successful training
     1 - didn't train on this path
     2 - unsuccessful training
@@ -321,7 +334,141 @@ def build_success_matrix(folder: Path, old: bool = False) -> NDArray:
 
         M[i, j] = 0 if loss < 1e-6 else 2
 
+        # symmetry
+        M[N-1-i, N-1-j] = M[i, j]
+
     return M
+
+
+def shortest_success_paths(M: np.ndarray):
+    """
+    Treat direct successes (M==0) as directed edges.
+    Returns
+    -------
+    reachable : (N,N) bool
+        reachable[i,j] is True iff j can be reached from i through direct-success edges.
+    next_hop : (N,N) int
+        for path reconstruction; -1 means unreachable.
+    dist : (N,N) int
+        number of edges in shortest path; large value if unreachable.
+    """
+    N = M.shape[0]
+    reachable = np.zeros((N, N), dtype=bool)
+    next_hop = -np.ones((N, N), dtype=int)
+    dist = np.full((N, N), np.inf)
+
+    # self reachability
+    for i in range(N):
+        reachable[i, i] = True
+        next_hop[i, i] = i
+        dist[i, i] = 0
+
+    # direct edges = direct successful runs
+    for i in range(N):
+        for j in range(N):
+            if M[i, j] == 0:
+                reachable[i, j] = True
+                next_hop[i, j] = j
+                dist[i, j] = 1
+
+    # Floyd-Warshall for transitive closure + shortest path
+    for k in range(N):
+        for i in range(N):
+            if not reachable[i, k]:
+                continue
+            for j in range(N):
+                if not reachable[k, j]:
+                    continue
+                cand = dist[i, k] + dist[k, j]
+                if cand < dist[i, j]:
+                    reachable[i, j] = True
+                    dist[i, j] = cand
+                    next_hop[i, j] = next_hop[i, k]
+
+    return reachable, next_hop, dist
+
+
+def reconstruct_path(i: int, j: int, next_hop: np.ndarray):
+    """
+    Return path [i, ..., j] as indices.
+    Empty list if unreachable.
+    """
+    if next_hop[i, j] == -1:
+        return []
+
+    path = [i]
+    cur = i
+    while cur != j:
+        cur = next_hop[cur, j]
+        if cur == -1:
+            return []
+        path.append(cur)
+
+        # safety against unexpected loops
+        if len(path) > next_hop.shape[0] + 1:
+            raise RuntimeError("Path reconstruction got stuck in a loop.")
+
+    return path
+
+
+def corrected_success_matrix(M: np.ndarray):
+    """
+    Add a new code:
+    3 - indirect success via one or more successful intermediate states
+    """
+    reachable, next_hop, dist = shortest_success_paths(M)
+    M_corr = M.copy()
+
+    N = M.shape[0]
+    for i in range(N):
+        for j in range(N):
+            if i == j:
+                continue
+
+            # keep direct success as 0
+            if M[i, j] == 0:
+                continue
+
+            # if not direct success, but reachable through a path of length >=2
+            if reachable[i, j] and dist[i, j] >= 2:
+                M_corr[i, j] = 3
+
+    return M_corr, next_hop, dist
+
+
+def print_indirect_paths(M_corr: np.ndarray, next_hop: np.ndarray, only_fixed=None):
+    """
+    Print all newly rescued transitions.
+    only_fixed: optional iterable of (i,j) pairs to print only selected cases.
+    """
+    N = M_corr.shape[0]
+
+    pairs = []
+    for i in range(N):
+        for j in range(N):
+            if M_corr[i, j] == 3:
+                pairs.append((i, j))
+
+    if only_fixed is not None:
+        pairs = [p for p in pairs if p in set(only_fixed)]
+
+    for i, j in pairs:
+        path = reconstruct_path(i, j, next_hop)
+        path_str = " -> ".join(helpers_builders.index_to_buckle(k) for k in path)
+        print(f"{helpers_builders.index_to_buckle(i)} -> {helpers_builders.index_to_buckle(j)}  via  {path_str}")
+
+
+def get_pathway_between_states(init_state: str, desired_state: str, next_hop: np.ndarray):
+    """
+    Example:
+        get_pathway_between_states("0011", "1110", next_hop)
+    """
+    i = int(init_state, 2)
+    j = int(desired_state, 2)
+    path = reconstruct_path(i, j, next_hop)
+    if not path:
+        return None
+    return [helpers_builders.index_to_buckle(k) for k in path]
 
 
 # ---------------------------------------------------------------
