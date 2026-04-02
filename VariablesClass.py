@@ -45,7 +45,7 @@ class VariablesClass(eqx.Module):
     norm_pos        - float. Position normalization scale (used by the supervisor), set to ``Strctr.L``.
     norm_angle      - float. Angle normalization scale, set to π/2.
     norm_torque     - float. Torque normalization scale, k_max * norm_angle for numerical or mean torque for experimental
-    norm_force      - float. Force normalization scale, norm_torque / norm_pos.   
+    norm_force      - float. Force normalization scale, norm_torque / norm_pos. [mN]
     """
 
     # --- configuration / mode ---
@@ -60,8 +60,8 @@ class VariablesClass(eqx.Module):
 
     # Angles / thresholds (per shim). Fixed hyperparams here.
     thetas_ss: Optional[NDArray[np.float_]] = eqx.field(default=None, static=True)  # (H, S)
-    thresh: Optional[NDArray[np.float_]] = eqx.field(default=None, static=True)     # (H, S)  
-    
+    thresh: Optional[NDArray[np.float_]] = eqx.field(default=None, static=True)     # (H, S)
+
     # Stretch stiffness (scalar or (H,S)); fixed hyperparam
     k_stretch: NDArray[np.float_] = eqx.field(static=True)
 
@@ -79,7 +79,7 @@ class VariablesClass(eqx.Module):
         CFG : ExperimentConfig.
         """
         H, S, L = Strctr.hinges, Strctr.shims, Strctr.L
-        
+
         # normalizations for update values
         self.norm_pos = float(L)
         self.norm_angle = float(np.pi)

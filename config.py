@@ -158,11 +158,11 @@ class TrainingConfig:
         desired_buckle_rand_key: int = 169  # key for seed of random sampling of buckle pattern
     elif desired_buckle_type == 'specified':
         # desired_buckle_pattern: tuple = (1, -1, -1, -1, -1)  # which shims should be buckled up, initially
-        desired_buckle_pattern: tuple = (-1, -1, 1, -1)  # which shims should be buckled up, initially
+        desired_buckle_pattern: tuple = (-1, -1, -1, -1)  # which shims should be buckled up, initially
         # desired_buckle_pattern: tuple = (-1, 1, 1, 1)  # which shims should be buckled up, initially
 
     # init_buckle_pattern: tuple = (-1, -1, -1, -1, 1)  # which shims should be buckled up, initially
-    init_buckle_pattern: tuple = (-1, -1, 1, 1)  # which shims should be buckled up, initially
+    init_buckle_pattern: tuple = (1, 1, 1, 1)  # which shims should be buckled up, initially
     # init_buckle_pattern: tuple = (1, 1, 1, -1)  # which shims should be buckled up, initially
     # init_buckle_pattern: tuple = (1)  # which shims should be buckled up, initially
 
@@ -175,7 +175,7 @@ class TrainingConfig:
     # dataset_sampling = 'stress strain'
 
     # dataset_file: str = r"Predetermined trajectory\Mar23\buckle={}.csv"
-    dataset_file: str = r"Predetermined trajectory\Mar30\zeroDeg\buckle={}.csv"
+    dataset_file: str = r"Predetermined trajectory\Mar30\zeroDeg_farther\buckle={}.csv"
 
     # # tip values to buckle shims - 'BEASTAL' for the BEASTAL scheme, else 'one_to_one'
     # update_scheme: str = 'one_to_one'  # direct normalized loss, equal to num of outputs
