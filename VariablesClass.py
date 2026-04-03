@@ -52,18 +52,18 @@ class VariablesClass(eqx.Module):
     k_type: str = eqx.field(static=True)  # "Numerical" | "Experimental"
 
     # if using numerical values for springs
-    k_soft: Optional[NDArray[np.float_]] = eqx.field(default=None, static=True)   # (H, S)
-    k_stiff: Optional[NDArray[np.float_]] = eqx.field(default=None, static=True)  # (H, S)
+    k_soft: Optional[NDArray[np.float64]] = eqx.field(default=None, static=True)   # (H, S)
+    k_stiff: Optional[NDArray[np.float64]] = eqx.field(default=None, static=True)  # (H, S)
 
     # torque is callables when using experimental data
-    torque: Optional[Callable[[NDArray[np.float_]], NDArray[np.float_]]] = eqx.field(default=None, static=True)
+    torque: Optional[Callable[[NDArray[np.float64]], NDArray[np.float64]]] = eqx.field(default=None, static=True)
 
     # Angles / thresholds (per shim). Fixed hyperparams here.
-    thetas_ss: Optional[NDArray[np.float_]] = eqx.field(default=None, static=True)  # (H, S)
-    thresh: Optional[NDArray[np.float_]] = eqx.field(default=None, static=True)     # (H, S)
+    thetas_ss: Optional[NDArray[np.float64]] = eqx.field(default=None, static=True)  # (H, S)
+    thresh: Optional[NDArray[np.float64]] = eqx.field(default=None, static=True)     # (H, S)
 
     # Stretch stiffness (scalar or (H,S)); fixed hyperparam
-    k_stretch: NDArray[np.float_] = eqx.field(static=True)
+    k_stretch: NDArray[np.float64] = eqx.field(static=True)
 
     # Normalizations (fixed)
     norm_pos: float = eqx.field(init=False, static=True)

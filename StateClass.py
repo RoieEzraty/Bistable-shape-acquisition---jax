@@ -239,7 +239,7 @@ class StateClass:
     # ---------------------------------------------------------------
     # Energy helpers (numpy)
     # ---------------------------------------------------------------
-    def stretch_energy(self, Variabs: "VariablesClass", Strctr: "StructureClass") -> NDArray[np.float_]:
+    def stretch_energy(self, Variabs: "VariablesClass", Strctr: "StructureClass") -> NDArray[np.float64]:
         """
         stretch energy per edge
 
@@ -251,7 +251,7 @@ class StateClass:
         rest_lengths = helpers_builders.jax2numpy(Strctr.rest_lengths)  # JAX -> NumPy
         return Variabs.k_stretch * (lengths - rest_lengths) ** 2
 
-    def bending_energy(self, Variabs: "VariablesClass", Strctr: "StructureClass") -> NDArray[np.float_]:
+    def bending_energy(self, Variabs: "VariablesClass", Strctr: "StructureClass") -> NDArray[np.float64]:
         """
         bending energy per hinge
 

@@ -587,7 +587,7 @@ def correct_buckle_string(buckle_arr: NDArray):
 # # ==========
 # # NOT IN USE
 # # ==========
-# def export_stress_strain_sim(Sprvsr: "SupervisorClass", Fx_afo_pos: NDArray[np.float_], Fy_afo_pos: NDArray[np.float_], 
+# def export_stress_strain_sim(Sprvsr: "SupervisorClass", Fx_afo_pos: NDArray[np.float64], Fy_afo_pos: NDArray[np.float64], 
 #                              L: float, buckle_arr: NDArray[np.int], filename: str = None) -> None:
 #     tip_pos_in_t = Sprvsr.tip_pos_in_t * Sprvsr.convert_pos
 #     tip_angle_in_t = Sprvsr.tip_angle_in_t * Sprvsr.convert_angle

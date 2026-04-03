@@ -525,7 +525,7 @@ def plot_success_matrix_with_pathways(M_corr: np.ndarray, title: str = "Training
 # # NOT IN USE
 # # ==========
 
-# def plot_energies(Variabs: "VariablesClass", Strctr: "StructureClass", pos_in_t: np.array[np.float_], Energy_func, ):
+# def plot_energies(Variabs: "VariablesClass", Strctr: "StructureClass", pos_in_t: np.array[np.float64], Energy_func, ):
 #     T = np.shape(pos_in_t)[0]
 #     energies = np.zeros(int(T))
 #     for i in range(int(T)):

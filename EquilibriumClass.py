@@ -550,8 +550,8 @@ class EquilibriumClass(eqx.Module):
     # ODE solve
     # ---------------------------------------------------------------
     def solve_dynamics(self, state_0: jax.Array, Variabs: "VariablesClass", Strctr: "StructureClass",
-                       fixed_mask: jax.Array[bool] = None, fixed_vals: jax.Array[jnp.float_] = None,
-                       imposed_mask: jax.Array[bool] = None, imposed_vals: jax.Array[jnp.float_] = None,
+                       fixed_mask: jax.Array[bool] = None, fixed_vals: jax.Array[jnp.float64] = None,
+                       imposed_mask: jax.Array[bool] = None, imposed_vals: jax.Array[jnp.float64] = None,
                        maxsteps: int = 100):
         """
         Integrate damped EOMs for chain on FREE DOFs, enforcing fixed and imposed DOFs through masks.
@@ -818,7 +818,7 @@ class EquilibriumClass(eqx.Module):
 # # ==========
 
 # def calculate_energy_in_t(self, Variabs: "VariablesClass", Strctr: "StructureClass",
-#                           displacements: NDArray[np.float_]) -> jax.array:
+#                           displacements: NDArray[np.float64]) -> jax.array:
 #     """
 #     Calculate energies pos-mortem
 #     """

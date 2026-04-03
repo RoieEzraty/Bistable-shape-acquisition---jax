@@ -89,7 +89,7 @@ class StructureClass(eqx.Module):
     NN: Optional[NDArray[int]] = eqx.field(default=None, init=False, static=True)
     output_nodes_arr: Optional[NDArray[int]] = eqx.field(default=None, init=False, static=True)
 
-    def __init__(self, CFG: ExperimentConfig, rest_lengths:  Optional[NDArray[np.float_]] = None,
+    def __init__(self, CFG: ExperimentConfig, rest_lengths:  Optional[NDArray[np.float64]] = None,
                  update_scheme: str = 'one_to_one', Nin: Optional[int] = None, Nout: Optional[int] = None,
                  control_first_edge: Optional[bool] = True):
         """
@@ -161,13 +161,13 @@ class StructureClass(eqx.Module):
         starts = jnp.arange(self.hinges, dtype=int)
         return jnp.stack([starts, starts + 1], axis=1)
 
-    def _build_rest_lengths(self, rest_lengths: Optional[jax.Array[jnp.float_]]) -> jax.Array[jnp.float_]:
+    def _build_rest_lengths(self, rest_lengths: Optional[jax.Array[jnp.float64]]) -> jax.Array[jnp.float64]:
         """
         Build the rest-length array for edges.
 
         Parameters
         ----------
-        rest_lengths : jax array, optional, Explicit rest lengths, shape (edges,). 
+        rest_lengths : jax array, optional, Explicit rest lengths, shape (edges,).
 
         Returns
         -------
@@ -209,7 +209,7 @@ class StructureClass(eqx.Module):
         return fixed_mask
 
     # --- numpy builders ---
-    def _build_learning_parameters(self, Nin: int, Nout: int) -> Tuple[NDArray[np.int_], int, int, NDArray[np.int_]]:
+    def _build_learning_parameters(self, Nin: int, Nout: int) -> Tuple[NDArray[np.int32], int, int, NDArray[np.int32]]:
         """
         Build learning-graph incidence matrix and associated sizes.
 
@@ -283,7 +283,7 @@ class StructureClass(eqx.Module):
     # ------------------------------------------------------------------
     # Numpy-based geometry (for convenience / plotting)
     # ------------------------------------------------------------------
-    def all_edge_lengths(self, pos_arr: NDArray[np.float_]) -> NDArray[np.float_]:
+    def all_edge_lengths(self, pos_arr: NDArray[np.float64]) -> NDArray[np.float64]:
         """
         Compute the length of all edges for a given configuration.
 
@@ -298,7 +298,7 @@ class StructureClass(eqx.Module):
         vecs = pos_arr[self.edges_arr[:, 1]] - pos_arr[self.edges_arr[:, 0]]
         return np.linalg.norm(vecs, axis=1)
 
-    def all_hinge_angles(self, pos_arr: NDArray[np.float_]) -> NDArray[np.float_]:
+    def all_hinge_angles(self, pos_arr: NDArray[np.float64]) -> NDArray[np.float64]:
         """
         Compute all hinge angles (numpy version). Between two incident edges, positive is counter-clockwise rotation.
 

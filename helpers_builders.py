@@ -22,7 +22,7 @@ np.set_printoptions(precision=4, suppress=True)
 # ---------------------------------------------------------------
 # Convenience: move from jax to numpy arrays and vice-verse
 # ---------------------------------------------------------------
-def jax2numpy(arr: jax.Array, dtype=float) -> NDArray[np.float_]:
+def jax2numpy(arr: jax.Array, dtype=float) -> NDArray[np.float64]:
     """
     Convert JAX array to NumPy array.
 
@@ -35,7 +35,7 @@ def jax2numpy(arr: jax.Array, dtype=float) -> NDArray[np.float_]:
         return np.asarray(jax.device_get(arr), dtype=int)
 
 
-def numpy2jax(arr: NDArray[np.float_]) -> jnp.ndarray:
+def numpy2jax(arr: NDArray[np.float64]) -> jnp.ndarray:
     """
     Convert a NumPy array (or Python list) back to a JAX array.
 
@@ -47,7 +47,7 @@ def numpy2jax(arr: NDArray[np.float_]) -> jnp.ndarray:
 # ---------------------------------------------------------------
 # Reshapes
 # ---------------------------------------------------------------
-def _reshape_pos_arr_2_state(pos_arr: jnp.Array[jnp.float_]) -> jnp.Array[jnp.float_]:
+def _reshape_pos_arr_2_state(pos_arr: jnp.Array[jnp.float64]) -> jnp.Array[jnp.float64]:
     """
     Flatten position array into a full state vector ([x0, y0, x1, y1, .... x0_dot, y0_dot...]).
 
@@ -68,7 +68,7 @@ def _reshape_pos_arr_2_state(pos_arr: jnp.Array[jnp.float_]) -> jnp.Array[jnp.fl
     return jnp.concatenate([first_half, second_half])
 
 
-def _reshape_state_2_pos_arr(state: jnp.Array[jnp.float_], pos_arr: jnp.Array[jnp.float_]) -> jnp.Array[jnp.float_]:
+def _reshape_state_2_pos_arr(state: jnp.Array[jnp.float64], pos_arr: jnp.Array[jnp.float64]) -> jnp.Array[jnp.float64]:
     """
     Reshape a flattened state vector back into node positions.
 
@@ -231,7 +231,7 @@ def clamp_pos_same_delta(*, before_prev: NDArray, tip_angle_new: float, tip_raw:
     return tip_new, before_new, True
 
 
-def _circle_circle_intersections_np(c0: NDArray[np.float_], r0: float, c1: NDArray[np.float_], r1: float, eps=1e-12):
+def _circle_circle_intersections_np(c0: NDArray[np.float64], r0: float, c1: NDArray[np.float64], r1: float, eps=1e-12):
     """
     Intersection points of two circles in 2D (NumPy version). 
     - Circle 0: center ``c0`` and radius ``r0``
@@ -289,8 +289,8 @@ def _circle_circle_intersections_np(c0: NDArray[np.float_], r0: float, c1: NDArr
     return [p2 + h*perp, p2 - h*perp]
 
 
-def _correct_big_stretch_robot_style(tip_pos: NDArray[np.float_], tip_angle: float, total_angle: float, R_free: float,
-                                     L: float, margin: float = 0.0, supress_prints: bool = True) -> NDArray[np.float_]:
+def _correct_big_stretch_robot_style(tip_pos: NDArray[np.float64], tip_angle: float, total_angle: float, R_free: float,
+                                     L: float, margin: float = 0.0, supress_prints: bool = True) -> NDArray[np.float64]:
     """
     Radially scale down tip position to maximal reachable radius constraint, if tip position exceeds it. 
     Applied to distance between node-before-tip and second node (located at (L, 0)). Scale down is radial towards 2nd node.
@@ -415,8 +415,8 @@ def effective_radius(R: float, L: float, total_angle: float, tip_angle: float, m
     return max(0.0, (R - margin) - shrink)
 
 
-def swept_last_edge_crosses_first_edge(before_prev: NDArray[np.float_], tip_prev: NDArray[np.float_],
-                                       before_new: NDArray[np.float_], tip_new: NDArray[np.float_], L: float,
+def swept_last_edge_crosses_first_edge(before_prev: NDArray[np.float64], tip_prev: NDArray[np.float64],
+                                       before_new: NDArray[np.float64], tip_new: NDArray[np.float64], L: float,
                                        *, eps: float = 1e-12, include_endpoints: bool = False) -> bool:
     """
     Return whether the quadrilateral swept by the last edge crosses the first edge.
@@ -457,8 +457,8 @@ def swept_last_edge_crosses_first_edge(before_prev: NDArray[np.float_], tip_prev
     return False
 
 
-def _origin_cut_side(before_prev: NDArray[np.float_], tip_prev: NDArray[np.float_],
-                     before_new: NDArray[np.float_], tip_new: NDArray[np.float_]) -> float:
+def _origin_cut_side(before_prev: NDArray[np.float64], tip_prev: NDArray[np.float64],
+                     before_new: NDArray[np.float64], tip_new: NDArray[np.float64]) -> float:
     """
     Determine from which side the swept last edge crosses the first edge.
     Negative -> from below, positive -> from above.
@@ -472,11 +472,11 @@ def _origin_cut_side(before_prev: NDArray[np.float_], tip_prev: NDArray[np.float
     return float(np.sign(y_mean)) if abs(y_mean) > 1e-12 else 1.0
 
 
-# def avoid_first_edge_crossing_same_step(*, before_prev: NDArray[np.float_], tip_prev: NDArray[np.float_],
-#                                         angle_prev: float, before_raw: NDArray[np.float_],
-#                                         tip_raw: NDArray[np.float_], angle_raw: float, L: float,
+# def avoid_first_edge_crossing_same_step(*, before_prev: NDArray[np.float64], tip_prev: NDArray[np.float64],
+#                                         angle_prev: float, before_raw: NDArray[np.float64],
+#                                         tip_raw: NDArray[np.float64], angle_raw: float, L: float,
 #                                         include_endpoints: bool = False, eps: float = 1e-12,
-#                                         safety: float = 1e-4, max_iter: int = 40) -> tuple[NDArray[np.float_],
+#                                         safety: float = 1e-4, max_iter: int = 40) -> tuple[NDArray[np.float64],
 #                                                                                            float, bool]:
 #     """
 #     Backtrack along the already proposed update step until the swept last edge
@@ -552,8 +552,8 @@ def _origin_cut_side(before_prev: NDArray[np.float_], tip_prev: NDArray[np.float
 
 #     return tip_new, float(angle_new), True
 
-def evade_first_edge_by_sliding(tip_prev: NDArray[np.float_], delta_tip_raw: NDArray[np.float_],
-                                L: float, *, eps: float = 1e-12) -> NDArray[np.float_]:
+def evade_first_edge_by_sliding(tip_prev: NDArray[np.float64], delta_tip_raw: NDArray[np.float64],
+                                L: float, *, eps: float = 1e-12) -> NDArray[np.float64]:
     """
     Replace an inward motion toward the first edge by a tangential motion
     around the nearest point on the first edge.
@@ -778,14 +778,14 @@ def _point_segment_closest(p: jax.array, a: jax.array, b: jax.array, eps: float 
     return d, d2, t  # d = (p-c)
 
 
-def _on_segment(p: NDArray[np.float_], q: NDArray[np.float_], r: NDArray[np.float_], *, eps: float = 1e-12) -> bool:
+def _on_segment(p: NDArray[np.float64], q: NDArray[np.float64], r: NDArray[np.float64], *, eps: float = 1e-12) -> bool:
     """
     Return whether q lies on the closed segment [p, r].
     """
     return (min(p[0], r[0]) - eps <= q[0] <= max(p[0], r[0]) + eps and min(p[1], r[1]) - eps <= q[1] <= max(p[1], r[1]) + eps)
 
 
-def _segments_intersect(a: NDArray[np.float_], b: NDArray[np.float_], c: NDArray[np.float_], d: NDArray[np.float_],
+def _segments_intersect(a: NDArray[np.float64], b: NDArray[np.float64], c: NDArray[np.float64], d: NDArray[np.float64],
                         *, eps: float = 1e-12, include_endpoints: bool = True) -> bool:
     """
     Return whether the closed segments [a,b] and [c,d] intersect.
@@ -835,7 +835,7 @@ def _segments_intersect(a: NDArray[np.float_], b: NDArray[np.float_], c: NDArray
     return False
 
 
-def _orient(p: NDArray[np.float_], q: NDArray[np.float_], r: NDArray[np.float_]) -> float:
+def _orient(p: NDArray[np.float64], q: NDArray[np.float64], r: NDArray[np.float64]) -> float:
     """
     Signed 2D orientation / cross product of pq with pr.
 
@@ -1062,8 +1062,8 @@ def index_to_buckle(i: int, n_bits: int = 4) -> str:
 #     o1, o2, o3, o4 = o(u, x, p0), o(u, x, p1), o(p0, p1, u), o(p0, p1, x)
 #     return (o1*o2 < -eps) and (o3*o4 < -eps)
 
-# def _correct_big_stretch(tip_pos: NDArray[np.float_], tip_angle: float, total_angle: float, L: float,
-#                          edges: int) -> NDArray[np.float_]:
+# def _correct_big_stretch(tip_pos: NDArray[np.float64], tip_angle: float, total_angle: float, L: float,
+#                          edges: int) -> NDArray[np.float64]:
 #     """
 #     Used previously before _correct_big_stretch_robot_style
 #     Physical upper bound on total chain stretch by correcting tip position to not exceed  maximal possible length.

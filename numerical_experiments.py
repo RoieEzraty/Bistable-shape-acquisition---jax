@@ -393,10 +393,10 @@ def one_shot(Strctr: "StructureClass", Variabs: "VariablesClass", Sprvsr: "Super
 # ---------------------------------------------------------------
 def ADMET_stress_strain(Strctr: StructureClass, Variabs: VariablesClass, Sprvsr: SupervisorClass, State: StateClass, 
                         CFG: ExperimentConfig, tip_angle: float, *, plot_every: int = 1
-                        ) -> Tuple[NDArray[np.float_],   # Fx_afo_pos
-                                   NDArray[np.float_],   # pos_frames  (T, nodes, 2)
-                                   NDArray[np.int_],     # buckle_frames (T, hinges, shims)
-                                   NDArray[np.float_],   # theta_frames (T, hinges)
+                        ) -> Tuple[NDArray[np.float64],   # Fx_afo_pos
+                                   NDArray[np.float64],   # pos_frames  (T, nodes, 2)
+                                   NDArray[np.int32],     # buckle_frames (T, hinges, shims)
+                                   NDArray[np.float64],   # theta_frames (T, hinges)
                                    ]:
     """
     Run a quasi-static stress–strain protocol by sweeping the tip
@@ -440,10 +440,10 @@ def ADMET_stress_strain(Strctr: StructureClass, Variabs: VariablesClass, Sprvsr:
     T_steps: int = Sprvsr.tip_pos_in_t.shape[0]
 
     # Pre-allocate outputs
-    Fx_afo_pos: NDArray[np.float_] = np.zeros(T_steps, dtype=np.float32)
-    pos_frames: NDArray[np.float_] = np.zeros((T_steps, Strctr.nodes, 2), dtype=np.float32)
-    buckle_frames: NDArray[np.int_] = np.zeros((T_steps, Strctr.hinges, Strctr.shims), dtype=np.int32)
-    theta_frames: NDArray[np.float_] = np.zeros((T_steps, Strctr.hinges), dtype=np.float32)
+    Fx_afo_pos: NDArray[np.float64] = np.zeros(T_steps, dtype=np.float32)
+    pos_frames: NDArray[np.float64] = np.zeros((T_steps, Strctr.nodes, 2), dtype=np.float32)
+    buckle_frames: NDArray[np.int32] = np.zeros((T_steps, Strctr.hinges, Strctr.shims), dtype=np.int32)
+    theta_frames: NDArray[np.float64] = np.zeros((T_steps, Strctr.hinges), dtype=np.float32)
 
     t0 = time.time()  # start counting time of computation
     final_pos: Optional[np.ndarray] = None
