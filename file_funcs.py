@@ -290,7 +290,7 @@ def export_training_npz(path_npz: str, **arrays):
 # ---------------------------------------------------------------
 # Post-processing files
 # ---------------------------------------------------------------
-def build_success_matrix(folder: Path, old: bool = False, N: int = 16) -> NDArray:
+def build_success_matrix(folder: Path, old: bool = False, N: int = 16, near_miss: bool = False) -> NDArray:
     """
     Parameters:
     -----------
@@ -314,7 +314,7 @@ def build_success_matrix(folder: Path, old: bool = False, N: int = 16) -> NDArra
         name = file.stem
 
         # extract loss
-        loss = float(re.search(r"final_loss_([0-9.]+)", name).group(1))
+        loss = float(re.search(r"final_loss_(.*?)_init_", name).group(1))
 
         # extract buckle patterns
         if old:  # buckle in the form [-1  1  1 -1]
@@ -332,7 +332,10 @@ def build_success_matrix(folder: Path, old: bool = False, N: int = 16) -> NDArra
         i = helpers_builders.buckle_to_index(init)
         j = helpers_builders.buckle_to_index(desired)
 
-        M[i, j] = 0 if loss < 1e-6 else 2
+        if near_miss:  # account for undesired buckles that produced desired forces as successfull training
+            M[i, j] = 0 if loss < 1e-4 else 2
+        else:
+            M[i, j] = 0 if loss < 1e-6 else 2
 
         # symmetry
         M[N-1-i, N-1-j] = M[i, j]
