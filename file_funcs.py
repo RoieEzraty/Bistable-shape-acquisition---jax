@@ -318,16 +318,16 @@ def build_success_matrix(folder: Path, old: bool = False, N: int = 16, near_miss
 
         # extract buckle patterns
         if old:  # buckle in the form [-1  1  1 -1]
-            init = list(map(int, re.search(r"init_\[(.*?)\]", name).group(1).split()))
-            desired = list(map(int, re.search(r"desired\[(.*?)\]", name).group(1).split()))
-        else:  # buckle in the form 0110
             init_bits = re.search(r"init_([01]+)", name).group(1)
             desired_bits = re.search(r"desired([01]+)", name).group(1)
+        else:  # buckle in the form 0110
+            init_bits = re.search(r"init_([01]+)", name).group(1)
+            desired_bits = re.search(r"desired_([01]+)", name).group(1)
 
-            # buckle_to_index accepts either 0/1 or -1/+1 effectively,
-            # because it maps x == 1 -> 1, else -> 0
-            init = [int(ch) for ch in init_bits]
-            desired = [int(ch) for ch in desired_bits]
+        # buckle_to_index accepts either 0/1 or -1/+1 effectively,
+        # because it maps x == 1 -> 1, else -> 0
+        init = [int(ch) for ch in init_bits]
+        desired = [int(ch) for ch in desired_bits]
 
         i = helpers_builders.buckle_to_index(init)
         j = helpers_builders.buckle_to_index(desired)

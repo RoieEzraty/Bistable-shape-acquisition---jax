@@ -212,7 +212,7 @@ def animate_arm_w_arcs(traj_pos, L, frames=10, interval_ms=30, save_path=None, f
     return fig, anim
 
 
-def loss_and_buckle_in_t(tip_pos_in_t, tip_angle_in_t, loss_in_t, buckle_in_t, F_meas_in_t, F_des_in_t, 
+def loss_and_buckle_in_t(tip_pos_in_t, tip_angle_in_t, loss_in_t, buckle_in_t, F_meas_in_t, F_des_in_t,
                          tip_pos_update_in_t, tip_angle_update_in_t, start=0, end=None,
                          save_path: Optional[str] = None) -> None:
     """
