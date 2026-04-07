@@ -1,22 +1,27 @@
 import jax.numpy as jnp
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.ticker import MaxNLocator
 import pandas as pd
 
 from IPython.display import HTML
 from matplotlib import patches
+from matplotlib.ticker import MaxNLocator
 from matplotlib.animation import FuncAnimation, PillowWriter  # for GIF export
 from matplotlib.colors import BoundaryNorm
 from scipy.signal import savgol_filter
+from matplotlib.patches import Ellipse, FancyArrowPatch
+from collections import Counter
 
-from typing import List, Union
+from typing import Tuple, List, Union
 from numpy.typing import NDArray
 from typing import TYPE_CHECKING, Callable, Union, Optional
 
 import colors, helpers_builders
 
 
+# -------------------------------------------------
+# Plot importants
+# -------------------------------------------------
 def plot_arm(pos_vec: np.ndarray, buckle: np.ndarray, L: float, modality: str, show: bool = True, ax=None) -> None:
     """
     Plot arm configuration together with buckle direction arrows.
@@ -100,116 +105,6 @@ def plot_arm(pos_vec: np.ndarray, buckle: np.ndarray, L: float, modality: str, s
 
     if show and created_ax:
         plt.show()
-
-
-def animate_arm_w_arcs(traj_pos, L, frames=10, interval_ms=30, save_path=None, fps=30, buckle_traj=None):
-    """
-    Animate an N-link arm over time, optionally drawing hinge arcs.
-
-    Parameters
-    ----------
-    traj_pos    - array-like, shape ``(T, N, 2)``, arm positions over time.
-    L           - float, reference link length used for axis scaling.
-    frames      - int, approximate number of displayed frames after temporal downsampling.
-    interval_ms - int, delay between displayed frames in milliseconds.
-    save_path   - Optional[str], if given, save the animation to ``.gif`` or ``.mp4``.
-    fps         - int, output frame rate used when saving.
-    show_inline - bool, if True, return an HTML animation object for notebook display.
-    buckle_traj - Optional[array-like], buckle history with shape ``(T, H, S)`` or static buckle state ``(H, S)``.
-    arc_scale   - float, kept for interface compatibility. Currently unused.
-
-    Returns
-    -------
-    (fig, anim) - tuple[Figure, FuncAnimation], returned when ``show_inline=False``.
-    HTML        - IPython display object, returned when ``show_inline=True``.
-    """
-    colors_lst, _, _ = colors.color_scheme()
-    plt.rcParams["axes.prop_cycle"] = plt.cycler("color", colors_lst)
-
-    pos = np.asarray(traj_pos, dtype=float)  # (T, N, 2)
-    T_all = pos.shape[0]
-    assert pos.ndim == 3 and pos.shape[2] == 2
-
-    if np.shape(buckle_traj)[0] != np.shape(traj_pos)[0]:
-        buckle_traj = np.tile(buckle_traj, np.shape(traj_pos)[0]).T.reshape(np.shape(traj_pos)[0],
-                                                                            np.shape(traj_pos)[1]-2, 1)
-
-    # --- downsample time ---
-    stride = max(1, int(T_all / frames))
-    pos = pos[::stride]
-    T, N, _ = pos.shape
-
-    fig, ax = plt.subplots(figsize=(4, 4))
-    ax.set_aspect("equal", adjustable="box")
-    ax.set_xlim([-L, 8 * L])
-    ax.set_ylim([-4.5 * L, 4.5 * L])
-    ax.set_xlabel("x")
-    ax.set_ylabel("y")
-
-    # Polyline + joints + tip label
-    (line,) = ax.plot([], [], linewidth=4)
-    scat = ax.scatter([], [], s=60, zorder=3)
-    tip_text = ax.text(0, 0, "", va="bottom", ha="left")
-
-    # List to hold current arc patches so we can remove them each frame
-    arc_patches: list[patches.Arc] = []
-
-    def init():
-        line.set_data([], [])
-        scat.set_offsets(np.empty((0, 2)))
-        tip_text.set_text("")
-        # clear any leftover arcs
-        for a in arc_patches:
-            a.remove()
-        arc_patches.clear()
-        return line, scat, tip_text
-
-    def update(ti):
-        pts = pos[ti]  # (N, 2)
-        xs, ys = pts[:, 0], pts[:, 1]
-        line.set_data(xs, ys)
-        scat.set_offsets(pts)
-        tip_text.set_position((xs[-1], ys[-1]))
-        tip_text.set_text(f"Tip ({xs[-1]:.2f}, {ys[-1]:.2f})")
-        ax.set_title(f"t= {ti + 1}/{T}")
-
-        # ---- remove previous arcs ----
-        for a in arc_patches:
-            a.remove()
-        arc_patches.clear()
-
-        # ---- draw hinge arcs if data provided ----
-        if buckle_traj is not None:
-            buckle = np.asarray(buckle_traj[ti])
-
-            diffs = pts[2:, :]-pts[:-2, :]
-            diffs_3d = np.concatenate((diffs, np.zeros((np.shape(diffs)[0], 1))), axis=1)
-            buckle_3d = np.concatenate((np.zeros((np.shape(buckle)[0], 2)), buckle), axis=1)
-            V_3d = np.cross(diffs_3d, buckle_3d)
-            V = V_3d[:, :2]
-            for p, v in zip(pts[1:-1], V):
-                arrow = patches.FancyArrowPatch(p, p + v/np.linalg.norm(v)*0.035, arrowstyle='-|>', mutation_scale=25, 
-                                                linewidth=2, capstyle='round', joinstyle='round')
-                try:
-                    ax.add_patch(arrow)
-                    arc_patches.append(arrow)
-                except:
-                    print('bad animation, lets solve this later')
-
-        return line, scat, tip_text, *arc_patches
-
-    anim = FuncAnimation(fig, update, frames=T, init_func=init, interval=interval_ms, blit=True)
-
-    if save_path is not None:
-        if save_path.lower().endswith(".gif"):
-            anim.save(save_path, writer=PillowWriter(fps=fps))
-        elif save_path.lower().endswith(".mp4"):
-            anim.save(save_path, writer="ffmpeg", fps=fps)
-        else:
-            raise ValueError("save_path must end with .gif or .mp4")
-
-    plt.close(fig)
-    return fig, anim
 
 
 def loss_and_buckle_in_t(tip_pos_in_t, tip_angle_in_t, loss_in_t, buckle_in_t, F_meas_in_t, F_des_in_t,
@@ -353,6 +248,9 @@ def loss_and_buckle_in_t(tip_pos_in_t, tip_angle_in_t, loss_in_t, buckle_in_t, F
     plt.close(fig)
 
 
+# ------------------------------------------------
+# Stress-strains
+# ------------------------------------------------
 def plot_tau_afo_theta(torque_func) -> None:
     """
     Torque-angle response over ``[-pi, pi]``. Used inside main.ipynb for single hinge stress response
@@ -433,6 +331,119 @@ def plot_compare_sim_exp_stress_strain(exp_dfs: List[pd.DataFrame], sim_df: pd.D
     plt.ylabel("Force [N]", fontsize=font_size)
     plt.legend(legend_labels, fontsize=font_size)
     plt.show()
+
+
+# --------------------------------------------------------
+# Animations
+# --------------------------------------------------------
+def animate_arm_w_arcs(traj_pos, L, frames=10, interval_ms=30, save_path=None, fps=30, buckle_traj=None):
+    """
+    Animate an N-link arm over time, optionally drawing hinge arcs.
+
+    Parameters
+    ----------
+    traj_pos    - array-like, shape ``(T, N, 2)``, arm positions over time.
+    L           - float, reference link length used for axis scaling.
+    frames      - int, approximate number of displayed frames after temporal downsampling.
+    interval_ms - int, delay between displayed frames in milliseconds.
+    save_path   - Optional[str], if given, save the animation to ``.gif`` or ``.mp4``.
+    fps         - int, output frame rate used when saving.
+    show_inline - bool, if True, return an HTML animation object for notebook display.
+    buckle_traj - Optional[array-like], buckle history with shape ``(T, H, S)`` or static buckle state ``(H, S)``.
+    arc_scale   - float, kept for interface compatibility. Currently unused.
+
+    Returns
+    -------
+    (fig, anim) - tuple[Figure, FuncAnimation], returned when ``show_inline=False``.
+    HTML        - IPython display object, returned when ``show_inline=True``.
+    """
+    colors_lst, _, _ = colors.color_scheme()
+    plt.rcParams["axes.prop_cycle"] = plt.cycler("color", colors_lst)
+
+    pos = np.asarray(traj_pos, dtype=float)  # (T, N, 2)
+    T_all = pos.shape[0]
+    assert pos.ndim == 3 and pos.shape[2] == 2
+
+    if np.shape(buckle_traj)[0] != np.shape(traj_pos)[0]:
+        buckle_traj = np.tile(buckle_traj, np.shape(traj_pos)[0]).T.reshape(np.shape(traj_pos)[0],
+                                                                            np.shape(traj_pos)[1]-2, 1)
+
+    # --- downsample time ---
+    stride = max(1, int(T_all / frames))
+    pos = pos[::stride]
+    T, N, _ = pos.shape
+
+    fig, ax = plt.subplots(figsize=(4, 4))
+    ax.set_aspect("equal", adjustable="box")
+    ax.set_xlim([-L, 8 * L])
+    ax.set_ylim([-4.5 * L, 4.5 * L])
+    ax.set_xlabel("x")
+    ax.set_ylabel("y")
+
+    # Polyline + joints + tip label
+    (line,) = ax.plot([], [], linewidth=4)
+    scat = ax.scatter([], [], s=60, zorder=3)
+    tip_text = ax.text(0, 0, "", va="bottom", ha="left")
+
+    # List to hold current arc patches so we can remove them each frame
+    arc_patches: list[patches.Arc] = []
+
+    def init():
+        line.set_data([], [])
+        scat.set_offsets(np.empty((0, 2)))
+        tip_text.set_text("")
+        # clear any leftover arcs
+        for a in arc_patches:
+            a.remove()
+        arc_patches.clear()
+        return line, scat, tip_text
+
+    def update(ti):
+        pts = pos[ti]  # (N, 2)
+        xs, ys = pts[:, 0], pts[:, 1]
+        line.set_data(xs, ys)
+        scat.set_offsets(pts)
+        tip_text.set_position((xs[-1], ys[-1]))
+        tip_text.set_text(f"Tip ({xs[-1]:.2f}, {ys[-1]:.2f})")
+        ax.set_title(f"t= {ti + 1}/{T}")
+
+        # ---- remove previous arcs ----
+        for a in arc_patches:
+            a.remove()
+        arc_patches.clear()
+
+        # ---- draw hinge arcs if data provided ----
+        if buckle_traj is not None:
+            buckle = np.asarray(buckle_traj[ti])
+
+            diffs = pts[2:, :]-pts[:-2, :]
+            diffs_3d = np.concatenate((diffs, np.zeros((np.shape(diffs)[0], 1))), axis=1)
+            buckle_3d = np.concatenate((np.zeros((np.shape(buckle)[0], 2)), buckle), axis=1)
+            V_3d = np.cross(diffs_3d, buckle_3d)
+            V = V_3d[:, :2]
+            for p, v in zip(pts[1:-1], V):
+                arrow = patches.FancyArrowPatch(p, p + v/np.linalg.norm(v)*0.035, arrowstyle='-|>', mutation_scale=25, 
+                                                linewidth=2, capstyle='round', joinstyle='round')
+                try:
+                    ax.add_patch(arrow)
+                    arc_patches.append(arrow)
+                except:
+                    print('bad animation, lets solve this later')
+
+        return line, scat, tip_text, *arc_patches
+
+    anim = FuncAnimation(fig, update, frames=T, init_func=init, interval=interval_ms, blit=True)
+
+    if save_path is not None:
+        if save_path.lower().endswith(".gif"):
+            anim.save(save_path, writer=PillowWriter(fps=fps))
+        elif save_path.lower().endswith(".mp4"):
+            anim.save(save_path, writer="ffmpeg", fps=fps)
+        else:
+            raise ValueError("save_path must end with .gif or .mp4")
+
+    plt.close(fig)
+    return fig, anim
 
 
 # ----------------------------
@@ -520,6 +531,88 @@ def plot_success_matrix_with_pathways(M_corr: np.ndarray, title: str = "Training
 
     plt.tight_layout()
     plt.show()
+
+
+def plot_transition_diagram(transitions: Counter, n_bits: int, *, only_reached_nodes: bool = False,
+                            show_edge_labels: bool = False, scale_linewidth: bool = True,
+                            figsize: Tuple[float, float] = (12, 8), title: str = "Achieved buckle transitions"):
+    colors_lst, _, _ = colors.color_scheme()
+    node_edge = "black"
+    node_face = "white"
+    arrow_color = colors_lst[0]
+    text_color = "black"
+
+    pos = helpers_builders.state_positions(4)
+
+    if only_reached_nodes:
+        used_nodes = set()
+        for a, b in transitions:
+            used_nodes.add(a)
+            used_nodes.add(b)
+    else:
+        used_nodes = set(helpers_builders.all_binary_states(n_bits))
+
+    fig, ax = plt.subplots(figsize=figsize)
+
+    # ---- nodes ----
+    if only_reached_nodes:
+        used_nodes = set()
+        for a, b in transitions:
+            used_nodes.add(a)
+            used_nodes.add(b)
+    else:
+        used_nodes = set(helpers_builders.all_binary_states(4))
+
+    for s in helpers_builders.all_binary_states(4):
+        if s not in used_nodes:
+            continue
+        x, y = pos[s]
+        node = Ellipse((x, y), width=0.1, height=0.08,
+                       facecolor=node_face, edgecolor=node_edge, lw=2.5)
+        ax.add_patch(node)
+        ax.text(x, y, s, ha="center", va="center", fontsize=18, color=text_color)
+
+    # ---- edges ----
+    if transitions:
+        max_count = max(transitions.values())
+    else:
+        max_count = 1
+
+    for (src, dst), count in transitions.items():
+        source = helpers_builders.index_to_buckle(src)
+        dist = helpers_builders.index_to_buckle(dst)
+        x1, y1 = pos[source]
+        x2, y2 = pos[dist]
+
+        # slight curvature if reverse edge also exists
+        rev_exists = (dst, src) in transitions
+        rad = 0.18 if rev_exists and src < dst else (-0.18 if rev_exists else 0.0)
+
+        lw = 1.5 + 3.0 * count / max_count if scale_linewidth else 2.0
+
+        arrow = FancyArrowPatch(
+            (x1, y1), (x2, y2),
+            arrowstyle="-|>",
+            mutation_scale=16,
+            lw=lw,
+            color=arrow_color,
+            shrinkA=28,
+            shrinkB=28,
+            connectionstyle=f"arc3,rad={rad}",
+        )
+        ax.add_patch(arrow)
+
+        if show_edge_labels:
+            xm = 0.5 * (x1 + x2)
+            ym = 0.5 * (y1 + y2)
+            ax.text(xm, ym + 0.12, str(count), fontsize=10, ha="center", va="center")
+
+    ax.set_aspect("equal")
+    ax.axis("off")
+    ax.set_title(title, fontsize=18)
+    plt.tight_layout()
+    plt.show()
+
 
 # # ==========
 # # NOT IN USE

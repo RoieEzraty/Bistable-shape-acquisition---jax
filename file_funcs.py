@@ -475,6 +475,35 @@ def get_pathway_between_states(init_state: str, desired_state: str, next_hop: np
 
 
 # ---------------------------------------------------------------
+# Transition diagram
+# ---------------------------------------------------------------
+def buckle_transitions(folder: str | Path, only_reached_nodes: bool = False):
+    folder = Path(folder)
+    transitions, per_file_transitions = helpers_builders.build_transition_counts(folder)
+
+    # infer number of hinges from first observed state
+    observed_states = set()
+    for a, b in transitions:
+        observed_states.add(a)
+        observed_states.add(b)
+
+    if not observed_states:
+        raise ValueError("No buckle changes were found in the files")
+
+    n_bits = len(observed_states)
+
+    print(f"Found {len(per_file_transitions)} files")
+    print(f"Found {sum(transitions.values())} total transitions")
+    print(f"Found {len(transitions)} unique directed transitions\n")
+
+    print("Top transitions:")
+    for (a, b), c in transitions.most_common(20):
+        print(f"{helpers_builders.index_to_buckle(a)} -> {helpers_builders.index_to_buckle(b)}: {c}")
+
+    return transitions, per_file_transitions, n_bits
+
+
+# ---------------------------------------------------------------
 # Build functions from file
 # ---------------------------------------------------------------
 def build_torque_and_k_from_file(path: str, *, contact: bool = True, angles_in_degrees: bool = True, 

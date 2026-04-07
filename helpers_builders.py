@@ -4,8 +4,12 @@ import numpy as np
 import copy
 import jax
 import jax.numpy as jnp
-from jax import grad, jit, vmap
+import re
+import pandas as pd
 
+from pathlib import Path
+from collections import Counter
+from jax import grad, jit, vmap
 from typing import Tuple, List
 from numpy import array, zeros
 from numpy.typing import NDArray
@@ -472,86 +476,6 @@ def _origin_cut_side(before_prev: NDArray[np.float64], tip_prev: NDArray[np.floa
     return float(np.sign(y_mean)) if abs(y_mean) > 1e-12 else 1.0
 
 
-# def avoid_first_edge_crossing_same_step(*, before_prev: NDArray[np.float64], tip_prev: NDArray[np.float64],
-#                                         angle_prev: float, before_raw: NDArray[np.float64],
-#                                         tip_raw: NDArray[np.float64], angle_raw: float, L: float,
-#                                         include_endpoints: bool = False, eps: float = 1e-12,
-#                                         safety: float = 1e-4, max_iter: int = 40) -> tuple[NDArray[np.float64],
-#                                                                                            float, bool]:
-#     """
-#     Backtrack along the already proposed update step until the swept last edge
-#     no longer crosses the first edge.
-
-#     The returned point lies on the segment from (tip_prev, angle_prev) to
-#     (tip_raw, angle_raw), so the direction/sign of the original update is preserved.
-
-#     Parameters
-#     ----------
-#     before_prev, tip_prev
-#         Previous accepted last-edge endpoints.
-#     angle_prev
-#         Previous accepted tip angle [rad].
-#     before_raw, tip_raw
-#         Proposed new last-edge endpoints before origin-cross correction.
-#     angle_raw
-#         Proposed new tip angle [rad].
-#     L
-#         Edge length.
-#     include_endpoints
-#         Passed to `swept_last_edge_crosses_first_edge`.
-#     eps
-#         Numerical tolerance.
-#     safety
-#         Fractional backoff from the crossing boundary.
-#     max_iter
-#         Number of bisection iterations.
-
-#     Returns
-#     -------
-#     tip_new
-#         Safe corrected tip position.
-#     angle_new
-#         Safe corrected tip angle.
-#     corrected
-#         True iff backtracking was applied.
-#     """
-#     before_prev = np.asarray(before_prev, float).reshape(2,)
-#     tip_prev = np.asarray(tip_prev, float).reshape(2,)
-#     before_raw = np.asarray(before_raw, float).reshape(2,)
-#     tip_raw = np.asarray(tip_raw, float).reshape(2,)
-
-#     crosses_raw = swept_last_edge_crosses_first_edge(before_prev=before_prev, tip_prev=tip_prev, before_new=before_raw,
-#                                                      tip_new=tip_raw, L=L, include_endpoints=include_endpoints,
-#                                                      eps=eps)
-#     if not crosses_raw:
-#         return tip_raw, float(angle_raw), False
-
-#     lo = 0.0
-#     hi = 1.0
-
-#     for _ in range(max_iter):
-#         mid = 0.5 * (lo + hi)
-
-#         tip_mid = tip_prev + mid * (tip_raw - tip_prev)
-#         angle_mid = angle_prev + mid * (angle_raw - angle_prev)
-#         before_mid = tip_mid - L * np.array([np.cos(angle_mid), np.sin(angle_mid)], dtype=float)
-
-#         crosses_mid = swept_last_edge_crosses_first_edge(before_prev=before_prev, tip_prev=tip_prev,
-#                                                          before_new=before_mid, tip_new=tip_mid,
-#                                                          L=L, include_endpoints=include_endpoints, eps=eps)
-
-#         if crosses_mid:
-#             hi = mid
-#         else:
-#             lo = mid
-
-#     s = max(0.0, lo - safety)
-
-#     tip_new = tip_prev + s * (tip_raw - tip_prev)
-#     angle_new = angle_prev + s * (angle_raw - angle_prev)
-
-#     return tip_new, float(angle_new), True
-
 def evade_first_edge_by_sliding(tip_prev: NDArray[np.float64], delta_tip_raw: NDArray[np.float64],
                                 L: float, *, eps: float = 1e-12) -> NDArray[np.float64]:
     """
@@ -671,10 +595,10 @@ def _get_before_tip(tip_pos: NDArray, tip_angle: float, L: float, *, xp=jnp, dty
     return tip_pos - xp.array([dx, dy], dtype=dtype)
 
 
-def _get_total_angle(tip_pos: np.array, prev_total_angle: float, L: float) -> np.array:
+def _get_total_angle(tip_pos: NDArray, prev_total_angle: float, L: float) -> NDArray:
     """
     angle between tip and last fixed node, CCW
-    
+
     Parameters
     ----------
     tip_pos          - (2,) array, Current tip position.
@@ -709,7 +633,7 @@ def _get_total_angle(tip_pos: np.array, prev_total_angle: float, L: float) -> np
     return total_angle
 
 
-def _get_tip_angle(pos_arr: np.array) -> np.array:
+def _get_tip_angle(pos_arr: NDArray) -> NDArray:
     """
     angle of edge connected to tip relative to horizontal, CCW
 
@@ -1012,6 +936,110 @@ def _get_scalar_in_orthogonal_dir(vec: NDArray[np.floating], angle: float) -> fl
     scalar : float, Scalar projection of `vec` onto the orthogonal direction.
     """
     return -vec[0]*np.sin(angle) + vec[1]*np.cos(angle)
+
+
+# -------------------------------------------------------------------
+# Buckle helpers
+# -------------------------------------------------------------------
+# def sort_buckle_columns(cols: list[str]) -> list[str]:
+#     """
+#     Sort columns like:
+#         buckle_h0_s0, buckle_h1_s0, ...
+#     """
+#     pat = re.compile(r"buckle_h(\d+)_s(\d+)")
+#     parsed = []
+#     for c in cols:
+#         m = pat.fullmatch(c)
+#         if m is not None:
+#             h, s = map(int, m.groups())
+#             parsed.append((h, s, c))
+#     parsed.sort()
+#     return [c for _, _, c in parsed]
+
+
+def infer_buckle_columns(df: pd.DataFrame) -> list[str]:
+    buckle_cols = [c for c in df.columns if re.fullmatch(r"buckle_h\d+_s\d+", c)]
+    # buckle_cols = sort_buckle_columns(buckle_cols)
+    if not buckle_cols:
+        raise ValueError("No buckle_h*_s* columns found in CSV")
+    return buckle_cols
+
+
+def build_transition_counts(folder: Path):
+    """
+    Go over all final_loss_*.csv files and extract directed buckle transitions.
+
+    Returns
+    -------
+    transitions : Counter[(src, dst)] = number of times observed across all files
+    per_file_transitions : dict[file_name, list[(src, dst)]]
+    """
+    transitions = Counter()
+    per_file_transitions = {}
+
+    files = sorted(folder.glob("final_loss_*.csv"))
+    if not files:
+        raise FileNotFoundError(f"No files matching 'final_loss_*.csv' in {folder}")
+
+    for file in files:
+        df = pd.read_csv(file)
+        buckle_cols = infer_buckle_columns(df)
+
+        states = []
+        for _, row in df[buckle_cols].iterrows():
+            state = buckle_to_index(row.to_numpy())
+            states.append(state)
+
+        # keep only actual changes
+        edges_this_file = []
+        for a, b in zip(states[:-1], states[1:]):
+            if a != b:
+                edges_this_file.append((a, b))
+                transitions[(a, b)] += 1
+
+        per_file_transitions[file.name] = edges_this_file
+
+    return transitions, per_file_transitions
+
+
+def all_binary_states(n_bits: int) -> list[str]:
+    return [format(i, f"0{n_bits}b") for i in range(2**n_bits)]
+
+
+def state_positions(n_bits: int, dx: float = 0.175, dy: float = 0.22,
+                    x_margin: float = 0.065, y_margin: float = 0.05) -> dict[str, tuple[float, float]]:
+    """
+    Arrange states in layers by Hamming weight:
+    0000 at top, 1111 at bottom.
+    """
+    # for k in range(n_bits + 1):
+    #     layer = [s for s in all_binary_states(n_bits) if s.count("1") == k]
+    #     layer.sort()
+    #     x0 = -dx * (len(layer) - 1) / 2
+    #     y = -dy * k
+    #     for i, s in enumerate(layer):
+    #         pos[s] = (x0 + i * dx, y)
+
+    layers = []
+    max_in_layer = 0
+
+    for k in range(n_bits + 1):
+        layer = [s for s in all_binary_states(n_bits) if s.count("1") == k]
+        layer.sort()
+        layers.append(layer)
+        max_in_layer = max(max_in_layer, len(layer))
+
+    # center every layer relative to the widest layer
+    x_center = x_margin + dx * (max_in_layer - 1) / 2
+
+    pos = {}
+    for k, layer in enumerate(layers):
+        width = dx * (len(layer) - 1) / 2
+        x0 = x_center - width
+        y = y_margin + dy * k
+        for i, s in enumerate(layer):
+            pos[s] = (x0 + i * dx, y)
+    return pos
 
 
 # ---------------------------------------------------------------
