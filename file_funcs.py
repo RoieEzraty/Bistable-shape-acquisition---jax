@@ -290,6 +290,10 @@ def export_training_npz(path_npz: str, **arrays):
 # ---------------------------------------------------------------
 # Post-processing files
 # ---------------------------------------------------------------
+def loss_from_filename(file: Path):
+    return float(re.search(r"final_loss_(.*?)_init_", file.stem).group(1))
+
+
 def build_success_matrix(folder: Path, old: bool = False, N: int = 16, near_miss: bool = False) -> NDArray:
     """
     Parameters:
@@ -300,7 +304,7 @@ def build_success_matrix(folder: Path, old: bool = False, N: int = 16, near_miss
 
     Returns:
     --------
-    M : (N, N) success matrix 
+    M : (N, N) success matrix
 
     Notes:
     ------
@@ -311,10 +315,10 @@ def build_success_matrix(folder: Path, old: bool = False, N: int = 16, near_miss
     M = np.zeros((16, 16)) + 1.0
 
     for file in folder.glob("final_loss_*.csv"):
-        name = file.stem
-
         # extract loss
-        loss = float(re.search(r"final_loss_(.*?)_init_", name).group(1))
+        loss = loss_from_filename(file)
+
+        name = file.stem
 
         # extract buckle patterns
         if old:  # buckle in the form [-1  1  1 -1]
@@ -477,20 +481,14 @@ def get_pathway_between_states(init_state: str, desired_state: str, next_hop: np
 # ---------------------------------------------------------------
 # Transition diagram
 # ---------------------------------------------------------------
-def buckle_transitions(folder: str | Path, only_reached_nodes: bool = False):
+def buckle_transitions(folder: str | Path, only_init_and_final_buckles: bool = False):
     folder = Path(folder)
-    transitions, per_file_transitions = helpers_builders.build_transition_counts(folder)
+    transitions, per_file_transitions, per_file_loss, edge_zero_loss_count = helpers_builders.build_transition_counts(folder,
+                                                                                                                      only_init_and_final_buckles=only_init_and_final_buckles)
 
-    # infer number of hinges from first observed state
-    observed_states = set()
-    for a, b in transitions:
-        observed_states.add(a)
-        observed_states.add(b)
-
-    if not observed_states:
-        raise ValueError("No buckle changes were found in the files")
-
-    n_bits = len(observed_states)
+    observed_edges = set(transitions.keys())
+    missing_edges = [edge for edge in helpers_builders.all_possible_transitions(4) if
+                     edge not in observed_edges and helpers_builders.hamming_distance_int(*edge) == 1]
 
     print(f"Found {len(per_file_transitions)} files")
     print(f"Found {sum(transitions.values())} total transitions")
@@ -500,7 +498,18 @@ def buckle_transitions(folder: str | Path, only_reached_nodes: bool = False):
     for (a, b), c in transitions.most_common(20):
         print(f"{helpers_builders.index_to_buckle(a)} -> {helpers_builders.index_to_buckle(b)}: {c}")
 
-    return transitions, per_file_transitions, n_bits
+    # # infer number of hinges from first observed state
+    # observed_states = set()
+    # for a, b in transitions:
+    #     observed_states.add(a)
+    #     observed_states.add(b)
+
+    # if not observed_states:
+    #     raise ValueError("No buckle changes were found in the files")
+
+    # n_bits = len(observed_states)
+
+    return transitions, per_file_transitions, per_file_loss, edge_zero_loss_count, missing_edges
 
 
 # ---------------------------------------------------------------

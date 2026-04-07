@@ -533,22 +533,17 @@ def plot_success_matrix_with_pathways(M_corr: np.ndarray, title: str = "Training
     plt.show()
 
 
-def plot_transition_diagram(transitions: Counter, n_bits: int, *, only_reached_nodes: bool = False):
+def plot_transition_diagram(transitions: Counter, *, only_reached_nodes: bool = False, edge_zero_loss_count=None,
+                            missing_edges=None):
     colors_lst, _, _ = colors.color_scheme()
     node_edge = "black"
     node_face = "white"
     arrow_color = colors_lst[0]
     text_color = "black"
 
-    pos = helpers_builders.state_positions(4)
+    H = max(max(i, j) for (i, j) in transitions.keys()).bit_length()
 
-    if only_reached_nodes:
-        used_nodes = set()
-        for a, b in transitions:
-            used_nodes.add(a)
-            used_nodes.add(b)
-    else:
-        used_nodes = set(helpers_builders.all_binary_states(n_bits))
+    pos = helpers_builders.state_positions(H)
 
     fig, ax = plt.subplots(figsize=(12, 8))
 
@@ -556,17 +551,16 @@ def plot_transition_diagram(transitions: Counter, n_bits: int, *, only_reached_n
     if only_reached_nodes:
         used_nodes = set()
         for a, b in transitions:
-            used_nodes.add(a)
-            used_nodes.add(b)
+            used_nodes.add(helpers_builders.index_to_buckle(a))
+            used_nodes.add(helpers_builders.index_to_buckle(b))
     else:
-        used_nodes = set(helpers_builders.all_binary_states(4))
+        used_nodes = set(helpers_builders.all_binary_states(H))
 
-    for s in helpers_builders.all_binary_states(4):
+    for s in helpers_builders.all_binary_states(H):
         if s not in used_nodes:
             continue
         x, y = pos[s]
-        node = Ellipse((x, y), width=0.1, height=0.08,
-                       facecolor=node_face, edgecolor=node_edge, lw=2.5)
+        node = Ellipse((x, y), width=0.1, height=0.08, facecolor=node_face, edgecolor=node_edge, lw=2.5)
         ax.add_patch(node)
         ax.text(x, y, s, ha="center", va="center", fontsize=18, color=text_color)
 
@@ -576,34 +570,79 @@ def plot_transition_diagram(transitions: Counter, n_bits: int, *, only_reached_n
     else:
         max_count = 1
 
+    if edge_zero_loss_count is None:
+        edge_zero_loss_count = Counter()
+
+    # for (src, dst), count in transitions.items():
+    #     source = helpers_builders.index_to_buckle(src)
+    #     dist = helpers_builders.index_to_buckle(dst)
+    #     x1, y1 = pos[source]
+    #     x2, y2 = pos[dist]
+
+    #     # slight curvature if reverse edge also exists
+    #     rev_exists = (dst, src) in transitions
+    #     rad = 0.18 if rev_exists and src < dst else (-0.18 if rev_exists else 0.0)
+
+    #     lw = 1.5 + 3.0 * count / max_count  # edge width, change to uniform for all arrows at same width
+
+    #     arrow = FancyArrowPatch((x1, y1), (x2, y2), arrowstyle="-|>", mutation_scale=16, lw=lw, color=arrow_color,
+    #                             shrinkA=28, shrinkB=28, connectionstyle=f"arc3,rad={rad}")
+    #     ax.add_patch(arrow)
+
     for (src, dst), count in transitions.items():
         source = helpers_builders.index_to_buckle(src)
         dist = helpers_builders.index_to_buckle(dst)
         x1, y1 = pos[source]
         x2, y2 = pos[dist]
 
-        # slight curvature if reverse edge also exists
         rev_exists = (dst, src) in transitions
         rad = 0.18 if rev_exists and src < dst else (-0.18 if rev_exists else 0.0)
 
-        lw = 1.5 + 3.0 * count / max_count  # edge width, change to uniform for all arrows at same width
+        lw = 2.5 + 4.0 * count / max_count
+
+        if edge_zero_loss_count[(src, dst)] > 0:
+            edge_color = "c"   # or "cyan"
+        else:
+            edge_color = arrow_color
 
         arrow = FancyArrowPatch(
             (x1, y1), (x2, y2),
             arrowstyle="-|>",
-            mutation_scale=16,
+            mutation_scale=22,
             lw=lw,
-            color=arrow_color,
-            shrinkA=28,
-            shrinkB=28,
+            color=edge_color,
+            shrinkA=20,
+            shrinkB=20,
             connectionstyle=f"arc3,rad={rad}",
         )
         ax.add_patch(arrow)
 
-        # if show_edge_labels:
-        #     xm = 0.5 * (x1 + x2)
-        #     ym = 0.5 * (y1 + y2)
-        #     ax.text(xm, ym + 0.12, str(count), fontsize=10, ha="center", va="center")
+    if missing_edges:
+        observed_edges = set(transitions.keys())
+
+        for (src, dst) in missing_edges:
+            source = helpers_builders.index_to_buckle(src)
+            dist = helpers_builders.index_to_buckle(dst)
+            x1, y1 = pos[source]
+            x2, y2 = pos[dist]
+
+            rev_exists = (dst, src) in observed_edges or (dst, src) in missing_edges
+            rad = 0.12 if rev_exists and src < dst else (-0.12 if rev_exists else 0.0)
+
+            arrow = FancyArrowPatch(
+                (x1, y1), (x2, y2),
+                arrowstyle="-|>",
+                mutation_scale=14,
+                lw=1.5,
+                linestyle="--",
+                color=colors_lst[4],
+                alpha=0.75,
+                shrinkA=22,
+                shrinkB=22,
+                connectionstyle=f"arc3,rad={rad}",
+                zorder=0,
+            )
+            ax.add_patch(arrow)
 
     ax.set_aspect("equal")
     ax.axis("off")

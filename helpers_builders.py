@@ -8,7 +8,7 @@ import re
 import pandas as pd
 
 from pathlib import Path
-from collections import Counter
+from collections import Counter, defaultdict
 from jax import grad, jit, vmap
 from typing import Tuple, List
 from numpy import array, zeros
@@ -19,6 +19,8 @@ if TYPE_CHECKING:
     from StructureClass import StructureClass
     from EquilibriumClass import EquilibriumClass
     from VariablesClass import VariablesClass
+
+import file_funcs
 
 np.set_printoptions(precision=4, suppress=True)
 
@@ -89,7 +91,7 @@ def _reshape_state_2_pos_arr(state: jnp.Array[jnp.float64], pos_arr: jnp.Array[j
 
 
 # ---------------------------------------------------------------
-# Index conventions
+# Chain index conventions
 # ---------------------------------------------------------------
 def dof_idx(node: int, comp: int) -> int:
     """Return the flat DOF index for a node and component.
@@ -135,7 +137,7 @@ def _initiate_pos(nodes: int, L: float, numpify: bool = False) -> jax.Array:
 def _initiate_buckle(hinges: int, shims: int, buckle_pattern: tuple = (), numpify: bool = False) -> jax.Array:
     """
     `(hinges, shims)` of +1 and -1 denoting buckle down and up, respectively, of every shims in every hinge.
-    
+
     Parameters
     ----------
     hinges         - int. Number of hinges. Number of nodes will be hinges + 2 (two end nodes + internal ones).
@@ -965,17 +967,68 @@ def infer_buckle_columns(df: pd.DataFrame) -> list[str]:
     return buckle_cols
 
 
-def build_transition_counts(folder: Path):
+# def build_transition_counts(folder: Path, only_init_and_final_buckles: bool = False):
+#     """
+#     Go over all final_loss_*.csv files and extract directed buckle transitions.
+
+#     Returns
+#     -------
+#     transitions : Counter[(src, dst)] = number of times observed across all files
+#     per_file_transitions : dict[file_name, list[(src, dst)]]
+#     """
+#     transitions = Counter()
+#     per_file_transitions = {}
+#     per_file_loss = {}
+
+#     files = sorted(folder.glob("final_loss_*.csv"))
+#     if not files:
+#         raise FileNotFoundError(f"No files matching 'final_loss_*.csv' in {folder}")
+
+#     for file in files:
+#         df = pd.read_csv(file)
+#         buckle_cols = infer_buckle_columns(df)
+
+#         states = []
+#         for _, row in df[buckle_cols].iterrows():
+#             state = buckle_to_index(row.to_numpy())
+#             states.append(state)
+
+#         # keep only actual changes
+#         edges_this_file = []
+#         if only_init_and_final_buckles:
+#             zip_states = zip(states[:1], states[-1:])
+#         else:
+#             zip_states = zip(states[:-1], states[1:])
+#         for a, b in zip_states:
+#             if a != b:
+#                 edges_this_file.append((a, b))
+#                 transitions[(a, b)] += 1
+
+#         per_file_transitions[file.name] = edges_this_file
+
+#         per_file_loss[file.name] = file_funcs.loss_from_filename(file)
+
+#     return transitions, per_file_transitions, per_file_loss
+
+def hamming_distance_int(a: int, b: int) -> int:
+    return (a ^ b).bit_count()
+
+
+def build_transition_counts(folder: Path, only_init_and_final_buckles: bool = False):
     """
     Go over all final_loss_*.csv files and extract directed buckle transitions.
 
     Returns
     -------
-    transitions : Counter[(src, dst)] = number of times observed across all files
+    transitions          : Counter[(src, dst)] = number of times observed across all files
     per_file_transitions : dict[file_name, list[(src, dst)]]
+    per_file_loss        : dict[file_name, float]
+    edge_zero_loss_count : Counter[(src, dst)] = number of zero-loss files on this edge
     """
     transitions = Counter()
     per_file_transitions = {}
+    per_file_loss = {}
+    edge_zero_loss_count = Counter()  # all zeros initially
 
     files = sorted(folder.glob("final_loss_*.csv"))
     if not files:
@@ -990,20 +1043,38 @@ def build_transition_counts(folder: Path):
             state = buckle_to_index(row.to_numpy())
             states.append(state)
 
-        # keep only actual changes
+        loss = file_funcs.loss_from_filename(file)
+        if only_init_and_final_buckles:
+            per_file_loss[file.name] = loss
+
         edges_this_file = []
-        for a, b in zip(states[:-1], states[1:]):
+        if only_init_and_final_buckles:
+            zip_states = zip(states[:1], states[-1:])
+        else:
+            zip_states = zip(states[:-1], states[1:])
+
+        for a, b in zip_states:
             if a != b:
-                edges_this_file.append((a, b))
-                transitions[(a, b)] += 1
+                edge = (a, b)
+                edges_this_file.append(edge)
+                transitions[edge] += 1
+                if loss <= 1e-6 and only_init_and_final_buckles:
+                    edge_zero_loss_count[edge] += 1
+                # else:
+                #     edge_zero_loss_count[edge] = 0
 
         per_file_transitions[file.name] = edges_this_file
 
-    return transitions, per_file_transitions
+    return transitions, per_file_transitions, per_file_loss, edge_zero_loss_count
 
 
 def all_binary_states(n_bits: int) -> list[str]:
     return [format(i, f"0{n_bits}b") for i in range(2**n_bits)]
+
+
+def all_possible_transitions(n_bits: int):
+    n_states = 2 ** n_bits
+    return [(i, j) for i in range(n_states) for j in range(n_states) if i != j]
 
 
 def state_positions(n_bits: int, dx: float = 0.175, dy: float = 0.22,
