@@ -533,9 +533,7 @@ def plot_success_matrix_with_pathways(M_corr: np.ndarray, title: str = "Training
     plt.show()
 
 
-def plot_transition_diagram(transitions: Counter, n_bits: int, *, only_reached_nodes: bool = False,
-                            show_edge_labels: bool = False, scale_linewidth: bool = True,
-                            figsize: Tuple[float, float] = (12, 8), title: str = "Achieved buckle transitions"):
+def plot_transition_diagram(transitions: Counter, n_bits: int, *, only_reached_nodes: bool = False):
     colors_lst, _, _ = colors.color_scheme()
     node_edge = "black"
     node_face = "white"
@@ -552,7 +550,7 @@ def plot_transition_diagram(transitions: Counter, n_bits: int, *, only_reached_n
     else:
         used_nodes = set(helpers_builders.all_binary_states(n_bits))
 
-    fig, ax = plt.subplots(figsize=figsize)
+    fig, ax = plt.subplots(figsize=(12, 8))
 
     # ---- nodes ----
     if only_reached_nodes:
@@ -588,7 +586,7 @@ def plot_transition_diagram(transitions: Counter, n_bits: int, *, only_reached_n
         rev_exists = (dst, src) in transitions
         rad = 0.18 if rev_exists and src < dst else (-0.18 if rev_exists else 0.0)
 
-        lw = 1.5 + 3.0 * count / max_count if scale_linewidth else 2.0
+        lw = 1.5 + 3.0 * count / max_count  # edge width, change to uniform for all arrows at same width
 
         arrow = FancyArrowPatch(
             (x1, y1), (x2, y2),
@@ -602,14 +600,13 @@ def plot_transition_diagram(transitions: Counter, n_bits: int, *, only_reached_n
         )
         ax.add_patch(arrow)
 
-        if show_edge_labels:
-            xm = 0.5 * (x1 + x2)
-            ym = 0.5 * (y1 + y2)
-            ax.text(xm, ym + 0.12, str(count), fontsize=10, ha="center", va="center")
+        # if show_edge_labels:
+        #     xm = 0.5 * (x1 + x2)
+        #     ym = 0.5 * (y1 + y2)
+        #     ax.text(xm, ym + 0.12, str(count), fontsize=10, ha="center", va="center")
 
     ax.set_aspect("equal")
     ax.axis("off")
-    ax.set_title(title, fontsize=18)
     plt.tight_layout()
     plt.show()
 
