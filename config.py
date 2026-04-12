@@ -147,7 +147,7 @@ class EquilibriumConfig:
 # -----------------------------
 @dataclass(frozen=True)
 class TrainingConfig:
-    T: int = 12  # total training set time (not time to reach equilibrium during every step)
+    T: int = 85  # total training set time (not time to reach equilibrium during every step)
 
     # desired_buckle_type: str = 'random'
     # desired_buckle_type: str = 'opposite'
@@ -175,7 +175,8 @@ class TrainingConfig:
     # dataset_sampling = 'stress strain'
 
     # dataset_file: str = r"Predetermined trajectory\Mar23\buckle={}.csv"
-    dataset_file: str = r"Predetermined trajectory\Mar30\zeroDeg_farther\buckle={}.csv"
+    dataset_file: str = r"Predetermined trajectory\Mar22\buckle={}.csv"
+    # dataset_file: str = r"Predetermined trajectory\Mar30\zeroDeg_farther\buckle={}.csv"
 
     # # tip values to buckle shims - 'BEASTAL' for the BEASTAL scheme, else 'one_to_one'
     # update_scheme: str = 'one_to_one'  # direct normalized loss, equal to num of outputs
@@ -197,7 +198,7 @@ class TrainingConfig:
     elif normalize_step:
         alpha = 0.25
     else:
-        alpha = 0.2  # learning rate
+        alpha = 0.25  # learning rate
 
     control_tip: bool = True  # imposed tip position in measurement and update. If False, tip is free
     control_first_edge: bool = True  # if True, fix nodes (0, 1) to zero. if Flase, just the first

@@ -140,7 +140,7 @@ def run_one_job(job):
                     plt.close("all")
 
                 if save_csvs:
-                    csv_path = str(run_dir / f"final_loss_{Sprvsr.loss_MSE_in_t[t]:.6g}_init_{init_buckle_str}_desired_{desired_buckle_str}.csv")
+                    csv_path = str(run_dir / f"final_loss_{Sprvsr.loss_MSE_in_t[t]:.6g}_init_{init_buckle_str}_desired_{desired_buckle_str}_inverted.csv")
                     file_funcs.export_training_csv(
                         str(csv_path),
                         Strctr,

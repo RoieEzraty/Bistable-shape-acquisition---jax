@@ -1014,9 +1014,16 @@ def hamming_distance_int(a: int, b: int) -> int:
     return (a ^ b).bit_count()
 
 
-def build_transition_counts(folder: Path, only_init_and_final_buckles: bool = False):
+def build_transition_counts(folder: Path, only_init_and_final_buckles: bool = False, omit_inverted: bool = False):
     """
     Go over all final_loss_*.csv files and extract directed buckle transitions.
+
+    Parameters
+    ----------
+    folder                      : path, all csv run files, from every init to every desired
+    only_init_and_final_buckles : bool, True = transition is only from initial to final (not necessarily the desired)
+                                  desired transition colored Cyan, undesired colored purple
+    omit_inverted               : bool, True = do not account for  "_inverted.csv" output files
 
     Returns
     -------
@@ -1033,6 +1040,8 @@ def build_transition_counts(folder: Path, only_init_and_final_buckles: bool = Fa
     files = sorted(folder.glob("final_loss_*.csv"))
     if not files:
         raise FileNotFoundError(f"No files matching 'final_loss_*.csv' in {folder}")
+    if omit_inverted:  # neglect all files ending with "_inverted.csv"
+        files = [f for f in files if not f.name.endswith("_inverted.csv")]
 
     for file in files:
         df = pd.read_csv(file)

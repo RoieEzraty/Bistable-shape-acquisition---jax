@@ -232,8 +232,8 @@ def compress_to_tip_pos(Strctr: "StructureClass", Variabs: "VariablesClass", Spr
 # ---------------------------------------------------------------
 def measure_determined_pos_from_file(Strctr: "StructureClass", Variabs: "VariablesClass", Sprvsr: "SupervisorClass",
                                      CFG: ExperimentConfig, path: str, buckle: NDArray,
-                                     stretch_factor: Optional[float] = None,
-                                     order='fwd_and_bcwrd') -> Tuple[NDArray, NDArray, NDArray]:
+                                     stretch_factor: Optional[float] = None, order: str = 'fwd_and_bcwrd',
+                                     reset_every_step: bool = False) -> Tuple[NDArray, NDArray, NDArray]:
     """
     tip performs prescribed trajectory from a CSV file, measure simulated tip forces. Export results to csv,
 
@@ -304,8 +304,11 @@ def measure_determined_pos_from_file(Strctr: "StructureClass", Variabs: "Variabl
         F_x_vec[i] = State.Fx
         F_y_vec[i] = State.Fy
 
-        # Warm start next iteration from last equilibrium position of this trajectory
-        prev_final_pos = pos_traj[-1]
+        if reset_every_step:
+            prev_final_pos = helpers_builders._initiate_pos(Strctr.edges+1, Strctr.L)  # warm-start position for next step
+        else:
+            # Warm start next iteration from last equilibrium position of this trajectory
+            prev_final_pos = pos_traj[-1]
 
     if order == 'fwd_and_bcwrd':
         # reset pos
@@ -336,7 +339,7 @@ def measure_determined_pos_from_file(Strctr: "StructureClass", Variabs: "Variabl
 # ---------------------------------------------------------------
 def one_shot(Strctr: "StructureClass", Variabs: "VariablesClass", Sprvsr: "SupervisorClass", State: "StateClass",
              CFG: ExperimentConfig, buckle: NDArray, tip_pos: NDArray, tip_angle: float,
-             init_pos: Optional[np.ndarray] = None, t: int = 0) -> Tuple["StateClass", NDArray, NDArray]:
+             init_pos: Optional[np.ndarray] = None, t: int = 0) -> Tuple[NDArray, NDArray]:
     """
     Perform a single equilibrium computation and state update for the system.
 

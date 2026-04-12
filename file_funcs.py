@@ -294,13 +294,15 @@ def loss_from_filename(file: Path):
     return float(re.search(r"final_loss_(.*?)_init_", file.stem).group(1))
 
 
-def build_success_matrix(folder: Path, old: bool = False, N: int = 16, near_miss: bool = False) -> NDArray:
+def build_success_matrix(folder: Path, old: bool = False, N: int = 16, near_miss: bool = False,
+                         symmetry: bool = False, omit_inverted: bool = False) -> NDArray:
     """
     Parameters:
     -----------
-    folder : path to folder where all the export_training.csv files are at, starting with "loss=..."
-    old    : boolean whether to use old files or not, new are since Mar2026.
-    N      : int, total number of states, 2^hinges
+    folder        : path to folder where all the export_training.csv files are at, starting with "loss=..."
+    old           : boolean whether to use old files or not, new are since Mar2026.
+    N             : int, total number of states, 2^hinges
+    omit_inverted : omit files ending with "_inverted.csv"
 
     Returns:
     --------
@@ -313,36 +315,50 @@ def build_success_matrix(folder: Path, old: bool = False, N: int = 16, near_miss
     2 - unsuccessful training
     """
     M = np.zeros((16, 16)) + 1.0
+    B = np.zeros((16, 16)) + 1.0  # matrix where 1 is a run that weren't uploaded to M yet and 0 otherwise
 
     for file in folder.glob("final_loss_*.csv"):
-        # extract loss
-        loss = loss_from_filename(file)
-
-        name = file.stem
-
-        # extract buckle patterns
-        if old:  # buckle in the form [-1  1  1 -1]
-            init_bits = re.search(r"init_([01]+)", name).group(1)
-            desired_bits = re.search(r"desired([01]+)", name).group(1)
-        else:  # buckle in the form 0110
-            init_bits = re.search(r"init_([01]+)", name).group(1)
-            desired_bits = re.search(r"desired_([01]+)", name).group(1)
-
-        # buckle_to_index accepts either 0/1 or -1/+1 effectively,
-        # because it maps x == 1 -> 1, else -> 0
-        init = [int(ch) for ch in init_bits]
-        desired = [int(ch) for ch in desired_bits]
-
-        i = helpers_builders.buckle_to_index(init)
-        j = helpers_builders.buckle_to_index(desired)
-
-        if near_miss:  # account for undesired buckles that produced desired forces as successfull training
-            M[i, j] = 0 if loss < 1e-4 else 2
+        if omit_inverted and file.name.endswith("_inverted.csv"):  # neglect all files ending with "_inverted.csv"
+            continue
         else:
-            M[i, j] = 0 if loss < 1e-6 else 2
+            # extract loss
+            loss = loss_from_filename(file)
 
-        # symmetry
-        M[N-1-i, N-1-j] = M[i, j]
+            name = file.stem
+
+            # extract buckle patterns
+            if old:  # no "_" after "desired"
+                init_bits = re.search(r"init_([01]+)", name).group(1)
+                desired_bits = re.search(r"desired([01]+)", name).group(1)
+            else:
+                init_bits = re.search(r"init_([01]+)", name).group(1)
+                desired_bits = re.search(r"desired_([01]+)", name).group(1)
+
+            # buckle_to_index accepts either 0/1 or -1/+1 effectively,
+            # because it maps x == 1 -> 1, else -> 0
+            init = [int(ch) for ch in init_bits]
+            desired = [int(ch) for ch in desired_bits]
+
+            i = helpers_builders.buckle_to_index(init)
+            j = helpers_builders.buckle_to_index(desired)
+
+            if B[i, j] == 0:  # run already insrted to M
+                continue
+            else:
+                if near_miss:  # account for undesired buckles that produced desired forces as successfull training
+                    thresh = 10e-4
+                else:
+                    thresh = 1e-6
+                if loss < thresh:
+                    B[i, j] = 0
+                    M[i, j] = 0
+                else:
+                    M[i, j] = 2
+
+            # symmetry
+            if symmetry:
+                B[N-1-i, N-1-j] = B[i, j]
+                M[N-1-i, N-1-j] = M[i, j]
 
     return M
 
@@ -481,10 +497,29 @@ def get_pathway_between_states(init_state: str, desired_state: str, next_hop: np
 # ---------------------------------------------------------------
 # Transition diagram
 # ---------------------------------------------------------------
-def buckle_transitions(folder: str | Path, only_init_and_final_buckles: bool = False):
+def buckle_transitions(folder: str | Path, only_init_and_final_buckles: bool = False, omit_inverted: bool = False):
+    """
+    Go over all final_loss_*.csv files and extract directed buckle transitions.
+
+    Parameters
+    ----------
+    folder                      : path, all csv run files, from every init to every desired
+    only_init_and_final_buckles : bool, True = transition is only from initial to final (not necessarily the desired)
+                                  desired transition colored Cyan, undesired colored purple
+    omit_inverted               : bool, True = do not account for  "_inverted.csv" output files
+
+    Returns
+    -------
+    transitions          : Counter[(src, dst)] = number of times observed across all files
+    per_file_transitions : dict[file_name, list[(src, dst)]]
+    per_file_loss        : dict[file_name, float]
+    edge_zero_loss_count : Counter[(src, dst)] = number of zero-loss files on this edge
+    missing_edges        : ???
+    """
     folder = Path(folder)
     transitions, per_file_transitions, per_file_loss, edge_zero_loss_count = helpers_builders.build_transition_counts(folder,
-                                                                                                                      only_init_and_final_buckles=only_init_and_final_buckles)
+                                                                                                                      only_init_and_final_buckles=only_init_and_final_buckles,
+                                                                                                                      omit_inverted=omit_inverted)
 
     observed_edges = set(transitions.keys())
     missing_edges = [edge for edge in helpers_builders.all_possible_transitions(4) if
@@ -497,17 +532,6 @@ def buckle_transitions(folder: str | Path, only_init_and_final_buckles: bool = F
     print("Top transitions:")
     for (a, b), c in transitions.most_common(20):
         print(f"{helpers_builders.index_to_buckle(a)} -> {helpers_builders.index_to_buckle(b)}: {c}")
-
-    # # infer number of hinges from first observed state
-    # observed_states = set()
-    # for a, b in transitions:
-    #     observed_states.add(a)
-    #     observed_states.add(b)
-
-    # if not observed_states:
-    #     raise ValueError("No buckle changes were found in the files")
-
-    # n_bits = len(observed_states)
 
     return transitions, per_file_transitions, per_file_loss, edge_zero_loss_count, missing_edges
 
