@@ -445,7 +445,7 @@ class SupervisorClass:
             print(f'prev_tip_update_angle{prev_tip_update_angle}')
 
         # invert delta_tip if required
-        if self.invert_delta_tip is True:  # straight addition, no inversion
+        if self.invert_delta_tip is True:  # invert tip
             delta_tip = -delta_tip
             delta_angle = -delta_angle
 
@@ -535,7 +535,13 @@ class SupervisorClass:
             prev_total_angle = 0.0
             self.last_restart_reason = "origin_cut"
 
-        # # invert sign of tip change if training fails
+        # invert sign of tip change if training fails
+        cond_extremal_buckle = (np.array_equal(State_meas.buckle_arr, np.array([[1], [1], [1], [1]]))
+                                or
+                                np.array_equal(State_meas.buckle_arr, np.array([[-1], [-1], [-1], [-1]])))
+        if (cond_cut_origin or cond_coil) and (cond_extremal_buckle):
+            print('conditions for inverting delta tip inside run met, inverting delta tip')
+            self.invert_delta_tip = not self.invert_delta_tip
         # if self.coil_count > 1 or self.origin_cut_restart_count > 1:
         #     print(f'inverting tip sign at time t={t}')
         #     self.invert_delta_tip = True
