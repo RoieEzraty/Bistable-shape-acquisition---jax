@@ -279,11 +279,11 @@ class SupervisorClass:
             # correct for too big stretch during measurement
             # ------ clamp overstretched dataset samples ------
             for t in range(self.T):
-                self.tip_pos_in_t[t, :] = helpers_builders._correct_big_stretch_robot_style(tip_pos=self.tip_pos_in_t[t, :], 
-                                                                                            tip_angle=float(self.tip_angle_in_t[t]),
-                                                                                            total_angle=0.0, R_free=self.R_free,
-                                                                                            L=Strctr.L, margin=0.1,
-                                                                                            supress_prints=self.supress_prints)
+                self.tip_pos_in_t[t, :] = helpers_builders._correct_big_stretch(tip_pos=self.tip_pos_in_t[t, :],
+                                                                                tip_angle=float(self.tip_angle_in_t[t]),
+                                                                                total_angle=0.0, R_free=self.R_free,
+                                                                                L=Strctr.L, margin=0.1,
+                                                                                supress_prints=self.supress_prints)
         elif sampling in {'flat', 'almost_flat', 'specified', 'predetermined'}:
             end = float(Strctr.edges*Strctr.L)
             if sampling in {'flat', 'predetermined'}:
@@ -408,8 +408,8 @@ class SupervisorClass:
             print(f'delta_tip before corr {delta_tip}')
             print(f'delta_angle before corr {delta_angle}')
 
-        # ------ normalize step ------
-        if self.normalize_step and np.linalg.norm(np.append(delta_tip, delta_angle)) > 10**(-12):  # normalize if non-zero update            
+        # ------ normalize step if update is non-zero ------
+        if self.normalize_step and np.linalg.norm(np.append(delta_tip, delta_angle)) > 10**(-12):
             # old version up to Feb22
             step_size = np.linalg.norm(np.append(delta_tip, delta_angle))
             # print(f'step_size={step_size}')
@@ -469,25 +469,13 @@ class SupervisorClass:
                 print(f'add delta tip angle {delta_total_angle} to correct for total angle ')
 
         # ------ correct for to big a stretch ------
-        self.tip_pos_update_in_t[t, :] = helpers_builders._correct_big_stretch_robot_style(self.tip_pos_update_in_t[t],
-                                                                                           self.tip_angle_update_in_t[t],
-                                                                                           total_angle, self.R_free, Strctr.L,
-                                                                                           margin=0.1, 
-                                                                                           supress_prints=self.supress_prints)
+        self.tip_pos_update_in_t[t, :] = helpers_builders._correct_big_stretch(self.tip_pos_update_in_t[t],
+                                                                               self.tip_angle_update_in_t[t],
+                                                                               total_angle, self.R_free, Strctr.L,
+                                                                               margin=0.1,
+                                                                               supress_prints=self.supress_prints)
         if not self.supress_prints:
             print(f'tip after correct big stretch={self.tip_pos_update_in_t[t, :]}')
-        # before_tip = helpers_builders._get_before_tip(prev_tip_update_pos, prev_tip_update_angle, Strctr.L, xp=np)
-        # R_eff = helpers_builders.effective_radius(self.R_free, Strctr.L, total_angle, prev_tip_update_angle, 
-        #                                           supress_prints=self.supress_prints)
-        # tip_new, before_new, clamped = helpers_builders.clamp_pos_same_delta(before_prev=before_tip,
-        #                                                                      tip_angle_new=prev_tip_update_angle + delta_angle,
-        #                                                                      tip_raw=prev_tip_update_pos + delta_tip,
-        #                                                                      second_node=array([Strctr.L, 0.0]),
-        #                                                                      R_lim=R_eff, L=Strctr.L)
-        # self.tip_pos_update_in_t[t, :] = tip_new
-        # if not self.supress_prints:
-        #     print(f'tip clamped due to effective radius: {clamped}')
-        #     print(f'tip after clamp to radius={tip_new}')
 
         # ------ correct for coil or cut origin ------
         cond_coil = helpers_builders.coil(self.tip_angle_update_in_t[t], revolutions=1.5)

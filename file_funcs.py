@@ -4,6 +4,7 @@ import csv
 import copy
 import re
 import numpy as np
+import json
 import pandas as pd
 import matplotlib.pyplot as plt
 import jax.numpy as jnp
@@ -135,11 +136,11 @@ def export_predetermined(Sprvsr: "SupervisorClass", State: "StateClass", filenam
     ----------
     Sprvsr   - SupervisorClass, for `tip_pos_in_t`, `tip_angle_in_t` and unit conversion factors.
     State    - StateClass, for force histories `Fx_in_t`, `Fy_in_t`, and final buckle configuration.
-    filename - Optional[str], output CSV filename. If None, name is generated automatically from the buckle configuration.
+    filename - Optional[str], output CSV filename. If None, name is generated automatically from buckle configuration.
 
     Notes
     -----
-    - If `filename` not provided, default filename based on buckle configuration in `State.buckle_arr`, where buckle = -1 → 0
+    - If `filename` not provided, default filename based on buckle configuration in State.buckle_arr (buckle = -1 → 0)
     - Only first `T` entries of `State.Fx_in_t` and `State.Fy_in_t` exported, where `T = len(Sprvsr.tip_pos_in_t)`.
     """
     if order == 'fwd':
@@ -167,13 +168,8 @@ def export_predetermined(Sprvsr: "SupervisorClass", State: "StateClass", filenam
         tip_pos_in_t = tip_pos_in_t * stretch_factor
 
     # ------ pandas dataframe ------
-    df = pd.DataFrame({
-        "x_tip": tip_pos_in_t[:, 0],
-        "y_tip": tip_pos_in_t[:, 1],
-        "tip_angle_deg": tip_angle_in_t,
-        "F_x": Fx_afo_pos,
-        "F_y": Fy_afo_pos,
-    })
+    df = pd.DataFrame({"x_tip": tip_pos_in_t[:, 0], "y_tip": tip_pos_in_t[:, 1], "tip_angle_deg": tip_angle_in_t,
+                       "F_x": Fx_afo_pos, "F_y": Fy_afo_pos})
 
     # ------ filename ------
     if filename is not None:
@@ -198,84 +194,196 @@ def export_training_csv(path_csv: str, Strctr: "StructureClass", Sprvsr: "Superv
     Strctr : StructureClass, for (`hinges`) and (`shims`).
     Sprvsr : SupervisorClass, for Supervisor training data and unit conversion factors
     T : Optional[int], number of training steps to export. If None, full training `Sprvsr.T` is used.
-    State_meas : Optional[StateClass], for `Fx_in_t`, `Fy_in_t`. If provided, these values are exported as `Fx_meas`, `Fy_meas`.
-    State_update : Optional[StateClass], for buckle history (`buckle_in_t`). If provided, buckle states for every hinge/shim pair.
+    State_meas : Optional[StateClass], for `Fx_in_t`, `Fy_in_t`. If provided, they are exported as `Fx_meas`, `Fy_meas`.
+    State_update : Optional[StateClass], for buckle history (`buckle_in_t`).
 
     Notes
     -----
     - Each row corresponds to a single training step `t`.
+    - Arrays are stored as JSON strings inside single CSV cells.
+    - `final_pos_meas` / `final_pos_update` are arrays of shape (nodes, 2).
+    - `buckle_arr` is stored as shape (H, S), usually (H, 1).
     """
-    # ------ convert ------
-    tip_pos_in_t = Sprvsr.tip_pos_in_t * Sprvsr.convert_pos
+    def arr_to_json(arr: np.ndarray) -> str:
+        """Serialize numpy array as compact JSON string for one CSV cell."""
+        return json.dumps(np.asarray(arr).tolist(), separators=(",", ":"))
+
+    # ------ convert scalar channels ------
     tip_pos_update_in_t = Sprvsr.tip_pos_update_in_t * Sprvsr.convert_pos
-    angle_in_t = Sprvsr.tip_angle_in_t * Sprvsr.convert_angle
     angle_update_in_t = Sprvsr.tip_angle_update_in_t * Sprvsr.convert_angle
-    meas_Fx = State_meas.Fx_in_t * Sprvsr.convert_F
-    meas_Fy = State_meas.Fy_in_t * Sprvsr.convert_F
     des_Fx = Sprvsr.desired_Fx_in_t * Sprvsr.convert_F
     des_Fy = Sprvsr.desired_Fy_in_t * Sprvsr.convert_F
+
+    meas_Fx = meas_Fy = None
+    if State_meas is not None:
+        meas_Fx = State_meas.Fx_in_t * Sprvsr.convert_F
+        meas_Fy = State_meas.Fy_in_t * Sprvsr.convert_F
 
     path_csv = Path(path_csv)
     path_csv.parent.mkdir(parents=True, exist_ok=True)
 
     if T is None:
         T = int(Sprvsr.T)
-    H = int(Strctr.hinges)
-    S = int(Strctr.shims)
 
     # ------ headers ------
-    header = ["t",
-              "x_tip", "y_tip"]
-    header += ["tip_angle_deg"]
-    header += ["upd_x_tip", "upd_y_tip"]
-    header += ["upd_tip_angle"]
+    header = ["t"]
 
-    # loss columns (Sprvsr.loss_in_t is (T, loss_size))
+    # full internal state arrays
+    if State_meas is not None:
+        header += ["final_pos_meas"]
+    if State_update is not None:
+        header += ["final_pos_update"]
+
+    # keep update command if you still want it
+    header += ["upd_x_tip", "upd_y_tip", "upd_tip_angle"]
+
+    # losses
     loss_size = Sprvsr.loss_in_t.shape[1]
     header += [f"loss_{i}" for i in range(loss_size)]
     header += ["loss_MSE"]
 
-    # measured
+    # measured forces
     if State_meas is not None:
         header += ["Fx_meas", "Fy_meas"]
 
-    # desired
+    # desired forces
     header += ["Fx_des", "Fy_des"]
 
-    # buckle (from update state ideally)
+    # whole buckle arrays
+    if State_meas is not None:
+        header += ["buckle_arr_meas"]
     if State_update is not None:
-        for h in range(H):
-            for s in range(S):
-                header.append(f"buckle_h{h}_s{s}")
+        header += ["buckle_arr_update"]
 
-    # ------ create file and write ------
-    with open(path_csv, "w", newline="") as f:
+    # ------ write ------
+    with open(path_csv, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
         w.writerow(header)
 
         for t in range(T):
             row = [t]
-            row += [float(tip_pos_in_t[t, 0]), float(tip_pos_in_t[t, 1])]
-            row += [float(angle_in_t[t])]
-            row += [float(tip_pos_update_in_t[t, 0]), float(tip_pos_update_in_t[t, 1])]
-            row += [float(angle_update_in_t[t])]
 
+            # full measured state positions
+            if State_meas is not None:
+                pos_meas = State_meas.pos_arr_in_t[:, :, t] * Sprvsr.convert_pos
+                row += [arr_to_json(pos_meas)]
+
+            # full updated state positions
+            if State_update is not None:
+                pos_update = State_update.pos_arr_in_t[:, :, t] * Sprvsr.convert_pos
+                row += [arr_to_json(pos_update)]
+
+            # update command, kept as scalars
+            row += [float(tip_pos_update_in_t[t, 0]), float(tip_pos_update_in_t[t, 1]), float(angle_update_in_t[t])]
+
+            # losses
             row += [float(x) for x in Sprvsr.loss_in_t[t, :]]
-
             row += [float(Sprvsr.loss_MSE_in_t[t])]
 
+            # measured forces
             if State_meas is not None:
-                row += [float(meas_Fx[t]),
-                        float(meas_Fy[t])]
+                row += [float(meas_Fx[t]), float(meas_Fy[t])]
 
-            row += [float(des_Fx[t]),
-                    float(des_Fy[t])]
+            # desired forces
+            row += [float(des_Fx[t]), float(des_Fy[t])]
 
+            # full buckle arrays
+            if State_meas is not None:
+                row += [arr_to_json(State_meas.buckle_in_t[:, :, t])]
             if State_update is not None:
-                B = State_update.buckle_in_t[:, :, t]  # (H,S)
-                row += [int(B[h, s]) for h in range(H) for s in range(S)]
+                row += [arr_to_json(State_update.buckle_in_t[:, :, t])]
 
             w.writerow(row)
+
+# def export_training_csv(path_csv: str, Strctr: "StructureClass", Sprvsr: "SupervisorClass", T: Optional[int] = None,
+#                         State_meas: Optional["StateClass"] = None, State_update: Optional["StateClass"] = None) -> None:
+#     """
+#     Export training outputs to a CSV file.
+
+#     Parameters
+#     ----------
+#     path_csv : str, output CSV file path.
+#     Strctr : StructureClass, for (`hinges`) and (`shims`).
+#     Sprvsr : SupervisorClass, for Supervisor training data and unit conversion factors
+#     T : Optional[int], number of training steps to export. If None, full training `Sprvsr.T` is used.
+#     State_meas : Optional[StateClass], for `Fx_in_t`, `Fy_in_t`. If provided, these values are exported as `Fx_meas`, `Fy_meas`.
+#     State_update : Optional[StateClass], for buckle history (`buckle_in_t`). If provided, buckle states for every hinge/shim pair.
+
+#     Notes
+#     -----
+#     - Each row corresponds to a single training step `t`.
+#     """
+#     # ------ convert ------
+#     tip_pos_in_t = Sprvsr.tip_pos_in_t * Sprvsr.convert_pos
+#     tip_pos_update_in_t = Sprvsr.tip_pos_update_in_t * Sprvsr.convert_pos
+#     angle_in_t = Sprvsr.tip_angle_in_t * Sprvsr.convert_angle
+#     angle_update_in_t = Sprvsr.tip_angle_update_in_t * Sprvsr.convert_angle
+#     meas_Fx = State_meas.Fx_in_t * Sprvsr.convert_F
+#     meas_Fy = State_meas.Fy_in_t * Sprvsr.convert_F
+#     des_Fx = Sprvsr.desired_Fx_in_t * Sprvsr.convert_F
+#     des_Fy = Sprvsr.desired_Fy_in_t * Sprvsr.convert_F
+
+#     path_csv = Path(path_csv)
+#     path_csv.parent.mkdir(parents=True, exist_ok=True)
+
+#     if T is None:
+#         T = int(Sprvsr.T)
+#     H = int(Strctr.hinges)
+#     S = int(Strctr.shims)
+
+#     # ------ headers ------
+#     header = ["t",
+#               "x_tip", "y_tip"]
+#     header += ["tip_angle_deg"]
+#     header += ["upd_x_tip", "upd_y_tip"]
+#     header += ["upd_tip_angle"]
+
+#     # loss columns (Sprvsr.loss_in_t is (T, loss_size))
+#     loss_size = Sprvsr.loss_in_t.shape[1]
+#     header += [f"loss_{i}" for i in range(loss_size)]
+#     header += ["loss_MSE"]
+
+#     # measured
+#     if State_meas is not None:
+#         header += ["Fx_meas", "Fy_meas"]
+
+#     # desired
+#     header += ["Fx_des", "Fy_des"]
+
+#     # buckle (from update state ideally)
+#     if State_update is not None:
+#         for h in range(H):
+#             for s in range(S):
+#                 header.append(f"buckle_h{h}_s{s}")
+
+#     # ------ create file and write ------
+#     with open(path_csv, "w", newline="") as f:
+#         w = csv.writer(f)
+#         w.writerow(header)
+
+#         for t in range(T):
+#             row = [t]
+#             row += [float(tip_pos_in_t[t, 0]), float(tip_pos_in_t[t, 1])]
+#             row += [float(angle_in_t[t])]
+#             row += [float(tip_pos_update_in_t[t, 0]), float(tip_pos_update_in_t[t, 1])]
+#             row += [float(angle_update_in_t[t])]
+
+#             row += [float(x) for x in Sprvsr.loss_in_t[t, :]]
+
+#             row += [float(Sprvsr.loss_MSE_in_t[t])]
+
+#             if State_meas is not None:
+#                 row += [float(meas_Fx[t]),
+#                         float(meas_Fy[t])]
+
+#             row += [float(des_Fx[t]),
+#                     float(des_Fy[t])]
+
+#             if State_update is not None:
+#                 B = State_update.buckle_in_t[:, :, t]  # (H,S)
+#                 row += [int(B[h, s]) for h in range(H) for s in range(S)]
+
+#             w.writerow(row)
 
 
 def export_training_npz(path_npz: str, **arrays):

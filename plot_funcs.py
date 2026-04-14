@@ -422,7 +422,7 @@ def animate_arm_w_arcs(traj_pos, L, frames=10, interval_ms=30, save_path=None, f
             V_3d = np.cross(diffs_3d, buckle_3d)
             V = V_3d[:, :2]
             for p, v in zip(pts[1:-1], V):
-                arrow = patches.FancyArrowPatch(p, p + v/np.linalg.norm(v)*0.035, arrowstyle='-|>', mutation_scale=25, 
+                arrow = patches.FancyArrowPatch(p, p + v/np.linalg.norm(v)*0.035, arrowstyle='-|>', mutation_scale=25,
                                                 linewidth=2, capstyle='round', joinstyle='round')
                 try:
                     ax.add_patch(arrow)
@@ -437,7 +437,10 @@ def animate_arm_w_arcs(traj_pos, L, frames=10, interval_ms=30, save_path=None, f
     if save_path is not None:
         if save_path.lower().endswith(".gif"):
             anim.save(save_path, writer=PillowWriter(fps=fps))
-        elif save_path.lower().endswith(".mp4"):
+        elif save_path.lower().endswith(".html"):
+            with open(save_path, "w", encoding="utf-8") as f:
+                f.write(anim.to_jshtml())
+        elif save_path.lower().endswith(".mp4"):  # doesn't work as of 2026Apr14
             anim.save(save_path, writer="ffmpeg", fps=fps)
         else:
             raise ValueError("save_path must end with .gif or .mp4")

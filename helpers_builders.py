@@ -295,16 +295,16 @@ def _circle_circle_intersections_np(c0: NDArray[np.float64], r0: float, c1: NDAr
     return [p2 + h*perp, p2 - h*perp]
 
 
-def _correct_big_stretch_robot_style(tip_pos: NDArray[np.float64], tip_angle: float, total_angle: float, R_free: float,
-                                     L: float, margin: float = 0.0, supress_prints: bool = True) -> NDArray[np.float64]:
+def _correct_big_stretch(tip_pos: NDArray[np.float64], tip_angle: float, total_angle: float, R_free: float,
+                         L: float, margin: float = 0.0, supress_prints: bool = True) -> NDArray[np.float64]:
     """
-    Radially scale down tip position to maximal reachable radius constraint, if tip position exceeds it. 
-    Applied to distance between node-before-tip and second node (located at (L, 0)). Scale down is radial towards 2nd node.
+    Radially scale down tip position to maximal reachable radius constraint, if tip position exceeds it.
+    Applied to distance between node-before-tip and 2nd node (located at (L, 0)). Scale down is radial towards 2nd node.
 
 
     Notes
     -----
-    - Maximal allowed radius computed using R_eff = effective_radius(), accounting for coil wrapping and geometric shrinkage.
+    - Maximal allowed radius computed using R_eff = effective_radius(), accounting for coil wrap & geometric shrinkage.
 
     Parameters
     ----------
@@ -318,7 +318,7 @@ def _correct_big_stretch_robot_style(tip_pos: NDArray[np.float64], tip_angle: fl
 
     Returns
     -------
-    tip_pos_corrected : ndarray, (2,), Corrected tip position if clamping was applied, otherwise returns original tip_pos.
+    tip_pos_corrected : ndarray, (2,), Corrected tip position if clamping applied, otherwise returns original tip_pos.
     """
     # Compute the location of the node before the tip
     # before_last = array([tip_pos[0] - L * np.cos(tip_angle), tip_pos[1] - L * np.sin(tip_angle)])
@@ -362,10 +362,8 @@ def _correct_big_stretch_robot_style(tip_pos: NDArray[np.float64], tip_angle: fl
     tip_new = before_new + L * np.array([np.cos(tip_angle), np.sin(tip_angle)], dtype=float)
 
     if not supress_prints:
-        print(
-            f"clamped from x={tip_pos[0]},y={tip_pos[1]} "
-            f"to x={tip_new[0]},y={tip_new[1]}"
-        )
+        print(f"clamped from x={tip_pos[0]},y={tip_pos[1]} "
+              f"to x={tip_new[0]},y={tip_new[1]}")
 
     return tip_new
 
