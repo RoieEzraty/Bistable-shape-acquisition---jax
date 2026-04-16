@@ -113,14 +113,15 @@ class EquilibriumConfig:
     # independent knobs
     calc_through_energy: bool = False
     rand_key_Eq: int = 3
-    pos_noise: float = 0.1
+    pos_noise: float = 0.1  # best one 2026Feb8
     # pos_noise: float = 0.0
-    vel_noise: float = 1.0
-    # vel_noise: float = 0.0
+    vel_noise: float = 1.0  # best one 2026Feb8
+    # vel_noise: float = 0.1
     ramp_pos: bool = True
     r_intersect_factor: float = 0.1  # best one 2026Feb8
+    # r_intersect_factor: float = 0.25  #
     k_intersect_factor: float = 10000.0  # best one 2026Feb8
-    # k_intersect_factor: float = 0.0  # best one 2026Feb8
+    # k_intersect_factor: float = 100000.0
     tolerance: float = 1e-4
     # tolerance: float = 1e-6
 
@@ -147,7 +148,7 @@ class EquilibriumConfig:
 # -----------------------------
 @dataclass(frozen=True)
 class TrainingConfig:
-    T: int = 125  # total training set time (not time to reach equilibrium during every step)
+    T: int = 12  # total training set time (not time to reach equilibrium during every step)
 
     # desired_buckle_type: str = 'random'
     # desired_buckle_type: str = 'opposite'

@@ -136,7 +136,7 @@ def train(Strctr: StructureClass, Variabs: VariablesClass, CFG: ExperimentConfig
                                                                                        tip_angle=Sprvsr.tip_angle_update_in_t[t])
 
         # ------ save sizes and plot ------
-        State_update._save_data(t, Strctr, final_pos_update, State_update.buckle_arr, F_theta)
+        State_update._save_data(t, Strctr, final_pos_update, State_update.buckle_arr, F_theta_udpate)
 
         # ------ shims buckle ------
         buckle_bool = State_update.buckle(Variabs, Strctr, t, State_measured = State_meas)

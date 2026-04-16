@@ -336,7 +336,8 @@ def plot_compare_sim_exp_stress_strain(exp_dfs: List[pd.DataFrame], sim_df: pd.D
 # --------------------------------------------------------
 # Animations
 # --------------------------------------------------------
-def animate_arm_w_arcs(traj_pos, L, frames=10, interval_ms=30, save_path=None, fps=30, buckle_traj=None):
+def animate_arm_w_arcs(traj_pos, L, Fx: Optional[NDArray] = None, Fy: Optional[NDArray] = None, frames=10,
+                       interval_ms=30, save_path=None, fps=30, buckle_traj=None):
     """
     Animate an N-link arm over time, optionally drawing hinge arcs.
 
@@ -371,22 +372,37 @@ def animate_arm_w_arcs(traj_pos, L, frames=10, interval_ms=30, save_path=None, f
     # --- downsample time ---
     stride = max(1, int(T_all / frames))
     pos = pos[::stride]
+    if Fx is not None:
+        Fx = Fx[::stride]
+    if Fy is not None:
+        Fy = Fy[::stride]
     T, N, _ = pos.shape
 
-    fig, ax = plt.subplots(figsize=(4, 4))
-    ax.set_aspect("equal", adjustable="box")
-    ax.set_xlim([-L, 8 * L])
-    ax.set_ylim([-4.5 * L, 4.5 * L])
-    ax.set_xlabel("x")
-    ax.set_ylabel("y")
+    # ------ figure ------
+    fig, (ax_chain, ax_force) = plt.subplots(1, 2, figsize=(10, 4.5), gridspec_kw={"width_ratios": [1.1, 1.0]})
+
+    # ------ left panel: chain ------
+    ax_chain.set_aspect("equal", adjustable="box")
+    ax_chain.set_xlim([-L, 8 * L])
+    ax_chain.set_ylim([-4.5 * L, 4.5 * L])
+    ax_chain.set_xlabel("x")
+    ax_chain.set_ylabel("y")
 
     # Polyline + joints + tip label
-    (line,) = ax.plot([], [], linewidth=4)
-    scat = ax.scatter([], [], s=60, zorder=3)
-    tip_text = ax.text(0, 0, "", va="bottom", ha="left")
+    (line,) = ax_chain.plot([], [], linewidth=4)
+    scat = ax_chain.scatter([], [], s=60, zorder=3)
+    tip_text = ax_chain.text(0, 0, "", va="bottom", ha="left")
 
     # List to hold current arc patches so we can remove them each frame
     arc_patches: list[patches.Arc] = []
+
+    # ------ right panel: force ------
+    t_plot = np.arange(T)
+    # start as bullets only
+    (line_fx,) = ax_force.plot([], [], linestyle="-", marker="o", markersize=6, label=r"$F_x$")
+    (line_fy,) = ax_force.plot([], [], linestyle="-", marker="o", markersize=6, label=r"$F_y$")
+    ax_force.set_ylim([-300, 300])
+    ax_force.set_xlim([-1, T+1])
 
     def init():
         line.set_data([], [])
@@ -405,7 +421,7 @@ def animate_arm_w_arcs(traj_pos, L, frames=10, interval_ms=30, save_path=None, f
         scat.set_offsets(pts)
         tip_text.set_position((xs[-1], ys[-1]))
         tip_text.set_text(f"Tip ({xs[-1]:.2f}, {ys[-1]:.2f})")
-        ax.set_title(f"t= {ti + 1}/{T}")
+        ax_chain.set_title(f"t= {ti + 1}/{T}")
 
         # ---- remove previous arcs ----
         for a in arc_patches:
@@ -425,12 +441,20 @@ def animate_arm_w_arcs(traj_pos, L, frames=10, interval_ms=30, save_path=None, f
                 arrow = patches.FancyArrowPatch(p, p + v/np.linalg.norm(v)*0.035, arrowstyle='-|>', mutation_scale=25,
                                                 linewidth=2, capstyle='round', joinstyle='round')
                 try:
-                    ax.add_patch(arrow)
+                    ax_chain.add_patch(arrow)
                     arc_patches.append(arrow)
                 except:
                     print('bad animation, lets solve this later')
 
+        if Fx is not None and Fy is not None:
+            # ---- force history up to current frame ----
+            tt = t_plot[: ti + 1]
+            line_fx.set_data(tt, Fx[: ti + 1])
+            line_fy.set_data(tt, Fy[: ti + 1])
+
         return line, scat, tip_text, *arc_patches
+
+    ax_force.legend()
 
     anim = FuncAnimation(fig, update, frames=T, init_func=init, interval=interval_ms, blit=True)
 

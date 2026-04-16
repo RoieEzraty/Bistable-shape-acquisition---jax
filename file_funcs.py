@@ -215,9 +215,13 @@ def export_training_csv(path_csv: str, Strctr: "StructureClass", Sprvsr: "Superv
     des_Fy = Sprvsr.desired_Fy_in_t * Sprvsr.convert_F
 
     meas_Fx = meas_Fy = None
+    update_Fx = update_Fy = None
     if State_meas is not None:
         meas_Fx = State_meas.Fx_in_t * Sprvsr.convert_F
         meas_Fy = State_meas.Fy_in_t * Sprvsr.convert_F
+    if State_update is not None:
+        update_Fx = State_update.Fx_in_t * Sprvsr.convert_F
+        update_Fy = State_update.Fy_in_t * Sprvsr.convert_F
 
     path_csv = Path(path_csv)
     path_csv.parent.mkdir(parents=True, exist_ok=True)
@@ -242,12 +246,10 @@ def export_training_csv(path_csv: str, Strctr: "StructureClass", Sprvsr: "Superv
     header += [f"loss_{i}" for i in range(loss_size)]
     header += ["loss_MSE"]
 
-    # measured forces
-    if State_meas is not None:
+    if State_meas is not None:  # measured forces
         header += ["Fx_meas", "Fy_meas"]
-
-    # desired forces
-    header += ["Fx_des", "Fy_des"]
+    header += ["Fx_des", "Fy_des"]  # desired forces
+    header += ["Fx_update", "Fy_update"]  # tip update forces
 
     # whole buckle arrays
     if State_meas is not None:
@@ -280,12 +282,10 @@ def export_training_csv(path_csv: str, Strctr: "StructureClass", Sprvsr: "Superv
             row += [float(x) for x in Sprvsr.loss_in_t[t, :]]
             row += [float(Sprvsr.loss_MSE_in_t[t])]
 
-            # measured forces
-            if State_meas is not None:
+            if State_meas is not None:  # measured forces
                 row += [float(meas_Fx[t]), float(meas_Fy[t])]
-
-            # desired forces
-            row += [float(des_Fx[t]), float(des_Fy[t])]
+            row += [float(des_Fx[t]), float(des_Fy[t])]  # desired forces
+            row += [float(update_Fx[t]), float(update_Fy[t])]  # update forces
 
             # full buckle arrays
             if State_meas is not None:

@@ -109,7 +109,7 @@ def run_one_job(job):
                     buckle_in_t = np.moveaxis(State_meas.buckle_in_t, 2, 0)
                     final_frame = min(t + 3, pos_in_t_update.shape[0])
                     # gif_path = str(run_dir / f"gif_init_{init_buckle_str}_desired_{desired_buckle_str}_inverted.gif")
-                    gif_path = str(run_dir / f"gif_init_{init_buckle_str}_desired_{desired_buckle_str}_inverted.mp4")
+                    gif_path = str(run_dir / f"gif_init_{init_buckle_str}_desired_{desired_buckle_str}_inverted.html")
                     plot_funcs.animate_arm_w_arcs(pos_in_t_update[1:final_frame, :, :], Strctr.L,
                                                   frames=max(1, final_frame - 1), interval_ms=400,
                                                   save_path=str(gif_path), fps=2,

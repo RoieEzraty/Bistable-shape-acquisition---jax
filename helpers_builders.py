@@ -397,12 +397,12 @@ def effective_radius(R: float, L: float, total_angle: float, tip_angle: float, m
 
     # ------ tip ------
     delta = float(np.abs(total_angle - tip_angle))  # radians, unwrapped
-    
+
     n_rev = int(np.floor(delta / two_pi))
     rem = delta - n_rev * two_pi  # in [0, 2π)
 
     shrink_full_tip = (2.0 * L) * n_rev
-    
+
     shrink_partial_tip = L * (1.0 - np.cos(rem / 2.0))  # in [0, 2L)
     # shrink_partial = L * (1.0 - np.cos(rem))  # in [0, 2L)
     if not supress_prints:
@@ -559,6 +559,37 @@ def coil(angle: float, revolutions: float = 1.5):
     boolean - True=coiled too much, correct inside SupervisorClass.calc_update
     """
     return np.abs(angle) > revolutions * 2*np.pi
+
+
+def has_self_intersection(pos_arr: NDArray[np.float_], edges_arr: NDArray[np.int_]) -> bool:
+    """
+    Return bool stating if chain contains self-intersection.
+
+    Parameters
+    ----------
+    pos_arr   : array (N, 2). Cartesian coordinates of chain nodes: ``[[x0, y0], [x1, y1], ..., [x_{N-1}, y_{N-1}]]``.
+
+    edges_arr : array (E, 2). Edge connectivity. Each row contains 2 node indices of a segment: edges_arr[e] = [i, j].
+
+    Returns
+    -------
+    bool, ``True`` if at least one pair of non-neighboring edges intersects
+
+    Notes
+    -----
+    - The function checks all pairs of **non-neighboring** edges
+    """
+    E = np.asarray(edges_arr)
+    for e1 in range(len(E)):
+        a, b = E[e1]
+        for e2 in range(e1 + 1, len(E)):
+            c, d = E[e2]
+            # skip adjacent edges sharing a node
+            if len({a, b, c, d}) < 4:
+                continue
+            if _segments_intersect(pos_arr[a], pos_arr[b], pos_arr[c], pos_arr[d], include_endpoints=False):
+                return True
+    return False
 
 
 # ---------------------------------------------------------------

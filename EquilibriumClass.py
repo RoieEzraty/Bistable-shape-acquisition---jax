@@ -100,7 +100,7 @@ class EquilibriumClass(eqx.Module):
                  pos_arr: jax.Array = None):
         self.damping_coeff = CFG.Eq.damping
         self.mass = CFG.Eq.mass        
-        self.time_points = jnp.linspace(0, CFG.Eq.T_eq, int(5e2))
+        self.time_points = jnp.linspace(0, CFG.Eq.T_eq, int(60))
         self.tolerance = CFG.Eq.tolerance
 
         # default buckle: all +1
@@ -539,7 +539,7 @@ class EquilibriumClass(eqx.Module):
         return Ftot.reshape(-1)
 
     # -------- external forces ----------
-    def force_function_free(self, t: float, force_function: Callable[[float], jax.Array], *, 
+    def force_function_free(self, t: float, force_function: Callable[[float], jax.Array], *,
                             free_mask: jax.Array) -> jax.Array:
         """
         External force restricted to free DOFs. returns all zeros as of 2026Mar
@@ -552,7 +552,7 @@ class EquilibriumClass(eqx.Module):
     def solve_dynamics(self, state_0: jax.Array, Variabs: "VariablesClass", Strctr: "StructureClass",
                        fixed_mask: jax.Array[bool] = None, fixed_vals: jax.Array[jnp.float64] = None,
                        imposed_mask: jax.Array[bool] = None, imposed_vals: jax.Array[jnp.float64] = None,
-                       maxsteps: int = 100):
+                       maxsteps: int = 1000):
         """
         Integrate damped EOMs for chain on FREE DOFs, enforcing fixed and imposed DOFs through masks.
 
