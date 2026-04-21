@@ -99,16 +99,14 @@ class SupervisorClass:
 
     # --- dataset inputs (what tip we command at each step) ---
     tip_pos_in_t: NDArray[np.float32] = eqx.field(init=False, static=True)         # (T, 2)
-    tip_angle_in_t: Optional[NDArray[np.float32]] = eqx.field(default=None, init=False, static=True)    # (T,)
+    tip_angle_in_t: NDArray[np.float32] = eqx.field(default=None, init=False, static=True)    # (T,)
 
     # --- running logs / losses ---
     loss_in_t: NDArray[np.float32] = eqx.field(init=False, static=True)            # (T, 2)
     loss_MSE_in_t: NDArray[np.float32] = eqx.field(init=False, static=True)        # (T,)
     tip_pos_update_in_t: NDArray[np.float32] = eqx.field(init=False, static=True)  # (T, 2)
-    tip_angle_update_in_t: Optional[NDArray[np.float32]] = eqx.field(default=None, init=False,
-                                                                     static=True)  # (T,)
-    total_angle_update_in_t: Optional[NDArray[np.float32]] = eqx.field(default=None, init=False,
-                                                                       static=True)  # (T,)
+    tip_angle_update_in_t: NDArray[np.float32] = eqx.field(default=None, init=False, static=True)  # (T,)
+    total_angle_update_in_t: NDArray[np.float32] = eqx.field(default=None, init=False, static=True)  # (T,)
 
     # ------ for equilibrium calculation, jax arrays ------
     imposed_mask: jax.ndarray[bool] = eqx.field(static=True)                       # (2*nodes,)
@@ -177,11 +175,11 @@ class SupervisorClass:
         self.invert_delta_tip = False
 
         # tip restart bookkeeping for origin-cut handling
-        self.origin_cut_restart_count = 0          # consecutive origin-cut restarts
+        self.origin_cut_restart_count = 0  # consecutive origin-cut restarts
         self.coil_count = 0  # consecutive restarts due to tip coiling
-        self.last_restart_reason = None            # None | "origin_cut" | "coil"
-        self.origin_restart_base_frac = 0.6       # base vertical offset in units of L
-        self.origin_restart_step_frac = 0.6       # extra offset per repeated cut, in units of L
+        self.last_restart_reason: Optional[str] = None  # None | "origin_cut" | "coil"
+        self.origin_restart_base_frac = 0.6  # base vertical offset in units of L
+        self.origin_restart_step_frac = 0.6  # extra offset per repeated cut, in units of L
 
     # ---------------------------------------------------------------
     # Imposed mask boolean
@@ -480,15 +478,20 @@ class SupervisorClass:
         # ------ correct for coil or cut origin ------
         cond_coil = helpers_builders.coil(self.tip_angle_update_in_t[t], revolutions=1.5)
 
-        before_tip_tminus1 = helpers_builders._get_before_tip(self.tip_pos_update_in_t[t-1, :],
-                                                              self.tip_angle_update_in_t[t-1], Strctr.L, xp=np)
-        before_tip_t = helpers_builders._get_before_tip(self.tip_pos_update_in_t[t, :], self.tip_angle_update_in_t[t],
-                                                        Strctr.L, xp=np)
+        # before_tip_tminus1 = helpers_builders._get_before_tip(self.tip_pos_update_in_t[t-1, :],
+        #                                                       self.tip_angle_update_in_t[t-1], Strctr.L, xp=np)
+        # before_tip_t = helpers_builders._get_before_tip(self.tip_pos_update_in_t[t, :], self.tip_angle_update_in_t[t],
+        #                                                 Strctr.L, xp=np)
 
-        cond_cut_origin = helpers_builders.swept_last_edge_crosses_first_edge(before_prev=before_tip_tminus1,
-                                                                              tip_prev=self.tip_pos_update_in_t[t-1, :],
-                                                                              before_new=before_tip_t,
+        # cond_cut_origin = helpers_builders.swept_last_edge_crosses_first_edge(before_prev=before_tip_tminus1,
+        #                                                                       tip_prev=self.tip_pos_update_in_t[t-1, :],
+        #                                                                       before_new=before_tip_t,
+        #                                                                       tip_new=self.tip_pos_update_in_t[t, :],
+        #                                                                       L=Strctr.L, include_endpoints=False)
+        cond_cut_origin = helpers_builders.swept_last_edge_crosses_first_edge(tip_prev=self.tip_pos_update_in_t[t-1, :],
+                                                                              angle_prev=self.tip_angle_update_in_t[t-1],
                                                                               tip_new=self.tip_pos_update_in_t[t, :],
+                                                                              angle_new=self.tip_angle_update_in_t[t],
                                                                               L=Strctr.L, include_endpoints=False)
 
         self.restart = False

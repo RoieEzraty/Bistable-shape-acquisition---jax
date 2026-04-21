@@ -113,17 +113,18 @@ class EquilibriumConfig:
     # independent knobs
     calc_through_energy: bool = False
     rand_key_Eq: int = 3
-    pos_noise: float = 0.1  # best one 2026Feb8
-    # pos_noise: float = 0.0
-    vel_noise: float = 1.0  # best one 2026Feb8
-    # vel_noise: float = 0.1
+    # pos_noise: float = 0.1  # best one 2026Feb8
+    pos_noise: float = 0.002
+    # vel_noise: float = 1.0  # best one 2026Feb8
+    vel_noise: float = 0.1
     ramp_pos: bool = True
     r_intersect_factor: float = 0.1  # best one 2026Feb8
-    # r_intersect_factor: float = 0.25  #
+    # r_intersect_factor: float = 0.25  # 2026Apr16
     k_intersect_factor: float = 10000.0  # best one 2026Feb8
     # k_intersect_factor: float = 100000.0
-    tolerance: float = 1e-4
+    tolerance: float = 1e-4  # best one 2026Feb8
     # tolerance: float = 1e-6
+    maxsteps: int = 16000
 
     def __post_init__(self):
         if self.material in {"Leon_plastic", "numerical"}:
@@ -132,13 +133,11 @@ class EquilibriumConfig:
             object.__setattr__(self, "damping", 4.0)
             object.__setattr__(self, "mass", 5e-3)
         elif self.material in {"Leon_metal", "Roie_metal"}:
-            # object.__setattr__(self, "k_stretch_ratio", 2e4)
-            object.__setattr__(self, "k_stretch_ratio", 9e3)
-            object.__setattr__(self, "T_eq", 0.04)
-            # object.__setattr__(self, "T_eq", 0.06)
-            # object.__setattr__(self, "damping", 4.0)
-            object.__setattr__(self, "damping", 8.0)
-            object.__setattr__(self, "mass", 12e-3)
+            object.__setattr__(self, "k_stretch_ratio", 9e3)  # best one 2026Feb8
+            # object.__setattr__(self, "T_eq", 0.04)  # best one 2026Feb8
+            object.__setattr__(self, "T_eq", 0.64)  # 2026Apr21 good?
+            object.__setattr__(self, "damping", 8.0)  # best one 2026Feb8
+            object.__setattr__(self, "mass", 12e-3)  # best on 2026Feb8
         else:
             raise ValueError(f"Unknown material: {self.material}")
 
@@ -148,7 +147,7 @@ class EquilibriumConfig:
 # -----------------------------
 @dataclass(frozen=True)
 class TrainingConfig:
-    T: int = 12  # total training set time (not time to reach equilibrium during every step)
+    T: int = 150  # total training set time (not time to reach equilibrium during every step)
 
     # desired_buckle_type: str = 'random'
     # desired_buckle_type: str = 'opposite'

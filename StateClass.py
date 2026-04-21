@@ -121,6 +121,10 @@ class StateClass:
         # ------ edge lengths (last snapshot) ------
         self.edge_lengths: NDArray[np.float32] = zeros((Strctr.edges,), dtype=np.float32)
 
+        # ------ self intersections -------
+        self.self_intersection = False
+        self.intersection_times = []
+
     # ---------------------------------------------------------------
     # Ingest from EquilibriumClass (JAX → NumPy)
     # ---------------------------------------------------------------
@@ -156,12 +160,15 @@ class StateClass:
 
         # ------- Force normal on wall -------
         if Forces is not None:
+            # If trajectory/history was passed, use final frame
+            if Forces.ndim == 2:
+                Forces = Forces[-1]
+
             if np.size(Forces) == 2:  # forces already in the right shape
                 self.Fx = Forces[0]
                 self.Fy = Forces[1]
             else:
-                # forces are sum over 2 final nodes, each axis on its own
-                if Strctr.hinges > 1:
+                if Strctr.hinges > 1:  # forces are sum over 2 final nodes, each axis on its own
                     self.Fx = Forces[-4] + Forces[-2]
                     self.Fy = Forces[-3] + Forces[-1]
                     # self.Fx = Forces[-4]
@@ -186,6 +193,11 @@ class StateClass:
 
         # ------- edge_lengths -------
         self.edge_lengths = Strctr.all_edge_lengths(self.pos_arr)
+
+        # ------ self intersections ------
+        if helpers_builders.has_self_intersection(self.pos_arr, Strctr.edges_arr):
+            self.self_intersection = True
+            self.intersection_times.append(t)
 
     # ---------------------------------------------------------------
     # Buckle update rule

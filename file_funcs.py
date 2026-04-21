@@ -257,6 +257,10 @@ def export_training_csv(path_csv: str, Strctr: "StructureClass", Sprvsr: "Superv
     if State_update is not None:
         header += ["buckle_arr_update"]
 
+    # chain intersects with itself
+    if State_update.intersection_times is not None:
+        header += ["intersection_times"]
+
     # ------ write ------
     with open(path_csv, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
@@ -292,6 +296,10 @@ def export_training_csv(path_csv: str, Strctr: "StructureClass", Sprvsr: "Superv
                 row += [arr_to_json(State_meas.buckle_in_t[:, :, t])]
             if State_update is not None:
                 row += [arr_to_json(State_update.buckle_in_t[:, :, t])]
+
+            # chain intersects with itself
+            if State_update.intersection_times is not None:
+                row += [int(State_update.intersection_times[t]) if t < len(State_update.intersection_times) else int(0)]
 
             w.writerow(row)
 
@@ -422,8 +430,8 @@ def build_success_matrix(folder: Path, old: bool = False, N: int = 16, near_miss
     1 - didn't train on this path
     2 - unsuccessful training
     """
-    M = np.zeros((16, 16)) + 1.0
-    B = np.zeros((16, 16)) + 1.0  # matrix where 1 is a run that weren't uploaded to M yet and 0 otherwise
+    M = np.zeros((N, N)) + 1.0
+    B = np.zeros((N, N)) + 1.0  # matrix where 1 is a run that weren't uploaded to M yet and 0 otherwise
 
     for file in folder.glob("final_loss_*.csv"):
         if omit_inverted and file.name.endswith("_inverted.csv"):  # neglect all files ending with "_inverted.csv"
@@ -469,6 +477,39 @@ def build_success_matrix(folder: Path, old: bool = False, N: int = 16, near_miss
                 M[N-1-i, N-1-j] = M[i, j]
 
     return M
+
+
+def build_intersection_matrix(folder: Path, N: int = 16) -> NDArray[np.int_]:
+    """
+    Build a matrix marking which runs had self-intersections.
+
+    Returns
+    -------
+    M_flag : (N, N) ndarray of int
+        1 where the run file exists and is flagged as intersecting,
+        0 otherwise.
+    """
+    M_flag = np.zeros((N, N), dtype=int)
+
+    for file in folder.glob("final_loss_*.csv"):
+        name = file.stem
+
+        init_bits = re.search(r"init_([01]+)", name).group(1)
+        desired_bits = re.search(r"desired_([01]+)", name).group(1)
+
+        # buckle_to_index accepts either 0/1 or -1/+1 effectively,
+        # because it maps x == 1 -> 1, else -> 0
+        init = [int(ch) for ch in init_bits]
+        desired = [int(ch) for ch in desired_bits]
+
+        i = helpers_builders.buckle_to_index(init)
+        j = helpers_builders.buckle_to_index(desired)
+
+        flagged = "_intersect" in name
+        if flagged:
+            M_flag[i, j] = 1
+
+    return M_flag
 
 
 def shortest_success_paths(M: np.ndarray):

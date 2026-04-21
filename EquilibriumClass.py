@@ -72,12 +72,12 @@ class EquilibriumClass(eqx.Module):
     _theta_jacs_local(Strctr, x_flat)
         Compute local hinge-angle Jacobians ∂θ_h/∂x for all hinges h.
     _set_fixed_vals(fixed_mask)
-        boolean jax array (2*N,), nonzero values are values that are fixed along equilibrium calculation 
+        boolean jax array (2*N,), nonzero values are values that are fixed along equilibrium calculation
         (i.e. 1st and 2nd nodes at chain base)
     _set_imposed_vals(Strctr, Sprvsr, tip_pos, tip_angle, init_pos):
         Build a time-dependent imposed displacement function.
     """
-    
+
     # --- User input ---
     damping_coeff: float       # damping coefficient for right hand side of eqn of motion
     mass: float                # Newtonian mass for right hand side of eqn of motion
@@ -89,18 +89,19 @@ class EquilibriumClass(eqx.Module):
     vel_noise: float           # noise amplitude on initial velocities
     r_intersect_factor: float  # radius from which chain intersecting with itself produces repulsion, fraction of edge length
     k_intersect_factor: float  # force factor of repulsion due to chain intersecting with itself, later multiplied by k_stretch
+    maxsteps: int             # max integration steps in odeint in solve_dynamics()
 
     # ---- state / derived ----
     rest_lengths: jax.Array                          # (H+1,) edge rest lengths (from initial pos)
     jnp_init_pos: jax.Array                          # (hinges+2, 2) integer coordinates
     buckle_arr: jax.Array                            # (H,) ∈ {+1,-1} per hinge/shim (direction of stiff side)
     time_points: jax.Array                           # (T_eq, ) time steps for simulating equilibrium configuration
-    
+
     def __init__(self, Strctr: "StructureClass", CFG: ExperimentConfig, ramp_pos: bool = True, buckle_arr: jax.Array = None,
                  pos_arr: jax.Array = None):
         self.damping_coeff = CFG.Eq.damping
-        self.mass = CFG.Eq.mass        
-        self.time_points = jnp.linspace(0, CFG.Eq.T_eq, int(60))
+        self.mass = CFG.Eq.mass
+        self.time_points = jnp.linspace(0, CFG.Eq.T_eq, int(800))
         self.tolerance = CFG.Eq.tolerance
 
         # default buckle: all +1
@@ -109,13 +110,13 @@ class EquilibriumClass(eqx.Module):
         else:
             self.buckle_arr = buckle_arr
             assert self.buckle_arr.shape == (Strctr.hinges, Strctr.shims)
-            
+
         if pos_arr is None:
             self.jnp_init_pos = helpers_builders._initiate_pos(Strctr.edges+1, Strctr.L)  # (N=hinges+2, 2)
         else:
             self.jnp_init_pos = jnp.asarray(pos_arr)
-            
-        # each edge's rest length is L, it's fixed and very stiff 
+
+        # each edge's rest length is L, it's fixed and very stiff
         self.rest_lengths = jnp.full((Strctr.hinges + 1,), Strctr.L, dtype=jnp.float32)
         self.calc_through_energy = CFG.Eq.calc_through_energy
         self.ramp_pos = CFG.Eq.ramp_pos
@@ -124,6 +125,7 @@ class EquilibriumClass(eqx.Module):
         self.vel_noise = CFG.Eq.vel_noise
         self.r_intersect_factor = CFG.Eq.r_intersect_factor
         self.k_intersect_factor = CFG.Eq.k_intersect_factor
+        self.maxsteps = CFG.Eq.maxsteps
 
     # ---------------------------------------------------------------
     # main function of EquilibriumClass
@@ -167,15 +169,11 @@ class EquilibriumClass(eqx.Module):
 
         Returns
         -------
-        final_pos : jax.Array, shape (N, 2)
-            Final nodal positions at the end of the dynamic relaxation.
-        pos_in_t : jax.Array, shape (T_eq_samples, N, 2)
-            Time history of nodal positions over the integration time grid.
-        vel_in_t : jax.Array, shape (T_eq_samples, N, 2)
-            Time history of nodal velocities over the integration time grid.
-        forces: jax.Array, shape (N,)
-            Time history of the internal reaction forces (stretch + bending) [mN]
-            on each positional DOF, evaluated along the trajectory.
+        final_pos : jax.Array, (N, 2). Final nodal positions at the end of the dynamic relaxation.
+        pos_in_t  : jax.Array, (T_eq_samples, N, 2). Time history of nodal positions over integration time.
+        vel_in_t  : jax.Array, (T_eq_samples, N, 2). Time history of nodal velocities over  integration time.
+        forces    : jax.Array, (T_eq_samples, N, 2). Time history of internal reaction forces (stretch + bending) [mN]
+                                                     on each positional DOF, evaluated along the trajectory.
 
         Notes
         -----
@@ -205,13 +203,13 @@ class EquilibriumClass(eqx.Module):
 
         # -------- run dynamics ----------
         final_pos, pos_in_t, vel_in_t, potential_F_in_t = self.solve_dynamics(state_0, Variabs, Strctr,
-                                                                              fixed_mask=Strctr.fixed_mask, 
+                                                                              fixed_mask=Strctr.fixed_mask,
                                                                               fixed_vals=fixed_vals,
                                                                               imposed_mask=Sprvsr.imposed_mask,
                                                                               imposed_vals=imposed_vals)
         # print('STD forces=', jax.numpy.std(potential_F_in_t[300:], axis=0))
         # print('STD pos=', jax.numpy.std(pos_in_t[300:], axis=0))
-        forces = potential_F_in_t[-1]  # [mN] from torque files
+        forces = potential_F_in_t  # [mN] from torque files
 
         return final_pos, pos_in_t, vel_in_t, forces
 
@@ -280,7 +278,7 @@ class EquilibriumClass(eqx.Module):
 
         # Map torques to DOF forces
         F_theta_full = (theta_jacs.T @ tau_hinges).reshape(-1)  # (n_coords,) which is (2*nodes,), [mN]
-        
+
         # ------ Edge stretch forces ------
         F_stretch_full = self.stretch_forces(Strctr, Variabs, jnp_pos_arr)  # (n_coords,) which is (2*nodes,), [mN]
 
@@ -384,8 +382,9 @@ class EquilibriumClass(eqx.Module):
             Internal reaction force on **free position DOFs** (restoring sign), [mN]
         """
         return self.total_potential_force(Variabs, Strctr, t, x_free, free_mask=free_mask, fixed_mask=fixed_mask,
-                                          imposed_mask=imposed_mask, fixed_vals=fixed_vals, imposed_vals=imposed_vals)[free_mask]
- 
+                                          imposed_mask=imposed_mask, fixed_vals=fixed_vals,
+                                          imposed_vals=imposed_vals)[free_mask]
+
     # ---------------------------------------------------------------
     # physical forces - bend, stretch, intersect
     # ---------------------------------------------------------------
@@ -399,7 +398,7 @@ class EquilibriumClass(eqx.Module):
         """
 
         theta_jacs = self._theta_jacs_local(Strctr, x_full)  # (H, n_coords)
-        return (theta_jacs.T @ tau_hinges).reshape(-1)  # (n_coords,) which is (2*nodes,), [mN]  
+        return (theta_jacs.T @ tau_hinges).reshape(-1)  # (n_coords,) which is (2*nodes,), [mN]
 
     def stretch_forces(self, Strctr: "StructureClass", Variabs: "VariablesClass",
                        jnp_pos_arr: jax.Array[float]) -> jax.Array:
@@ -449,12 +448,12 @@ class EquilibriumClass(eqx.Module):
         F = F.at[edges[:, 1], :].add(-fvec)
         return F.reshape(-1)                  # (n_coords,) which is (2*nodes,)
 
-    def contact_forces_node_edge(self, Strctr: "StructureClass", Variabs: "VariablesClass", jnp_pos_arr: jax.Array, 
+    def contact_forces_node_edge(self, Strctr: "StructureClass", Variabs: "VariablesClass", jnp_pos_arr: jax.Array,
                                  edges: jax.Array, p: float = 1.0, fmax: float | None = None, skip_band: int = 1,
                                  eps: float = 1e-12):
         """
         Compute node–edge contact (self-intersection prevention) forces for a planar chain.
-        Computes the shortest distance from node i to the edge (j,k). 
+        Computes the shortest distance from node i to the edge (j,k).
         If the node penetrates within a radius r = r_intersect_factor * L, a repulsive force is applied along the outward normal.
         Equal and opposite forces are distributed to the segment endpoints (j,k).
         To avoid fighting stretch constraints, edges whose endpoints are within `skip_band` from the node are ignored.
@@ -464,14 +463,14 @@ class EquilibriumClass(eqx.Module):
         jnp_pos_arr: (N,2) jax array, node positions in x-y
         edges      : (NE, 2) of each edge (1st dim) connecting node i to j (2nd dim)
         p          : exponent on penetration (1=linear, 2=quadratic)
-        fmax       : float, maximal force that can be applied while using node-edge contact 
+        fmax       : float, maximal force that can be applied while using node-edge contact
         skip_band  : skip edges within this index distance (chain), don't measure contact between a node and its own edge
-        eps    
+        eps        : float, Small positive constant added to the denominator to avoid division by zero
 
         Returns
         -------
         F_contact_full : jax.Array, shape (2*N,). Flattened contact force [mN] on all nodes, ordered as:
-                         [Fx0, Fy0, Fx1, Fy1, ..., Fx_{N-1}, Fy_{N-1}] 
+                         [Fx0, Fy0, Fx1, Fy1, ..., Fx_{N-1}, Fy_{N-1}]
         """
         r = self.r_intersect_factor*Strctr.L
         k = self.k_intersect_factor*Variabs.k_stretch
@@ -551,8 +550,7 @@ class EquilibriumClass(eqx.Module):
     # ---------------------------------------------------------------
     def solve_dynamics(self, state_0: jax.Array, Variabs: "VariablesClass", Strctr: "StructureClass",
                        fixed_mask: jax.Array[bool] = None, fixed_vals: jax.Array[jnp.float64] = None,
-                       imposed_mask: jax.Array[bool] = None, imposed_vals: jax.Array[jnp.float64] = None,
-                       maxsteps: int = 1000):
+                       imposed_mask: jax.Array[bool] = None, imposed_vals: jax.Array[jnp.float64] = None):
         """
         Integrate damped EOMs for chain on FREE DOFs, enforcing fixed and imposed DOFs through masks.
 
@@ -645,7 +643,7 @@ class EquilibriumClass(eqx.Module):
             return jnp.concatenate([xdot_free, accel], axis=0)
 
         # ------ integrate reduced system ------
-        res_free: jax.Array = odeint(rhs, state_0_free, self.time_points, rtol=self.tolerance, mxstep=maxsteps)
+        res_free: jax.Array = odeint(rhs, state_0_free, self.time_points, rtol=self.tolerance, mxstep=self.maxsteps)
 
         # ------ reconstruct full state history (positions+velocities) ------
         # free DOFs occupy the same mask in both position and velocity halves
@@ -777,7 +775,6 @@ class EquilibriumClass(eqx.Module):
         if tip_pos is None:
             return lambda t, v=start_vec: v
 
-        tip_init = start_vec[-2:]  # only if last node is tip in your flattening
         # Better: explicitly pull from init_pos:
         tip_init = init_pos[-1, :]                      # (2,)
         before_tip_init = init_pos[-2, :]                   # (2,)
@@ -804,9 +801,7 @@ class EquilibriumClass(eqx.Module):
             tip_t = (1-s) * tip_init + s * tip_fin
             th_t = (1-s) * theta_init + s * theta_fin
 
-            before_t = helpers_builders._get_before_tip(
-                tip_pos=tip_t, tip_angle=th_t, L=Strctr.L, dtype=init_pos.dtype
-            )
+            before_t = helpers_builders._get_before_tip(tip_pos=tip_t, tip_angle=th_t, L=Strctr.L, dtype=init_pos.dtype)
             out = start_vec
             out = out.at[Sprvsr.imposed_mask].set(jnp.concatenate([before_t, tip_t]))
             return out

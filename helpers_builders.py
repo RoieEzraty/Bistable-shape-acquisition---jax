@@ -368,7 +368,7 @@ def _correct_big_stretch(tip_pos: NDArray[np.float64], tip_angle: float, total_a
     return tip_new
 
 
-def effective_radius(R: float, L: float, total_angle: float, tip_angle: float, margin: float = 0.0, 
+def effective_radius(R: float, L: float, total_angle: float, tip_angle: float, margin: float = 0.0,
                      supress_prints: bool = True) -> float:
     """
     Compute effective maximal reachable radius of the chain, accounting for angular wrapping (coil shrinkage).
@@ -419,9 +419,9 @@ def effective_radius(R: float, L: float, total_angle: float, tip_angle: float, m
     return max(0.0, (R - margin) - shrink)
 
 
-def swept_last_edge_crosses_first_edge(before_prev: NDArray[np.float64], tip_prev: NDArray[np.float64],
-                                       before_new: NDArray[np.float64], tip_new: NDArray[np.float64], L: float,
-                                       *, eps: float = 1e-12, include_endpoints: bool = False) -> bool:
+def swept_last_edge_crosses_first_edge(tip_prev: np.ndarray, angle_prev: float, tip_new: np.ndarray, angle_new: float,
+                                       L: float, *, n_samples: int = 101, eps: float = 1e-12,
+                                       include_endpoints: bool = False) -> bool:
     """
     Return whether the quadrilateral swept by the last edge crosses the first edge.
 
@@ -450,13 +450,20 @@ def swept_last_edge_crosses_first_edge(before_prev: NDArray[np.float64], tip_pre
     first_a = np.array([0.0, 0.0], dtype=float)
     first_b = np.array([float(L), 0.0], dtype=float)
 
-    quad = np.array([before_prev, tip_prev, tip_new, before_new], dtype=float)
+    # quad = np.array([before_prev, tip_prev, tip_new, before_new], dtype=float)
 
-    # Check intersection with all 4 boundary edges of the swept quadrilateral
-    for i in range(4):
-        q0 = quad[i]
-        q1 = quad[(i + 1) % 4]
-        if _segments_intersect(first_a, first_b, q0, q1, eps=eps, include_endpoints=include_endpoints,):
+    # # Check intersection with all 4 boundary edges of the swept quadrilateral
+    # for i in range(4):
+    #     q0 = quad[i]
+    #     q1 = quad[(i + 1) % 4]
+    #     if _segments_intersect(first_a, first_b, q0, q1, eps=eps, include_endpoints=include_endpoints,):
+    #         return True
+    for s in np.linspace(0.0, 1.0, n_samples):
+        tip_s = (1.0 - s) * tip_prev + s * tip_new
+        angle_s = (1.0 - s) * angle_prev + s * angle_new
+        before_s = _get_before_tip(tip_s, angle_s, L, xp=np)
+
+        if _segments_intersect(first_a, first_b, before_s, tip_s, eps=eps, include_endpoints=include_endpoints):
             return True
     return False
 

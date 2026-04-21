@@ -95,25 +95,25 @@ def train(Strctr: StructureClass, Variabs: VariablesClass, CFG: ExperimentConfig
             _, P_des, F_des_full_traj = file_funcs.load_pos_force(file_path_des, mod="arrays")
             final_pos = State_meas.pos_arr_in_t[:, :, 0]
             final_pos_des = State_des.pos_arr_in_t[:, :, 0]
-            F_theta = np.mean(F_meas_full_traj, axis=0)
-            F_theta_des = np.mean(F_des_full_traj, axis=0)
+            F_in_t = np.mean(F_meas_full_traj, axis=0)
+            F_in_t_des = np.mean(F_des_full_traj, axis=0)
             Sprvsr.calc_concavity(F_meas_full_traj, F_des_full_traj)
         else:
             if t == 1 or buckle_bool or CFG.Train.dataset_sampling != 'specified':
-                final_pos, pos_in_t, _, F_theta = Eq_meas.calculate_state(Variabs, Strctr, Sprvsr,
-                                                                          init_pos=None,
-                                                                          tip_pos=Sprvsr.tip_pos_in_t[t],
-                                                                          tip_angle=Sprvsr.tip_angle_in_t[t])
-                final_pos_des, pos_in_t_des, _, F_theta_des = Eq_des.calculate_state(Variabs, Strctr, Sprvsr,
-                                                                                     init_pos=None,
-                                                                                     tip_pos=Sprvsr.tip_pos_in_t[t],
-                                                                                     tip_angle=Sprvsr.tip_angle_in_t[t])
+                final_pos, pos_in_t, _, F_in_t = Eq_meas.calculate_state(Variabs, Strctr, Sprvsr,
+                                                                         init_pos=None,
+                                                                         tip_pos=Sprvsr.tip_pos_in_t[t],
+                                                                         tip_angle=Sprvsr.tip_angle_in_t[t])
+                final_pos_des, pos_in_t_des, _, F_in_t_des = Eq_des.calculate_state(Variabs, Strctr, Sprvsr,
+                                                                                    init_pos=None,
+                                                                                    tip_pos=Sprvsr.tip_pos_in_t[t],
+                                                                                    tip_angle=Sprvsr.tip_angle_in_t[t])
 
         meas_count += 1
 
         # ------ save sizes and plot - measured & desired ------
-        State_meas._save_data(t, Strctr, final_pos, State_meas.buckle_arr, F_theta)
-        State_des._save_data(t, Strctr, final_pos_des, State_des.buckle_arr, F_theta_des)
+        State_meas._save_data(t, Strctr, final_pos, State_meas.buckle_arr, F_in_t)
+        State_des._save_data(t, Strctr, final_pos_des, State_des.buckle_arr, F_in_t_des)
 
         Sprvsr.set_desired(final_pos_des, State_des.Fx, State_des.Fy, t)
 
@@ -130,13 +130,13 @@ def train(Strctr: StructureClass, Variabs: VariablesClass, CFG: ExperimentConfig
         else:
             init_update_pos = State_update.pos_arr
 
-        final_pos_update, pos_in_t_update, _, F_theta_udpate = Eq_meas.calculate_state(Variabs, Strctr, Sprvsr,
-                                                                                       init_update_pos,
-                                                                                       tip_pos=Sprvsr.tip_pos_update_in_t[t],
-                                                                                       tip_angle=Sprvsr.tip_angle_update_in_t[t])
+        final_pos_update, pos_in_t_update, _, F_in_t_udpate = Eq_meas.calculate_state(Variabs, Strctr, Sprvsr,
+                                                                                      init_update_pos,
+                                                                                      tip_pos=Sprvsr.tip_pos_update_in_t[t],
+                                                                                      tip_angle=Sprvsr.tip_angle_update_in_t[t])
 
         # ------ save sizes and plot ------
-        State_update._save_data(t, Strctr, final_pos_update, State_update.buckle_arr, F_theta_udpate)
+        State_update._save_data(t, Strctr, final_pos_update, State_update.buckle_arr, F_in_t_udpate)
 
         # ------ shims buckle ------
         buckle_bool = State_update.buckle(Variabs, Strctr, t, State_measured = State_meas)
@@ -149,7 +149,7 @@ def train(Strctr: StructureClass, Variabs: VariablesClass, CFG: ExperimentConfig
             print('successful training')
             # add fictitious times just for gif plot
             for i in range(breath_for_gif):
-                State_update._save_data(t+breath_for_gif+1, Strctr, final_pos_update, State_update.buckle_arr, F_theta)
+                State_update._save_data(t+breath_for_gif+1, Strctr, final_pos_update, State_update.buckle_arr, F_in_t)
             break
 
     return Sprvsr, State_meas, State_des, State_update, Eq_meas, Eq_des, t
@@ -374,21 +374,21 @@ def one_shot(Strctr: "StructureClass", Variabs: "VariablesClass", Sprvsr: "Super
 
     # ------ claculate equilibrium from ode dynamics ------
     if init_pos is None:
-        final_pos, pos_in_t, vel_in_t, final_F = Eq.calculate_state(Variabs, Strctr, Sprvsr, init_pos=State.pos_arr,
-                                                                    tip_pos=tip_pos, tip_angle=tip_angle)
+        final_pos, pos_in_t, vel_in_t, F_in_t = Eq.calculate_state(Variabs, Strctr, Sprvsr, init_pos=State.pos_arr,
+                                                                   tip_pos=tip_pos, tip_angle=tip_angle)
     else:
         print('init_pose=', init_pos)
-        final_pos, pos_in_t, vel_in_t, final_F = Eq.calculate_state(Variabs, Strctr, Sprvsr, init_pos=init_pos,
-                                                                    tip_pos=tip_pos, tip_angle=tip_angle)
+        final_pos, pos_in_t, vel_in_t, F_in_t = Eq.calculate_state(Variabs, Strctr, Sprvsr, init_pos=init_pos,
+                                                                   tip_pos=tip_pos, tip_angle=tip_angle)
     # ------ save, plot, print ------
-    State._save_data(t, Strctr, final_pos, State.buckle_arr, final_F)
+    State._save_data(t, Strctr, final_pos, State.buckle_arr, F_in_t)
     State.buckle(Variabs, Strctr, t, State_measured=State)   
     print('pos_arr', final_pos)
     print('edge len', Strctr.all_edge_lengths(State.pos_arr))
     print('total edge error', np.sum((Strctr.all_edge_lengths(State.pos_arr)-Strctr.L)**2)/(Strctr.edges*Strctr.L**2))
     plot_funcs.plot_arm(State.pos_arr, State.buckle_arr, Strctr.L, modality="measurement")
     plt.show()
-    return pos_in_t, final_F
+    return pos_in_t, F_in_t[-1]
 
 
 # ---------------------------------------------------------------
@@ -464,7 +464,8 @@ def ADMET_stress_strain(Strctr: StructureClass, Variabs: VariablesClass, Sprvsr:
         State.buckle(Variabs, Strctr, i, State)
 
         # Save, plot, store
-        State._save_data(t=i, Strctr=Strctr, pos_arr=final_pos, buckle_arr=State.buckle_arr, Forces=potential_force_in_t)
+        State._save_data(t=i, Strctr=Strctr, pos_arr=final_pos, buckle_arr=State.buckle_arr,
+                         Forces=potential_force_in_t)
         print("State tip forces ", [State.Fx, State.Fy])
         print("edge lengths ", State.edge_lengths)
         if plot_every > 0 and (i % plot_every == 0):

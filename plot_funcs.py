@@ -8,6 +8,7 @@ from matplotlib import patches
 from matplotlib.ticker import MaxNLocator
 from matplotlib.animation import FuncAnimation, PillowWriter  # for GIF export
 from matplotlib.colors import BoundaryNorm
+from matplotlib.lines import Line2D
 from scipy.signal import savgol_filter
 from matplotlib.patches import Ellipse, FancyArrowPatch
 from collections import Counter
@@ -372,10 +373,15 @@ def animate_arm_w_arcs(traj_pos, L, Fx: Optional[NDArray] = None, Fy: Optional[N
     # --- downsample time ---
     stride = max(1, int(T_all / frames))
     pos = pos[::stride]
+    max_F = 0.0
     if Fx is not None:
         Fx = Fx[::stride]
+        max_Fx = max(abs(Fx))
+        max_F = max_Fx
     if Fy is not None:
         Fy = Fy[::stride]
+        max_Fy = max(abs(Fy))
+        max_F = max([max_F, max_Fy])
     T, N, _ = pos.shape
 
     # ------ figure ------
@@ -401,7 +407,7 @@ def animate_arm_w_arcs(traj_pos, L, Fx: Optional[NDArray] = None, Fy: Optional[N
     # start as bullets only
     (line_fx,) = ax_force.plot([], [], linestyle="-", marker="o", markersize=6, label=r"$F_x$")
     (line_fy,) = ax_force.plot([], [], linestyle="-", marker="o", markersize=6, label=r"$F_y$")
-    ax_force.set_ylim([-300, 300])
+    ax_force.set_ylim([-1.2*max_F, 1.2*max_F])
     ax_force.set_xlim([-1, T+1])
 
     def init():
@@ -476,42 +482,57 @@ def animate_arm_w_arcs(traj_pos, L, Fx: Optional[NDArray] = None, Fy: Optional[N
 # ----------------------------
 # Post Processing
 # ----------------------------
-def plot_success_matrix(M: NDArray):
-
+def plot_success_matrix(M: NDArray, N: int = 16, M_flag: Optional[NDArray] = None) -> None:
+    """
+    Roie - document!
+    """
+    # ------ colors ------
     colors_lst, _, custom_cmap = colors.color_scheme()
 
+    # ------ labels ------
     labels = []
-    for i in range(16):
+    for i in range(N):
         b = format(i, "04b")
         labels.append(b)
 
-    plt.figure(figsize=(5, 5))
-
+    # ------ diagonal is white ------
     M_masked = np.ma.masked_where(np.eye(M.shape[0], dtype=bool), M)
 
+    # ------ initialized fig ------
+    plt.figure(figsize=(5, 5))
+
+    # ------ plots ------
+    # success matrix
     im = plt.imshow(M_masked, cmap=custom_cmap, vmin=0, vmax=4, origin="lower")
-    # im = plt.imshow(M, cmap=custom_cmap, vmin=0, vmax=4, origin="lower")
 
-    plt.xticks(range(16), labels, rotation=90)
-    plt.yticks(range(16), labels)
+    # plot flagged runs
+    if M_flag is not None:
+        nrows, ncols = M_flag.shape
+        for i in range(nrows):
+            for j in range(ncols):
+                if M_flag[i, j]:
+                    plt.plot([j - 0.35, j + 0.35], [i - 0.35, i + 0.35], color=colors_lst[4], linestyle="-", linewidth=2.0)
+                    plt.plot([j - 0.35, j + 0.35], [i + 0.35, i - 0.35], color=colors_lst[4], linestyle="-", linewidth=2.0)
 
+    # ------ ticks, legend and labels ------
+    plt.xticks(range(N), labels, rotation=90)
+    plt.yticks(range(N), labels)
     plt.xlabel("desired buckle")
     plt.ylabel("initial buckle")
-
     plt.title("Training success matrix")
-
-    # plt.colorbar(label="success")
     legend_elements = [patches.Patch(facecolor=custom_cmap(im.norm(0)), label="Success"),
                        patches.Patch(facecolor=custom_cmap(im.norm(1)), label="Missing"),
                        patches.Patch(facecolor=custom_cmap(im.norm(2)), label="Failure")]
-
+    if M_flag is not None:
+        legend_elements.append(Line2D([0], [0], color=colors_lst[4], linestyle="-", linewidth=2, label="Self-intersection"))
     plt.legend(handles=legend_elements, loc="upper left", bbox_to_anchor=(1.02, 1))
 
+    # ------ show ------
     plt.tight_layout()
     plt.show()
 
 
-def plot_success_matrix_with_pathways(M_corr: np.ndarray, title: str = "Training success matrix (pathways corrected)"):
+def plot_success_matrix_with_pathways(M_corr: np.ndarray, N: int, title: str = "Training success matrix (pathways corrected)"):
     """
     Codes:
     0 - direct success
@@ -538,10 +559,10 @@ def plot_success_matrix_with_pathways(M_corr: np.ndarray, title: str = "Training
     # ax.imshow(M_corr_masked[::-1, :], cmap=custom_cmap, norm=norm, interpolation="none", aspect="equal")
     ax.imshow(M_corr_masked[::-1, :], cmap=custom_cmap, norm=norm, interpolation="none", aspect="equal")
 
-    labels = [helpers_builders.index_to_buckle(i) for i in range(16)]
-    ax.set_xticks(np.arange(16))
+    labels = [helpers_builders.index_to_buckle(i) for i in range(N)]
+    ax.set_xticks(np.arange(N))
     ax.set_xticklabels(labels, rotation=90)
-    ax.set_yticks(np.arange(16))
+    ax.set_yticks(np.arange(N))
     ax.set_yticklabels(labels[::-1])
 
     ax.set_xlabel("desired buckle")

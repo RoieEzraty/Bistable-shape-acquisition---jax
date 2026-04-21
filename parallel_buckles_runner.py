@@ -75,9 +75,10 @@ def run_one_job(job):
                 final_frame = min(t + 3, pos_in_t_update.shape[0])
                 # gif_path = str(run_dir / f"gif_init_{init_buckle_str}_desired_{desired_buckle_str}.gif")
                 gif_path = str(run_dir / f"gif_init_{init_buckle_str}_desired_{desired_buckle_str}.html")
-                plot_funcs.animate_arm_w_arcs(pos_in_t_update[1:final_frame, :, :], Strctr.L,
-                                              frames=max(1, final_frame - 1), interval_ms=400, save_path=str(gif_path),
-                                              fps=2, buckle_traj=buckle_in_t[1:final_frame, :, :])
+                plot_funcs.animate_arm_w_arcs(pos_in_t_update[1:final_frame, :, :], Strctr.L, Fx=State_update.Fx_in_t,
+                                              Fy=State_update.Fy_in_t, frames=max(1, final_frame - 1), interval_ms=400,
+                                              save_path=str(gif_path), fps=2,
+                                              buckle_traj=buckle_in_t[1:final_frame, :, :])
                 plt.close("all")
 
             if save_pngs:
@@ -88,7 +89,8 @@ def run_one_job(job):
                 plt.close("all")
 
             if save_csvs:
-                csv_path = str(run_dir / f"final_loss_{Sprvsr.loss_MSE_in_t[t]:.6g}_init_{init_buckle_str}_desired_{desired_buckle_str}.csv")
+                suffix = "_intersect" if State_update.self_intersection else ""  # append intersection str if chain intersects
+                csv_path = str(run_dir / f"final_loss_{Sprvsr.loss_MSE_in_t[t]:.6g}_init_{init_buckle_str}_desired_{desired_buckle_str}{suffix}.csv")
                 file_funcs.export_training_csv(str(csv_path), Strctr, Sprvsr, T=t + 1, State_meas=State_meas, State_update=State_update)
 
             if Sprvsr.loss_MSE > 10**(-6):
@@ -111,6 +113,7 @@ def run_one_job(job):
                     # gif_path = str(run_dir / f"gif_init_{init_buckle_str}_desired_{desired_buckle_str}_inverted.gif")
                     gif_path = str(run_dir / f"gif_init_{init_buckle_str}_desired_{desired_buckle_str}_inverted.html")
                     plot_funcs.animate_arm_w_arcs(pos_in_t_update[1:final_frame, :, :], Strctr.L,
+                                                  Fx=State_update.Fx_in_t, Fy=State_update.Fy_in_t,
                                                   frames=max(1, final_frame - 1), interval_ms=400,
                                                   save_path=str(gif_path), fps=2,
                                                   buckle_traj=buckle_in_t[1:final_frame, :, :])
@@ -124,7 +127,8 @@ def run_one_job(job):
                     plt.close("all")
 
                 if save_csvs:
-                    csv_path = str(run_dir / f"final_loss_{Sprvsr.loss_MSE_in_t[t]:.6g}_init_{init_buckle_str}_desired_{desired_buckle_str}_inverted.csv")
+                    suffix = "_intersect" if State_update.self_intersection else ""  # append intersection str if chain intersects
+                    csv_path = str(run_dir / f"final_loss_{Sprvsr.loss_MSE_in_t[t]:.6g}_init_{init_buckle_str}_desired_{desired_buckle_str}_inverted{suffix}.csv")
                     file_funcs.export_training_csv(str(csv_path), Strctr, Sprvsr, T=t + 1, State_meas=State_meas,
                                                    State_update=State_update)
 
