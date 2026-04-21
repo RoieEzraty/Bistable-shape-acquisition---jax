@@ -147,7 +147,7 @@ class EquilibriumConfig:
 # -----------------------------
 @dataclass(frozen=True)
 class TrainingConfig:
-    T: int = 150  # total training set time (not time to reach equilibrium during every step)
+    T: int = 200  # total training set time (not time to reach equilibrium during every step)
 
     # desired_buckle_type: str = 'random'
     # desired_buckle_type: str = 'opposite'
@@ -198,7 +198,7 @@ class TrainingConfig:
     elif normalize_step:
         alpha = 0.25
     else:
-        alpha = 0.25  # learning rate
+        alpha = 0.2  # learning rate
 
     control_tip: bool = True  # imposed tip position in measurement and update. If False, tip is free
     control_first_edge: bool = True  # if True, fix nodes (0, 1) to zero. if Flase, just the first

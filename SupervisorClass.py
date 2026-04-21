@@ -369,10 +369,10 @@ class SupervisorClass:
                                (loss_x_full[middle-1] + loss_x_full[middle])) / (2 * abs_mean_loss)
 
     def calc_update_tip(self, t: int, Strctr: "StructureClass", Variabs: "VariablesClass",
-                        State_meas: "StateClass", State_des: "StateClass",
-                        correct_for_total_angle: Optional[bool] = False,
-                        correct_for_coil: Optional[bool] = True,
-                        correct_for_cut_origin: Optional[bool] = True) -> None:
+                        State_meas: "StateClass", State_des: "StateClass", State_update: "StateClass",
+                        correct_for_total_angle: Optional[bool] = False, correct_for_coil: Optional[bool] = True,
+                        correct_for_cut_origin: Optional[bool] = True,
+                        correct_for_update_forces: Optional[bool] = True) -> None:
         """Compute next tip position/angle commands from current loss and state (pure NumPy).
 
         Parameters:
@@ -494,19 +494,9 @@ class SupervisorClass:
                                                                               angle_new=self.tip_angle_update_in_t[t],
                                                                               L=Strctr.L, include_endpoints=False)
 
-        self.restart = False
+        cond_tip_force = helpers_builders.tip_force(State_update)
 
-        if correct_for_coil and cond_coil:
-            print('coiled up too much')
-            self.tip_pos_update_in_t[t, :] = self.tip_pos_in_t[t, :]
-            self.tip_angle_update_in_t[t] = self.tip_angle_in_t[t]
-            self.total_angle_update_in_t[t] = 0.0
-            print(f'setting update tip pos={self.tip_pos_update_in_t[t, :]}, angle={self.tip_angle_update_in_t[t]}')
-            prev_total_angle = 0.0
-            self.restart = True
-            self.last_restart_reason = "coil"
-            self.origin_cut_restart_count = 0
-            self.coil_count += 1
+        self.restart = False
 
         if correct_for_cut_origin and cond_cut_origin:
             print('origin is cut')
@@ -525,6 +515,31 @@ class SupervisorClass:
             print(f'setting update tip pos={self.tip_pos_update_in_t[t, :]}, angle={self.tip_angle_update_in_t[t]}')
             prev_total_angle = 0.0
             self.last_restart_reason = "origin_cut"
+
+        elif correct_for_coil and cond_coil:
+            print('coiled up too much')
+            self.tip_pos_update_in_t[t, :] = self.tip_pos_in_t[t, :]
+            self.tip_angle_update_in_t[t] = self.tip_angle_in_t[t]
+            self.total_angle_update_in_t[t] = 0.0
+            print(f'setting update tip pos={self.tip_pos_update_in_t[t, :]}, angle={self.tip_angle_update_in_t[t]}')
+            prev_total_angle = 0.0
+            self.restart = True
+            self.last_restart_reason = "coil"
+            self.origin_cut_restart_count = 0
+            self.coil_count += 1
+
+        elif correct_for_update_forces and cond_tip_force:
+            print('update forces too big')
+            self.coil_count = 0
+            self.origin_cut_restart_count = 0
+
+            self.tip_pos_update_in_t[t, :] = self.tip_pos_in_t[t, :]
+            self.tip_angle_update_in_t[t] = self.tip_angle_in_t[t]
+            self.total_angle_update_in_t[t] = 0.0
+            print(f'setting update tip pos={self.tip_pos_update_in_t[t, :]}, angle={self.tip_angle_update_in_t[t]}')
+            prev_total_angle = 0.0
+            self.restart = True
+            self.last_restart_reason = "forces"
 
         # invert sign of tip change if training fails
         cond_extremal_buckle = (np.array_equal(State_meas.buckle_arr, np.array([[1], [1], [1], [1]]))
