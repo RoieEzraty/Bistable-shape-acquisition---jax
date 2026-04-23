@@ -204,6 +204,7 @@ class TrainingConfig:
     control_first_edge: bool = True  # if True, fix nodes (0, 1) to zero. if Flase, just the first
 
     rand_key_dataset: int = 7  # for random sampling of dataset, if dataset_sampling is True
+    rand_key_tip: int = 8  # for random sampling of update tip positions, once forces explode
 
     convert_pos = 1000  # convert [m] to [mm]
     convert_angle = 180/np.pi  # convert rad to deg
