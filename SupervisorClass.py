@@ -168,9 +168,6 @@ class SupervisorClass:
         self.convert_angle = CFG.Train.convert_angle
         self.convert_F = CFG.Train.convert_F
 
-        # prints during run if True
-        self.supress_prints = supress_prints
-
         # invert tip changes if training fails
         self.invert_delta_tip = False
 
@@ -180,6 +177,11 @@ class SupervisorClass:
         self.last_restart_reason: Optional[str] = None  # None | "origin_cut" | "coil"
         self.origin_restart_base_frac = 0.6  # base vertical offset in units of L
         self.origin_restart_step_frac = 0.6  # extra offset per repeated cut, in units of L
+
+        self.rng_tip = np.random.default_rng(CFG.Train.rand_key_tip)
+
+        # prints during run if True
+        self.supress_prints = supress_prints
 
     # ---------------------------------------------------------------
     # Imposed mask boolean
@@ -533,8 +535,9 @@ class SupervisorClass:
             self.coil_count = 0
             self.origin_cut_restart_count = 0
 
-            self.tip_pos_update_in_t[t, :] = self.tip_pos_in_t[t, :]
-            self.tip_angle_update_in_t[t] = self.tip_angle_in_t[t]
+            rand_update_tip_pos, rand_update_tip_angle = self._random_update_tip(Strctr)
+            self.tip_pos_update_in_t[t, :] = rand_update_tip_pos
+            self.tip_angle_update_in_t[t] = rand_update_tip_angle
             self.total_angle_update_in_t[t] = 0.0
             print(f'setting update tip pos={self.tip_pos_update_in_t[t, :]}, angle={self.tip_angle_update_in_t[t]}')
             prev_total_angle = 0.0
@@ -567,12 +570,33 @@ class SupervisorClass:
     # ---------------------------------------------------------------
     # Helpers (numpy)
     # ---------------------------------------------------------------
+    def _random_update_tip(self, Strctr: "StructureClass") -> tuple[np.ndarray, float]:
+        """
+        Sample a random tip position uniformly inside a disk of given radius,
+        and a random tip angle.
+
+        Returns
+        -------
+        tip_pos : np.ndarray, shape (2,)
+        tip_angle : float
+        """
+        tip_angle = np.pi/2 * self.rng_tip.random()
+
+        # uniform in disk
+        R_eff = helpers_builders.effective_radius(self.R_free, Strctr.L, total_angle=0, tip_angle=tip_angle)
+        r_min = 0.75 * R_eff
+        r = r_min + (R_eff - r_min) * np.sqrt(self.rng_tip.random())
+        phi = np.pi/4 * self.rng_tip.random()
+        tip_pos = np.array([r * np.cos(phi), r * np.sin(phi)], dtype=float)
+
+        return tip_pos, tip_angle
+
     def _restart_flat_with_y_bias(self, t: int, Strctr: "StructureClass", side_sign: float) -> None:
         """
         Restart from flat, but bias the tip slightly above/below the x-axis.
         Repeated origin cuts increase the vertical bias magnitude.
         """
-        mag = (self.origin_restart_base_frac + 
+        mag = (self.origin_restart_base_frac +
                max(0, self.origin_cut_restart_count - 1) * self.origin_restart_step_frac) * Strctr.L
 
         y_restart = float(side_sign) * mag

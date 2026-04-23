@@ -6,6 +6,7 @@ import jax
 import jax.numpy as jnp
 import re
 import pandas as pd
+import json
 
 from pathlib import Path
 from collections import Counter, defaultdict
@@ -985,20 +986,6 @@ def _get_scalar_in_orthogonal_dir(vec: NDArray[np.floating], angle: float) -> fl
 # -------------------------------------------------------------------
 # Buckle helpers
 # -------------------------------------------------------------------
-# def sort_buckle_columns(cols: list[str]) -> list[str]:
-#     """
-#     Sort columns like:
-#         buckle_h0_s0, buckle_h1_s0, ...
-#     """
-#     pat = re.compile(r"buckle_h(\d+)_s(\d+)")
-#     parsed = []
-#     for c in cols:
-#         m = pat.fullmatch(c)
-#         if m is not None:
-#             h, s = map(int, m.groups())
-#             parsed.append((h, s, c))
-#     parsed.sort()
-#     return [c for _, _, c in parsed]
 
 
 def infer_buckle_columns(df: pd.DataFrame) -> list[str]:
@@ -1008,49 +995,6 @@ def infer_buckle_columns(df: pd.DataFrame) -> list[str]:
         raise ValueError("No buckle_h*_s* columns found in CSV")
     return buckle_cols
 
-
-# def build_transition_counts(folder: Path, only_init_and_final_buckles: bool = False):
-#     """
-#     Go over all final_loss_*.csv files and extract directed buckle transitions.
-
-#     Returns
-#     -------
-#     transitions : Counter[(src, dst)] = number of times observed across all files
-#     per_file_transitions : dict[file_name, list[(src, dst)]]
-#     """
-#     transitions = Counter()
-#     per_file_transitions = {}
-#     per_file_loss = {}
-
-#     files = sorted(folder.glob("final_loss_*.csv"))
-#     if not files:
-#         raise FileNotFoundError(f"No files matching 'final_loss_*.csv' in {folder}")
-
-#     for file in files:
-#         df = pd.read_csv(file)
-#         buckle_cols = infer_buckle_columns(df)
-
-#         states = []
-#         for _, row in df[buckle_cols].iterrows():
-#             state = buckle_to_index(row.to_numpy())
-#             states.append(state)
-
-#         # keep only actual changes
-#         edges_this_file = []
-#         if only_init_and_final_buckles:
-#             zip_states = zip(states[:1], states[-1:])
-#         else:
-#             zip_states = zip(states[:-1], states[1:])
-#         for a, b in zip_states:
-#             if a != b:
-#                 edges_this_file.append((a, b))
-#                 transitions[(a, b)] += 1
-
-#         per_file_transitions[file.name] = edges_this_file
-
-#         per_file_loss[file.name] = file_funcs.loss_from_filename(file)
-
-#     return transitions, per_file_transitions, per_file_loss
 
 def hamming_distance_int(a: int, b: int) -> int:
     return (a ^ b).bit_count()
@@ -1087,12 +1031,19 @@ def build_transition_counts(folder: Path, only_init_and_final_buckles: bool = Fa
 
     for file in files:
         df = pd.read_csv(file)
-        buckle_cols = infer_buckle_columns(df)
 
         states = []
-        for _, row in df[buckle_cols].iterrows():
-            state = buckle_to_index(row.to_numpy())
-            states.append(state)
+        if hasattr(df, 'buckle_arr_update'):  # buckle is in array form
+            buckle_cols = df['buckle_arr_update']
+            for i, buckle in enumerate(buckle_cols):
+                buckle_arr = buckle_cell_to_array(buckle)
+                state = buckle_to_index(buckle_arr)
+                states.append(state)
+        else:  # buckle is spread through H columns
+            buckle_cols = infer_buckle_columns(df)
+            for _, row in df[buckle_cols].iterrows():
+                state = buckle_to_index(row.to_numpy())
+                states.append(state)
 
         loss = file_funcs.loss_from_filename(file)
         if only_init_and_final_buckles:
@@ -1179,6 +1130,30 @@ def buckle_to_index(arr: NDArray) -> NDArray:
 def index_to_buckle(i: int, n_bits: int = 4) -> str:
     """0 -> '0000', 15 -> '1111'"""
     return format(i, f"0{n_bits}b")
+
+
+def buckle_cell_to_array(cell) -> np.ndarray:
+    """
+    Convert CSV buckle cell into numpy array.
+    Supports:
+        - JSON string
+        - python list
+        - numpy array
+    Returns shape (H,) with ints ±1
+    """
+    if isinstance(cell, np.ndarray):
+        arr = cell
+
+    elif isinstance(cell, list):
+        arr = np.array(cell, dtype=int)
+
+    elif isinstance(cell, str):
+        arr = np.array(json.loads(cell), dtype=int)
+
+    else:
+        raise TypeError(f"Unsupported buckle cell type: {type(cell)}")
+
+    return arr.reshape(-1)
 
 
 # # ==========
