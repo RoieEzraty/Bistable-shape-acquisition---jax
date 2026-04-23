@@ -372,7 +372,7 @@ class SupervisorClass:
                         State_meas: "StateClass", State_des: "StateClass", State_update: "StateClass",
                         correct_for_total_angle: Optional[bool] = False, correct_for_coil: Optional[bool] = True,
                         correct_for_cut_origin: Optional[bool] = True,
-                        correct_for_update_forces: Optional[bool] = True) -> None:
+                        correct_for_update_force: Optional[bool] = True) -> None:
         """Compute next tip position/angle commands from current loss and state (pure NumPy).
 
         Parameters:
@@ -494,7 +494,7 @@ class SupervisorClass:
                                                                               angle_new=self.tip_angle_update_in_t[t],
                                                                               L=Strctr.L, include_endpoints=False)
 
-        cond_tip_force = helpers_builders.tip_force(State_update)
+        cond_tip_force = helpers_builders.tip_force(State_update.Fx, State_update.Fy, Variabs.norm_force)
 
         self.restart = False
 
@@ -528,7 +528,7 @@ class SupervisorClass:
             self.origin_cut_restart_count = 0
             self.coil_count += 1
 
-        elif correct_for_update_forces and cond_tip_force:
+        elif correct_for_update_force and cond_tip_force:
             print('update forces too big')
             self.coil_count = 0
             self.origin_cut_restart_count = 0

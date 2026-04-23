@@ -568,6 +568,12 @@ def coil(angle: float, revolutions: float = 1.5):
     return np.abs(angle) > revolutions * 2*np.pi
 
 
+def tip_force(Fx, Fy, norm_force):
+    if np.linalg.norm(np.array([Fx, Fy])) >= norm_force*10:
+        return True
+    return False
+
+
 def has_self_intersection(pos_arr: NDArray[np.float_], edges_arr: NDArray[np.int_]) -> bool:
     """
     Return bool stating if chain contains self-intersection.
