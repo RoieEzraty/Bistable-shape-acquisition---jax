@@ -303,96 +303,6 @@ def export_training_csv(path_csv: str, Strctr: "StructureClass", Sprvsr: "Superv
 
             w.writerow(row)
 
-# def export_training_csv(path_csv: str, Strctr: "StructureClass", Sprvsr: "SupervisorClass", T: Optional[int] = None,
-#                         State_meas: Optional["StateClass"] = None, State_update: Optional["StateClass"] = None) -> None:
-#     """
-#     Export training outputs to a CSV file.
-
-#     Parameters
-#     ----------
-#     path_csv : str, output CSV file path.
-#     Strctr : StructureClass, for (`hinges`) and (`shims`).
-#     Sprvsr : SupervisorClass, for Supervisor training data and unit conversion factors
-#     T : Optional[int], number of training steps to export. If None, full training `Sprvsr.T` is used.
-#     State_meas : Optional[StateClass], for `Fx_in_t`, `Fy_in_t`. If provided, these values are exported as `Fx_meas`, `Fy_meas`.
-#     State_update : Optional[StateClass], for buckle history (`buckle_in_t`). If provided, buckle states for every hinge/shim pair.
-
-#     Notes
-#     -----
-#     - Each row corresponds to a single training step `t`.
-#     """
-#     # ------ convert ------
-#     tip_pos_in_t = Sprvsr.tip_pos_in_t * Sprvsr.convert_pos
-#     tip_pos_update_in_t = Sprvsr.tip_pos_update_in_t * Sprvsr.convert_pos
-#     angle_in_t = Sprvsr.tip_angle_in_t * Sprvsr.convert_angle
-#     angle_update_in_t = Sprvsr.tip_angle_update_in_t * Sprvsr.convert_angle
-#     meas_Fx = State_meas.Fx_in_t * Sprvsr.convert_F
-#     meas_Fy = State_meas.Fy_in_t * Sprvsr.convert_F
-#     des_Fx = Sprvsr.desired_Fx_in_t * Sprvsr.convert_F
-#     des_Fy = Sprvsr.desired_Fy_in_t * Sprvsr.convert_F
-
-#     path_csv = Path(path_csv)
-#     path_csv.parent.mkdir(parents=True, exist_ok=True)
-
-#     if T is None:
-#         T = int(Sprvsr.T)
-#     H = int(Strctr.hinges)
-#     S = int(Strctr.shims)
-
-#     # ------ headers ------
-#     header = ["t",
-#               "x_tip", "y_tip"]
-#     header += ["tip_angle_deg"]
-#     header += ["upd_x_tip", "upd_y_tip"]
-#     header += ["upd_tip_angle"]
-
-#     # loss columns (Sprvsr.loss_in_t is (T, loss_size))
-#     loss_size = Sprvsr.loss_in_t.shape[1]
-#     header += [f"loss_{i}" for i in range(loss_size)]
-#     header += ["loss_MSE"]
-
-#     # measured
-#     if State_meas is not None:
-#         header += ["Fx_meas", "Fy_meas"]
-
-#     # desired
-#     header += ["Fx_des", "Fy_des"]
-
-#     # buckle (from update state ideally)
-#     if State_update is not None:
-#         for h in range(H):
-#             for s in range(S):
-#                 header.append(f"buckle_h{h}_s{s}")
-
-#     # ------ create file and write ------
-#     with open(path_csv, "w", newline="") as f:
-#         w = csv.writer(f)
-#         w.writerow(header)
-
-#         for t in range(T):
-#             row = [t]
-#             row += [float(tip_pos_in_t[t, 0]), float(tip_pos_in_t[t, 1])]
-#             row += [float(angle_in_t[t])]
-#             row += [float(tip_pos_update_in_t[t, 0]), float(tip_pos_update_in_t[t, 1])]
-#             row += [float(angle_update_in_t[t])]
-
-#             row += [float(x) for x in Sprvsr.loss_in_t[t, :]]
-
-#             row += [float(Sprvsr.loss_MSE_in_t[t])]
-
-#             if State_meas is not None:
-#                 row += [float(meas_Fx[t]),
-#                         float(meas_Fy[t])]
-
-#             row += [float(des_Fx[t]),
-#                     float(des_Fy[t])]
-
-#             if State_update is not None:
-#                 B = State_update.buckle_in_t[:, :, t]  # (H,S)
-#                 row += [int(B[h, s]) for h in range(H) for s in range(S)]
-
-#             w.writerow(row)
-
 
 def export_training_npz(path_npz: str, **arrays):
     """
@@ -411,8 +321,10 @@ def loss_from_filename(file: Path):
 
 
 def build_success_matrix(folder: Path, old: bool = False, N: int = 16, near_miss: bool = False,
-                         symmetry: bool = False, omit_inverted: bool = False) -> NDArray:
+                         symmetry: bool = False, omit_inverted: bool = False) -> Tuple[NDArray, NDArray]:
     """
+    Build matrix marking which runs successded (M) alongside which runs had self-intersections (M_flag).
+
     Parameters:
     -----------
     folder        : path to folder where all the export_training.csv files are at, starting with "loss=..."
@@ -422,94 +334,99 @@ def build_success_matrix(folder: Path, old: bool = False, N: int = 16, near_miss
 
     Returns:
     --------
-    M : (N, N) success matrix
-
-    Notes:
-    ------
-    0 - successful training
-    1 - didn't train on this path
-    2 - unsuccessful training
-    """
-    M = np.zeros((N, N)) + 1.0
-    B = np.zeros((N, N)) + 1.0  # matrix where 1 is a run that weren't uploaded to M yet and 0 otherwise
-
-    for file in folder.glob("final_loss_*.csv"):
-        if omit_inverted and file.name.endswith("_inverted.csv"):  # neglect all files ending with "_inverted.csv"
-            continue
-        else:
-            # extract loss
-            loss = loss_from_filename(file)
-
-            name = file.stem
-
-            # extract buckle patterns
-            if old:  # no "_" after "desired"
-                init_bits = re.search(r"init_([01]+)", name).group(1)
-                desired_bits = re.search(r"desired([01]+)", name).group(1)
-            else:
-                init_bits = re.search(r"init_([01]+)", name).group(1)
-                desired_bits = re.search(r"desired_([01]+)", name).group(1)
-
-            # buckle_to_index accepts either 0/1 or -1/+1 effectively,
-            # because it maps x == 1 -> 1, else -> 0
-            init = [int(ch) for ch in init_bits]
-            desired = [int(ch) for ch in desired_bits]
-
-            i = helpers_builders.buckle_to_index(init)
-            j = helpers_builders.buckle_to_index(desired)
-
-            if B[i, j] == 0:  # run already insrted to M
-                continue
-            else:
-                if near_miss:  # account for undesired buckles that produced desired forces as successfull training
-                    thresh = 10e-4
-                else:
-                    thresh = 1e-6
-                if loss < thresh:
-                    B[i, j] = 0
-                    M[i, j] = 0
-                else:
-                    M[i, j] = 2
-
-            # symmetry
-            if symmetry:
-                B[N-1-i, N-1-j] = B[i, j]
-                M[N-1-i, N-1-j] = M[i, j]
-
-    return M
-
-
-def build_intersection_matrix(folder: Path, N: int = 16) -> NDArray[np.int_]:
-    """
-    Build a matrix marking which runs had self-intersections.
-
-    Returns
-    -------
-    M_flag : (N, N) ndarray of int
+    M      : (N, N) success matrix
+        0 - successful training
+        1 - didn't train on this path
+        2 - unsuccessful training
+    M_flag : (N, N) flag matrix
         1 where the run file exists and is flagged as intersecting,
         0 otherwise.
     """
+    M = np.zeros((N, N)) + 1.0
     M_flag = np.zeros((N, N), dtype=int)
+    B = np.zeros((N, N)) + 1.0
+
+    thresh = 10e-4 if near_miss else 1e-6
 
     for file in folder.glob("final_loss_*.csv"):
         name = file.stem
 
-        init_bits = re.search(r"init_([01]+)", name).group(1)
-        desired_bits = re.search(r"desired_([01]+)", name).group(1)
+        # omit inverted
+        if omit_inverted and "_inverted" in name:
+            continue
 
-        # buckle_to_index accepts either 0/1 or -1/+1 effectively,
-        # because it maps x == 1 -> 1, else -> 0
+        loss = loss_from_filename(file)
+
+        # buckles
+        init_bits = re.search(r"init_([01]+)", name).group(1)
+        desired_bits = (re.search(r"desired([01]+)", name).group(1) if old
+                        else re.search(r"desired_([01]+)", name).group(1))
         init = [int(ch) for ch in init_bits]
         desired = [int(ch) for ch in desired_bits]
 
+        # indices in matrix from buckles
         i = helpers_builders.buckle_to_index(init)
         j = helpers_builders.buckle_to_index(desired)
 
-        flagged = "_intersect" in name
-        if flagged:
-            M_flag[i, j] = 1
+        # run already successfull
+        if B[i, j] == 0:
+            continue
 
-    return M_flag
+        # boolean whether file is successfull run or not
+        success: bool = loss < thresh
+
+        # flag of intersection
+        flagged = "_intersect" in name
+
+        if success:
+            B[i, j] = 0
+            M[i, j] = 0
+            M_flag[i, j] = int(flagged)   # flag for intersection in successful run
+        else:
+            if M[i, j] == 2 and flagged:
+                M_flag[i, j] = int(flagged)   # flag for intersection in both unsuccessful runs
+            M[i, j] = 2
+
+        # symmetry
+        if symmetry:
+            B[N-1-i, N-1-j] = B[i, j]
+            M[N-1-i, N-1-j] = M[i, j]
+
+    return M, M_flag
+
+
+# This was merged into build_success_matrix
+# def build_intersection_matrix(folder: Path, N: int = 16) -> NDArray[np.int_]:
+#     """
+#     Build a matrix marking which runs had self-intersections.
+
+#     Returns
+#     -------
+#     M_flag : (N, N) ndarray of int
+#         1 where the run file exists and is flagged as intersecting,
+#         0 otherwise.
+#     """
+#     M_flag = np.zeros((N, N), dtype=int)
+
+#     for file in folder.glob("final_loss_*.csv"):
+#         name = file.stem
+
+#         init_bits = re.search(r"init_([01]+)", name).group(1)
+#         desired_bits = re.search(r"desired_([01]+)", name).group(1)
+
+#         # buckle_to_index accepts either 0/1 or -1/+1 effectively,
+#         # because it maps x == 1 -> 1, else -> 0
+#         init = [int(ch) for ch in init_bits]
+#         desired = [int(ch) for ch in desired_bits]
+
+#         i = helpers_builders.buckle_to_index(init)
+#         j = helpers_builders.buckle_to_index(desired)
+
+#         flagged = "_intersect" in name
+#         if flagged:
+#             M_flag[i, j] = 1
+
+#     return M_flag
 
 
 def shortest_success_paths(M: np.ndarray):
