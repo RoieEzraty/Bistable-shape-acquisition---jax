@@ -640,7 +640,7 @@ def _get_before_tip(tip_pos: NDArray, tip_angle: float, L: float, *, xp=jnp, dty
     return tip_pos - xp.array([dx, dy], dtype=dtype)
 
 
-def _get_total_angle(tip_pos: NDArray, prev_total_angle: float, L: float) -> NDArray:
+def _get_total_angle(tip_pos: NDArray, prev_total_angle: float, L: float) -> float:
     """
     angle between tip and last fixed node, CCW
 

@@ -33,17 +33,17 @@ class StateClass:
 
     Attributes
     ----------
-    pos_arr        - (nodes,2) ndarray, Current nodal positions of the chain.
-    pos_arr_in_t   - (nodes,2,T) ndarray, history of nodal positions over the training time.
-    theta_arr      - (H,) ndarray, current hinge angles, measured **counter-clockwise (CCW)**.
-    theta_arr_in_t - (H,T) ndarray, history of hinge angles over the training time.
+    pos_arr        - (nodes,2) ndarray, [m], Current nodal positions of the chain.
+    pos_arr_in_t   - (nodes,2,T) ndarray, [m], history of nodal positions over the training time.
+    theta_arr      - (H,) ndarray, [rad], current hinge angles, measured **counter-clockwise (CCW)**.
+    theta_arr_in_t - (H,T) ndarray, [rad], history of hinge angles over the training time.
     buckle_arr     - (H,S) ndarray, current buckle state of each hinge for each shim.
                      `1` = buckle downwards
                      `-1` = buckle upwards
-    buckle_in_t    - (H,S,T) ndarray, history of buckle states over the training time.
-    Fx, Fy         - floats, force on tip in x, y directions, 
+    buckle_in_t    - (H,S,T) ndarray, [-1's and 1's], history of buckle states over the training time.
+    Fx, Fy         - floats, [mN], force on tip in x, y directions, 
                      if 2 last nodes or imposed, force is summed over both
-    edge_lengths   - (edges,) ndarray, current edge lengths, for convenience (last stored snapshot).
+    edge_lengths   - (edges,) ndarray, [m], current edge lengths, for convenience (last stored snapshot).
 
     Methods:
     --------
@@ -63,21 +63,21 @@ class StateClass:
         Compute per-hinge bending energy using experimental torque curve: ``E_bend(θ) ≈ τ(θ) * (θ - buckle * θ_ss)``.
     """ 
     # --- instantaneous state ---
-    pos_arr: NDArray[np.float32] = eqx.field(static=True)          # (nodes, 2)
-    theta_arr: NDArray[np.float32] = eqx.field(static=True)        # (hinges,)
-    buckle_arr: NDArray[np.int32] = eqx.field(static=True)         # (hinges, shims)
-    Fx: float = eqx.field(static=True)                             # float
-    Fy: float = eqx.field(static=True)                             # float
-    tip_torque: float = eqx.field(static=True)                     # float, torque just on tip
-    tot_torque: float = eqx.field(static=True)                     # float, torque of whole chain
-    edge_lengths: NDArray[np.float32] = eqx.field(static=True)     # (hinges+1,) 
+    pos_arr: NDArray[np.float32] = eqx.field(static=True)          # (nodes, 2), [m]
+    theta_arr: NDArray[np.float32] = eqx.field(static=True)        # (hinges,), [rad]
+    buckle_arr: NDArray[np.int32] = eqx.field(static=True)         # (hinges, shims), [-1's and 1's]
+    Fx: float = eqx.field(static=True)                             # float, [mN]
+    Fy: float = eqx.field(static=True)                             # float, [mN]
+    tip_torque: float = eqx.field(static=True)                     # float, torque just on tip, [mN*m]
+    tot_torque: float = eqx.field(static=True)                     # float, torque of whole chain, [mN*m]
+    edge_lengths: NDArray[np.float32] = eqx.field(static=True)     # (hinges+1,),[m]
 
     # --- histories / logs ---
-    pos_arr_in_t: NDArray[np.float32] = eqx.field(static=True)     # (nodes, 2, T)
-    theta_arr_in_t: NDArray[np.float32] = eqx.field(static=True)   # (hinges, T)
-    buckle_in_t: NDArray[np.int32] = eqx.field(static=True)        # (hinges, shims, T)
-    Fx_in_t: NDArray[np.float32] = eqx.field(static=True)          # (T,)
-    Fy_in_t: NDArray[np.float32] = eqx.field(static=True)          # (T,)
+    pos_arr_in_t: NDArray[np.float32] = eqx.field(static=True)     # (nodes, 2, T), [m]
+    theta_arr_in_t: NDArray[np.float32] = eqx.field(static=True)   # (hinges, T), [rad]
+    buckle_in_t: NDArray[np.int32] = eqx.field(static=True)        # (hinges, shims, T), [-1's and 1's]
+    Fx_in_t: NDArray[np.float32] = eqx.field(static=True)          # (T,), [mN]
+    Fy_in_t: NDArray[np.float32] = eqx.field(static=True)          # (T,), [mN]
 
     def __init__(self, Strctr: "StructureClass", Sprvsr: "SupervisorClass", pos_arr: Optional[np.ndarray] = None,
                  buckle_arr: Optional[np.ndarray] = None) -> None:
@@ -88,7 +88,7 @@ class StateClass:
         ----------
         Strctr     - StructureClass. Chain topology (number of nodes/hinges/shims).
         Sprvsr     - SupervisorClass. Provides number of training steps ``T``.
-        pos_arr    - (nodes, 2) ndarray, optional. Initial nodal positions. 
+        pos_arr    - (nodes, 2) ndarray, [m], optional. Initial nodal positions. 
                      If None = initialized as a straight chain using `helpers_builders._initiate_pos`.
         buckle_arr - ndarray, optional, shape (hinges, shims). Initial buckle pattern. 
                      If None = initialized with `helpers_builders._initiate_buckle` (all down/up depending on implementation).
@@ -97,7 +97,7 @@ class StateClass:
         if pos_arr is None:
             self.pos_arr = helpers_builders._initiate_pos(Strctr.edges+1, Strctr.L).astype(np.float32)
         else:
-            self.pos_arr = np.asarray(pos_arr, dtype=np.float32)                              # (nodes, 2) node position
+            self.pos_arr = np.asarray(pos_arr, dtype=np.float32)                           # (nodes, 2) node position
         self.pos_arr_in_t = zeros((Strctr.nodes, 2, Sprvsr.T), dtype=np.float32)           # (nodes, 2, T)
 
         # ------ angles ------
@@ -137,11 +137,11 @@ class StateClass:
         ----------
         t                 - int. Time-step index (0-based) into the training history.
         Strctr            - StructureClass. Provides geometry (nodes, hinges, etc.).
-        pos_arr           - (nodes, 2) jax.Array, optional. Nodal positions from the equilibrium solver.
+        pos_arr           - (nodes, 2) jax.Array, optional. [m]. Nodal positions from the equilibrium solver.
                             None = a straight chain is initialized.
         buckle_arr        - ndarray, optional. Buckle state from the equilibrium solver.
                             None =  initialized `helpers_builders._initiate_buckle`.
-        Forces            - (2 * nodes,) or (2, ), jax.Array, optional. Force vector from the equilibrium solver.
+        Forces            - (2 * nodes,) or (2, ), jax.Array, [mN], optional. Force vector from the equilibrium solver.
         """
         # ------- positions -------
         if pos_arr is not None:
@@ -214,7 +214,7 @@ class StateClass:
         Variabs        - VariablesClass. Supplies threshold array ``thresh`` of shape (H, S).
         Strctr         - StructureClass. Supplies ``hinges`` and ``shims`` sizes.
         t              - int. Time-step index at which to log.
-        State_measured - StateClass. A second state object (typically the "measured") that should mirror the buckle transitions.
+        State_measured - StateClass. Second state object (typically the "measured") that mirrors buckle transitions.
 
         Returns
         -------
@@ -226,8 +226,8 @@ class StateClass:
         buckle_nxt = zeros((Strctr.hinges, Strctr.shims), dtype=np.int32)
         for i in range(Strctr.hinges):
             for j in range(Strctr.shims):
-                theta_i = self.theta_arr[i]  # angle of hinge i
-                thresh_ij = Variabs.thresh[i, j]  # threshold of shim j in hinge i
+                theta_i = self.theta_arr[i]  # angle of hinge i, [rad]
+                thresh_ij = Variabs.thresh[i, j]  # threshold angle of shim j in hinge i, [rad]
 
                 # buckle up (flip 1 -> -1) when angle is too negative
                 if self.buckle_arr[i, j] == 1 and theta_i < -thresh_ij:

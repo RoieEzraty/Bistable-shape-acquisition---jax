@@ -93,7 +93,7 @@ class EquilibriumClass(eqx.Module):
 
     # ---- state / derived ----
     rest_lengths: jax.Array                          # (H+1,) edge rest lengths (from initial pos)
-    jnp_init_pos: jax.Array                          # (hinges+2, 2) integer coordinates
+    jnp_init_pos: jax.Array                          # (hinges+2, 2) integer coordinates, [m]
     buckle_arr: jax.Array                            # (H,) ∈ {+1,-1} per hinge/shim (direction of stiff side)
     time_points: jax.Array                           # (T_eq, ) time steps for simulating equilibrium configuration
 
@@ -112,9 +112,9 @@ class EquilibriumClass(eqx.Module):
             assert self.buckle_arr.shape == (Strctr.hinges, Strctr.shims)
 
         if pos_arr is None:
-            self.jnp_init_pos = helpers_builders._initiate_pos(Strctr.edges+1, Strctr.L)  # (N=hinges+2, 2)
+            self.jnp_init_pos = helpers_builders._initiate_pos(Strctr.edges+1, Strctr.L)  # (N=hinges+2, 2) [m]
         else:
-            self.jnp_init_pos = jnp.asarray(pos_arr)
+            self.jnp_init_pos = jnp.asarray(pos_arr)  # [m]
 
         # each edge's rest length is L, it's fixed and very stiff
         self.rest_lengths = jnp.full((Strctr.hinges + 1,), Strctr.L, dtype=jnp.float32)
@@ -143,34 +143,24 @@ class EquilibriumClass(eqx.Module):
 
         Parameters
         ----------
-        Variabs : VariablesClass
-        Strctr : StructureClass
+        init_pos           : jax.Array (N, 2), [m], initial position of all nodes in x and y
         control_first_edge : bool, optional
-            If True (default), both node 0 and node 1 are fixed in space (first edge clamped).
-            If False, only node 0 is fixed.
-        tip_pos : jax.Array, optional
-            Prescribed tip position as a 1D array of shape (2,) = (x_tip, y_tip).
-            If None, the tip is free in position (unless constrained elsewhere).
-        tip_angle : float or jax.Array, optional
-            Prescribed tip angle (radians, CCW from +x). If provided together with
-            `tip_pos`, this is enforced by fixing the node before the tip such that
-            its position corresponds to a segment of length `Strctr.L` at angle `tip_angle`.
-            If None, no tip-angle constraint is imposed.
-        pos_noise : float or jax.Array, optional
-            Amplitude (or full array) of **position noise** added to the initial positions.
-            A uniform random noise ∈ U[-1, 1] is sampled per DOF and multiplied by
-            `pos_noise`. Noise is applied only to **interior nodes**, i.e. all nodes
-            except the first two (0, 1) and the last two (N-2, N-1). Boundary nodes
-            remain exactly at their initial positions.
-        vel_noise : float or jax.Array, optional
-            Additive noise for the initial velocities. If provided, it is added to
-            the zero-velocity initial condition (can be a scalar or an array
-            broadcastable to the velocity vector).
+                             If True (default), both node 0 and node 1 are fixed in space (first edge clamped).
+                             If False, only node 0 is fixed.
+        tip_pos            : jax.Array, optional, [m], tip position as (x_tip, y_tip). If None, free tip in position
+        tip_angle          : float or jax.Array, [rad] optional. tip angle (CCW from +x). 
+                                                                 If provided together with `tip_pos`, this is enforced by fixing 
+                                                                 the node before tip in length of L from tip pos.
+        pos_noise          : float or jax.Array, [dimless], optional. Amplitude (or array) of position noise added to initial pos.
+                                                            Noise ∈ U[-1, 1] sampled per DOF and multiplied by `pos_noise`.  
+                                                            Noise is applied only to interior nodes
+        vel_noise          : float or jax.Array, [dimless], optional. Noise on initial velocities. 
+                                                           If provided, added to zero-velocity init. cond. (scalar or array)
 
         Returns
         -------
-        final_pos : jax.Array, (N, 2). Final nodal positions at the end of the dynamic relaxation.
-        pos_in_t  : jax.Array, (T_eq_samples, N, 2). Time history of nodal positions over integration time.
+        final_pos : jax.Array, (N, 2). Final nodal positions at the end of the dynamic relaxation. [m]
+        pos_in_t  : jax.Array, (T_eq_samples, N, 2). Time history of nodal positions over integration time. [m]
         vel_in_t  : jax.Array, (T_eq_samples, N, 2). Time history of nodal velocities over  integration time.
         forces    : jax.Array, (T_eq_samples, N, 2). Time history of internal reaction forces (stretch + bending) [mN]
                                                      on each positional DOF, evaluated along the trajectory.
@@ -252,10 +242,8 @@ class EquilibriumClass(eqx.Module):
 
         Returns
         -------
-        jax.Array, shape: (2*nodes,)
-            Internal reaction force on **all position DOFs** (no velocities) [mN], matching
-            the sign used in the equations of motion:
-                accel = (f_ext + f_internal - damping * xdot_free) / mass
+        jax.Array, (2*nodes,), [mN]. Internal reaction force on all position DOFs, matching sign used in equations of motion: 
+                                     accel = (f_ext + f_internal - damping * xdot_free) / mass
         """
         # ------ Rebuild full x vector and reshape ------
         fixed_vals_t = fixed_vals(t) if callable(fixed_vals) else fixed_vals
@@ -297,10 +285,9 @@ class EquilibriumClass(eqx.Module):
         # max_con = jnp.max(mag(F_contact_full))
 
         # ------ Combine internal forces (reaction) ------
-        # F_internal_full = F_theta_full + F_stretch_full  # (n_coords,) which is (2*nodes,)
         F_internal_full = F_theta_full + F_stretch_full + F_contact_full  # (n_coords,) which is (2*nodes,)
 
-        return F_internal_full
+        return F_internal_full  # [mN]
 
     @eqx.filter_jit
     def total_potential_force_from_full_x(self, Variabs: "VariablesClass", Strctr: "StructureClass",
@@ -316,17 +303,11 @@ class EquilibriumClass(eqx.Module):
 
         Parameters
         ----------
-        Variabs : VariablesClass
-            Mechanical parameters and `torque(theta_eff)`.
-        Strctr : StructureClass
-            Geometry/topology provider.
-        x_full : jax.Array, shape: (n_coords,) which is (2*nodes,)
-            Full position vector (no velocities).
+        x_full : jax.Array, shape: (n_coords,) which is (2*nodes,), [m]. Full position vector (no velocities).
 
         Returns
         -------
-        jax.Array, shape: (n_coords,) which is (2*nodes,)
-            Internal reaction force on **all position DOFs**. [mN] since torque is in [mN]
+        jax.Array, (n_coords,) which is (2*nodes,). Internal reaction force on all position DOFs. [mN] since torque is in [mN]
         """
         # ------ pos_arr from x_full ------
         # already built x_full: (n_coords,) flattened positions ONLY (no velocities)
@@ -354,8 +335,7 @@ class EquilibriumClass(eqx.Module):
 
         return F_theta_full + F_stretch_full + F_contact_full                 # (n_coords,) which is (2*nodes,), [mN]
 
-    def potential_force_free(self, Variabs: "VariablesClass", Strctr: "StructureClass", t: float,
-                             x_free: jax.Array, *,
+    def potential_force_free(self, Variabs: "VariablesClass", Strctr: "StructureClass", t: float, x_free: jax.Array, *,
                              free_mask: jax.Array, fixed_mask: jax.Array, fixed_vals: jax.Array,
                              imposed_mask: jax.Array, imposed_vals: jax.Array):
         """
@@ -371,24 +351,22 @@ class EquilibriumClass(eqx.Module):
         Variabs : VariablesClass
         Strctr : StructureClass
         t : float
-        x_free : jax.Array, shape: (sum(free_mask),)
-        free_mask, fixed_mask, imposed_mask : jax.Array[bool], shape: (n_coords,) which is (2*nodes,)
-        fixed_vals : Union[jax.Array, Callable[[float], jax.Array]]
-        imposed_vals : Callable[[float], jax.Array]
+        x_free : jax.Array, (sum(free_mask),), [m]
+        free_mask, fixed_mask, imposed_mask : jax.Array[bool], (n_coords,) which is (2*nodes,), [0's and 1's]
+        fixed_vals : Union[jax.Array, Callable[[float], jax.Array]], [m]
+        imposed_vals : Callable[[float], jax.Array], [m]
 
         Returns
         -------
-        jax.Array, shape: (sum(free_mask),)
-            Internal reaction force on **free position DOFs** (restoring sign), [mN]
+        jax.Array, (sum(free_mask),). Internal reaction force on free position DOFs (restoring sign), [mN]
         """
         return self.total_potential_force(Variabs, Strctr, t, x_free, free_mask=free_mask, fixed_mask=fixed_mask,
-                                          imposed_mask=imposed_mask, fixed_vals=fixed_vals,
-                                          imposed_vals=imposed_vals)[free_mask]
+                                          imposed_mask=imposed_mask, fixed_vals=fixed_vals, imposed_vals=imposed_vals)[free_mask]
 
     # ---------------------------------------------------------------
     # physical forces - bend, stretch, intersect
     # ---------------------------------------------------------------
-    def bend_forces(self, Strctr, tau_hinges, x_full):
+    def bend_forces(self, Strctr: "StructureClass", tau_hinges: jax.Array, x_full: jax.Array) -> jax.Array:
         """
         Forces on all nodes due to torques on each hinge.
 
@@ -400,8 +378,7 @@ class EquilibriumClass(eqx.Module):
         theta_jacs = self._theta_jacs_local(Strctr, x_full)  # (H, n_coords)
         return (theta_jacs.T @ tau_hinges).reshape(-1)  # (n_coords,) which is (2*nodes,), [mN]
 
-    def stretch_forces(self, Strctr: "StructureClass", Variabs: "VariablesClass",
-                       jnp_pos_arr: jax.Array[float]) -> jax.Array:
+    def stretch_forces(self, Strctr: "StructureClass", Variabs: "VariablesClass", jnp_pos_arr: jax.Array[float]) -> jax.Array:
         """
         Linear **edge stretch** forces on all DOFs given node positions.
 
@@ -412,41 +389,35 @@ class EquilibriumClass(eqx.Module):
 
         Parameters
         ----------
-        Strctr : StructureClass
-            Provides `edges_arr` (E,2) and `rest_lengths` (E,).
-        Variabs : VariablesClass
-            `k_stretch` scalar or (E,).
-        pos_arr : jax.Array, shape: (N,2)
+        Strctr : StructureClass. Provides `edges_arr` (E,2) and `rest_lengths` (E,).
+        Variabs : VariablesClass. `k_stretch` scalar or (E,).
+        pos_arr : jax.Array, (N,2), [m], positions of all nodes in x and y.
 
         Returns
         -------
         jax.Array, shape: (n_coords,) which is (2*nodes,), Flattened reaction force on all position DOFs, [mN]
         """
-        # pos_arr: (N, 2)
-        # Strctr.edge_list: (E, 2) with node indices (ia, ib)
-        # Strctr.rest_lengths: (E,)
-        # Variabs.k_stretch: scalar or (E,)
         edges = Strctr.edges_arr             # (E,2) jax Array
-        pa = jnp_pos_arr[edges[:, 0], :]          # (E,2)
-        pb = jnp_pos_arr[edges[:, 1], :]          # (E,2)
+        pa = jnp_pos_arr[edges[:, 0], :]     # (E,2)
+        pb = jnp_pos_arr[edges[:, 1], :]     # (E,2)
         d = pb - pa                          # (E,2)
-        l = jnp.linalg.norm(d, axis=1)       # (E,)
+        norm_d = jnp.linalg.norm(d, axis=1)  # (E,)
         # Avoid divide-by-zero in early steps
-        l_safe = jnp.where(l > 1e-12, l, 1e-12)
-        dl = l - Strctr.rest_lengths          # (E,)
+        norm_d_safe = jnp.where(norm_d > 1e-12, norm_d, 1e-12)
+        dl = norm_d - Strctr.rest_lengths    # (E,)
 
         k = Variabs.k_stretch
         if k.ndim == 0:
             k = jnp.full_like(dl, k)
         # force magnitude along edge direction
-        fmag = k * dl / l_safe                 # (E,)
-        fvec = (fmag[:, None]) * d             # (E,2)
+        fmag = k * dl / norm_d_safe          # (E,)
+        fvec = (fmag[:, None]) * d           # (E,2)
 
         # accumulate to node forces
-        F = jnp.zeros_like(jnp_pos_arr)           # (N,2)
+        F = jnp.zeros_like(jnp_pos_arr)      # (N,2)
         F = F.at[edges[:, 0], :].add(+fvec)
         F = F.at[edges[:, 1], :].add(-fvec)
-        return F.reshape(-1)                  # (n_coords,) which is (2*nodes,)
+        return F.reshape(-1)                 # (n_coords,) which is (2*nodes,), [mN]
 
     def contact_forces_node_edge(self, Strctr: "StructureClass", Variabs: "VariablesClass", jnp_pos_arr: jax.Array,
                                  edges: jax.Array, p: float = 1.0, fmax: float | None = None, skip_band: int = 1,
@@ -578,10 +549,10 @@ class EquilibriumClass(eqx.Module):
 
         Returns
         -------
-        final_pos        : jax.Array, (nodes, 2). Final nodal positions at end of the integration (positions only).
-        pos_in_t         : jax.Array, (T, nodes, 2). Time history of nodal positions, reconstructed from full state history.
+        final_pos        : jax.Array, (nodes, 2), [m]. Final nodal positions at end of the integration (positions only).
+        pos_in_t         : jax.Array, (T, nodes, 2), [m]. Time history of nodal positions, reconstructed from full state history.
         vel_in_t         : jax.Array, (T, nodes, 2). Time history of nodal velocities.
-        potential_F_in_t : jax.Array, shape (T, n_coords). Internal reaction forces on position DOFs (flattened).
+        potential_F_in_t : jax.Array, shape (T, n_coords), [mN]. Internal reaction forces on position DOFs (flattened).
 
         Notes
         -----

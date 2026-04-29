@@ -236,9 +236,9 @@ class SupervisorClass:
         sampling   : str. Dataset generation mode. One of:
                     "uniform": Random uniform sampling in a bounded box:
                                x ∈ [(edges - 1.5)L , (edges - 0.5)L]
-                              y ∈ [-L/2 , L/2]
-                              θ ∈ [-π/5 , π/5]
-                              Uses numpy Generator seeded with CFG.Train.rand_key_dataset.
+                               y ∈ [-L/2 , L/2]
+                               θ ∈ [-π/5 , π/5]
+                               Uses numpy Generator seeded with CFG.Train.rand_key_dataset.
                     "flat": Fully flat configuration over all T:
                             tip_pos = [edges, 0]
                             tip_angle = 0
@@ -318,14 +318,14 @@ class SupervisorClass:
 
         Parameters:
         -----------
-        pos_arr : (T, 2*N) node positions in x and y [mm]
-        Fx      : float force in global x direction
-        Fy      : float force in global y direction
-        t       : {0:self.T} current time step
+        pos_arr : (N, 2) node positions in x and y [m]
+        Fx      : float force in global x direction [mN]
+        Fy      : float force in global y direction [mN]
+        t       : {0:self.T} current time step [dimless]
         """
-        self.desired_pos_in_t[:, :, t] = helpers_builders.jax2numpy(pos_arr)
-        self.desired_Fx_in_t[t] = float(Fx)
-        self.desired_Fy_in_t[t] = float(Fy)
+        self.desired_pos_in_t[:, :, t] = helpers_builders.jax2numpy(pos_arr)  # [m]
+        self.desired_Fx_in_t[t] = float(Fx)  # [mN]
+        self.desired_Fy_in_t[t] = float(Fy)  # [mN]
 
     # ---------------------------------------------------------------
     # Calculations - loss and Update values
@@ -338,21 +338,21 @@ class SupervisorClass:
         Variabs : VariablesClass, using:
                   - norm_force: float typical force calculated in Variabs.init
         t       : {0:self.T} current time step
-        Fx      : float force in global x direction
-        Fy      : float force in global y direction
+        Fx      : float force in global x direction [mN]
+        Fy      : float force in global y direction [mN]
 
         Returns:
         --------
         loss     - float, F_hat-F in 2d
         loss_MSE - float, mean squared loss
         """
-        self.loss = array([self.desired_Fx_in_t[t] - Fx, self.desired_Fy_in_t[t] - Fy], dtype=np.float32)
+        self.loss = array([self.desired_Fx_in_t[t] - Fx, self.desired_Fy_in_t[t] - Fy], dtype=np.float32)  # [mN]
 
         # normalize loss
-        self.loss = self.loss / Variabs.norm_force
+        self.loss = self.loss / Variabs.norm_force  # [dimless]
 
         # put in loss vec
-        self.loss_in_t[t, : self.loss.shape[0]] = self.loss
+        self.loss_in_t[t, :self.loss.shape[0]] = self.loss
 
         # same for Mean Squared Error
         self.loss_MSE = np.sqrt(np.sum(self.loss**2))
@@ -380,21 +380,17 @@ class SupervisorClass:
         Parameters:
         -----------
         t
-        current_tip_pos       : ndarrat(float) (2,) during measurement, used only in radial_one_to_one update function
-        prev_tip_update_pos   : ndarrat(float) (2,) previous update tip pos, for inserting new top into vectors in time
-        current_tip_angle     : float, during measurement, used only in radial_one_to_one update function
-        prev_tip_update_angle : float, previous update tip pos, for inserting new top into vectors in time
-        correct_for_total_angle, correct_for_coil, correct_for_cut_origin : booleans, whether to correct tip pos due to:
-                                                                            addition to simulation total angle,
-                                                                            coiled tip (reset tip values from dataset)
-                                                                            tip cuts origin (as above)
+        correct_for_... : booleans, whether to correct tip pos due to: addition to total tip angle relative to origin,
+                                                                       coiled tip (reset tip values from dataset)
+                                                                       tip cuts origin (as above)
+                                                                       forces at tip exceed threshold
 
         Returns:
         --------
         updates in self:
-        np.array(float), (2,) update_tip_pos_in_t
-        float, tip_angle_update_in_t
-        float, total_angle_update_in_t
+        np.array(float), (2,) update_tip_pos_in_t [m]
+        float, tip_angle_update_in_t [mN]
+        float, total_angle_update_in_t [mN]
         """
         # ------ delta tip and angle ------
         # through BEASTAL, one_to_one or radial_one_to_one
@@ -420,13 +416,6 @@ class SupervisorClass:
                 tradeoff_pos_angle = 2
             delta_tip = copy.copy(delta_tip)/step_size*self.alpha
             delta_angle = copy.copy(delta_angle)/step_size*self.alpha * tradeoff_pos_angle
-
-            # new version from Feb22
-            # pos_step_size = np.linalg.norm(delta_tip)
-            # angle_step_size = np.linalg.norm(delta_angle)
-            # tradeoff_pos_angle = 1
-            # delta_tip = copy.copy(delta_tip)/pos_step_size*self.alpha
-            # delta_angle = copy.copy(delta_angle)*(angle_step_size/pos_step_size)*self.alpha * tradeoff_pos_angle
 
             if not self.supress_prints:
                 print(f'normalized position to {delta_tip}')
@@ -460,9 +449,10 @@ class SupervisorClass:
                 prev_total_angle = 0.0
             else:
                 prev_total_angle = self.total_angle_update_in_t[t-1]
-            total_angle = helpers_builders._get_total_angle(self.tip_pos_update_in_t[t, :], prev_total_angle, Strctr.L)
+            total_angle: float = helpers_builders._get_total_angle(self.tip_pos_update_in_t[t, :], prev_total_angle,
+                                                                   Strctr.L)
             self.total_angle_update_in_t[t] = total_angle
-            delta_total_angle = total_angle - prev_total_angle
+            delta_total_angle: float = total_angle - prev_total_angle
             self.tip_angle_update_in_t[t] += delta_total_angle
             if not self.supress_prints:
                 print(f'total angle {total_angle}')
@@ -480,16 +470,6 @@ class SupervisorClass:
         # ------ correct for coil or cut origin ------
         cond_coil = helpers_builders.coil(self.tip_angle_update_in_t[t], revolutions=1.5)
 
-        # before_tip_tminus1 = helpers_builders._get_before_tip(self.tip_pos_update_in_t[t-1, :],
-        #                                                       self.tip_angle_update_in_t[t-1], Strctr.L, xp=np)
-        # before_tip_t = helpers_builders._get_before_tip(self.tip_pos_update_in_t[t, :], self.tip_angle_update_in_t[t],
-        #                                                 Strctr.L, xp=np)
-
-        # cond_cut_origin = helpers_builders.swept_last_edge_crosses_first_edge(before_prev=before_tip_tminus1,
-        #                                                                       tip_prev=self.tip_pos_update_in_t[t-1, :],
-        #                                                                       before_new=before_tip_t,
-        #                                                                       tip_new=self.tip_pos_update_in_t[t, :],
-        #                                                                       L=Strctr.L, include_endpoints=False)
         cond_cut_origin = helpers_builders.swept_last_edge_crosses_first_edge(tip_prev=self.tip_pos_update_in_t[t-1, :],
                                                                               angle_prev=self.tip_angle_update_in_t[t-1],
                                                                               tip_new=self.tip_pos_update_in_t[t, :],
