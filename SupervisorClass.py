@@ -694,6 +694,7 @@ class SupervisorClass:
         Lx_trend = self.loss_x_trend
         print('trend=', Lx_trend)
         Ly = self.loss[1]
+        tradeoff_pos_theta = 1/4
         sgnx = np.sign(self.tip_pos_update_in_t[t-1, 0])
         sgny = np.sign(self.tip_pos_update_in_t[t-1, 1])
         if sgnx == 0.0:
@@ -701,8 +702,8 @@ class SupervisorClass:
         if sgny == 0.0:
             sgny = 1
         loss_add = Lx + Ly
-        delta_tip_x = - self.alpha * Lx_trend * (-sgny) * Variabs.norm_pos  # Mar23
-        delta_tip_y = - self.alpha * Lx_trend * (+sgnx) * Variabs.norm_pos  # Mar23
+        delta_tip_x = - self.alpha * Lx_trend * tradeoff_pos_theta * (-sgny) * Variabs.norm_pos  # Mar23
+        delta_tip_y = - self.alpha * Lx_trend * tradeoff_pos_theta * (+sgnx) * Variabs.norm_pos  # Mar23
         delta_angle = - self.alpha * loss_add * Variabs.norm_angle  # Mar23
         return delta_tip_x, delta_tip_y, delta_angle
 
