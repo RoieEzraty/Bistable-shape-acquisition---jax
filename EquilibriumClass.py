@@ -131,9 +131,10 @@ class EquilibriumClass(eqx.Module):
     # main function of EquilibriumClass
     # ---------------------------------------------------------------
     def calculate_state(self, Variabs: "VariablesClass", Strctr: "StructureClass", Sprvsr: "SupervisorClass",
-                        init_pos: NDArray[float], control_first_edge: bool = True,  tip_pos: jax.Array | None = None,
+                        init_pos: NDArray[float], control_tip: bool = True,  tip_pos: jax.Array | None = None,
                         tip_angle: float | jax.Array | None = None, pos_noise: float | jax.Array | None = None,
-                        vel_noise: float | jax.Array | None = None) -> Tuple[jax.Array, jax.Array, jax.Array, jax.Array]:
+                        vel_noise: float | jax.Array | None = None) -> Tuple[jax.Array, jax.Array, jax.Array,
+                                                                             jax.Array]:
         """
         Compute the equilibrium state of the chain given boundary conditions and optional noise.
 
@@ -143,19 +144,18 @@ class EquilibriumClass(eqx.Module):
 
         Parameters
         ----------
-        init_pos           : jax.Array (N, 2), [m], initial position of all nodes in x and y
-        control_first_edge : bool, optional
-                             If True (default), both node 0 and node 1 are fixed in space (first edge clamped).
-                             If False, only node 0 is fixed.
-        tip_pos            : jax.Array, optional, [m], tip position as (x_tip, y_tip). If None, free tip in position
-        tip_angle          : float or jax.Array, [rad] optional. tip angle (CCW from +x). 
-                                                                 If provided together with `tip_pos`, this is enforced by fixing 
-                                                                 the node before tip in length of L from tip pos.
-        pos_noise          : float or jax.Array, [dimless], optional. Amplitude (or array) of position noise added to initial pos.
-                                                            Noise ∈ U[-1, 1] sampled per DOF and multiplied by `pos_noise`.  
-                                                            Noise is applied only to interior nodes
-        vel_noise          : float or jax.Array, [dimless], optional. Noise on initial velocities. 
-                                                           If provided, added to zero-velocity init. cond. (scalar or array)
+        init_pos    : jax.Array (N, 2), [m], initial position of all nodes in x and y
+        control_tip : bool, optional
+                            If True (default), impose also two final nodes. Else, impose only two first nodes.
+        tip_pos     : jax.Array, optional, [m], tip position as (x_tip, y_tip). If None, free tip in position
+        tip_angle   : float or jax.Array, [rad] optional. tip angle (CCW from +x).
+                                                          If provided together with `tip_pos`, this is enforced
+                                                          by fixing node before tip in length of L from tip pos.
+        pos_noise  : float or jax.Array, [dimless], optional. Amplitude (or array) of noise added to initial pos
+                                                              Noise ∈ U[-1, 1] per DOF, multiplied by pos_noise
+                                                              Noise is applied only to interior nodes
+        vel_noise  : float or jax.Array, [dimless], optional. Noise on initial velocities.
+                                                              Added to zero-velocity init. cond. (scalar or array)
 
         Returns
         -------
@@ -173,10 +173,10 @@ class EquilibriumClass(eqx.Module):
         - Positional noise is applied **after** flattening `init_pos` and **before**
           concatenating with the velocity vector.
         """
+        # ------ initial position ------
         if init_pos is None:
             # use whatever geometry was passed at construction as baseline
             init_pos = helpers_builders.jax2numpy(self.jnp_init_pos)
-
         jnp_init_pos = helpers_builders.numpy2jax(init_pos)
 
         # ------ fixed values (vector, not function) ------
@@ -184,7 +184,11 @@ class EquilibriumClass(eqx.Module):
 
         # ------ imposed tip position and possibly angle ------
         # Build a callable (always), even if mask is all False.
-        imposed_vals = self._set_imposed_vals(Strctr, Sprvsr, tip_pos, tip_angle, jnp_init_pos)
+        if control_tip:
+            imposed_mask = Sprvsr.imposed_mask_w_tip
+        else:
+            imposed_mask = Sprvsr.imposed_mask_free
+        imposed_vals = self._set_imposed_vals(Strctr, Sprvsr, imposed_mask, tip_pos, tip_angle, jnp_init_pos)
 
         # -------- initial state (positions & velocities) ----------
         pos_noise = Strctr.L * self.pos_noise  # scale relative to length
@@ -195,7 +199,7 @@ class EquilibriumClass(eqx.Module):
         final_pos, pos_in_t, vel_in_t, potential_F_in_t = self.solve_dynamics(state_0, Variabs, Strctr,
                                                                               fixed_mask=Strctr.fixed_mask,
                                                                               fixed_vals=fixed_vals,
-                                                                              imposed_mask=Sprvsr.imposed_mask,
+                                                                              imposed_mask=imposed_mask,
                                                                               imposed_vals=imposed_vals)
         # print('STD forces=', jax.numpy.std(potential_F_in_t[300:], axis=0))
         # print('STD pos=', jax.numpy.std(pos_in_t[300:], axis=0))
@@ -535,13 +539,13 @@ class EquilibriumClass(eqx.Module):
         Parameters
         ----------
         state_0                  : jax.Array, shape (2*n_coords,)
-                                   full state vector before equilibration, with positions and velocities, concatenated as:
+                                   full state vector before equilibr, with positions and velocities, concatenated as:
                                    [x0, y0, x1, y1, ..., x_{N-1}, y_{N-1}, vx0, vy0, ..., vx_{N-1}, vy_{N-1}]
                                    where n_coords = 2*nodes.
-        fixed_mask, imposed_mask : optional array of bool, (n_coords,). 
+        fixed_mask, imposed_mask : optional array of bool, (n_coords,).
                                    True at DOFs that remain fixed / imposed throughout the integration.
         fixed_vals, imposed_vals : jax.Array or callable, optional
-                                   If an array: full position vector of (n_coords,) containing fixed / imposed DOF values
+                                   If an array: full position vec of (n_coords,) containing fixed / imposed DOF values
                                    (other entries ignored). Converted to a callable internally.
                                    If a callable: function f(t) -> full position vector (n_coords,).
                                    If None: defaults to the initial positions stored in `self.jnp_init_pos`.
@@ -550,7 +554,7 @@ class EquilibriumClass(eqx.Module):
         Returns
         -------
         final_pos        : jax.Array, (nodes, 2), [m]. Final nodal positions at end of the integration (positions only).
-        pos_in_t         : jax.Array, (T, nodes, 2), [m]. Time history of nodal positions, reconstructed from full state history.
+        pos_in_t         : jax.Array, (T, nodes, 2), [m]. History of nodal positions, reconst from full state history.
         vel_in_t         : jax.Array, (T, nodes, 2). Time history of nodal velocities.
         potential_F_in_t : jax.Array, shape (T, n_coords), [mN]. Internal reaction forces on position DOFs (flattened).
 
@@ -597,7 +601,8 @@ class EquilibriumClass(eqx.Module):
             imposed_vals = lambda t, ivec=ivec: ivec
 
         # ------ reduce full state to free DOFs ------
-        free_mask, n_free_DOFs, state_0_free = helpers_builders._get_state_free_from_full(state_0, fixed_mask, imposed_mask)
+        free_mask, n_free_DOFs, state_0_free = helpers_builders._get_state_free_from_full(state_0, fixed_mask,
+                                                                                          imposed_mask)
 
         # JIT force-from-full-x function for fast force evaluations along the trajectory
         force_full_fn = eqx.filter_jit(lambda x_full: self.total_potential_force_from_full_x(Variabs, Strctr, x_full))
@@ -609,7 +614,8 @@ class EquilibriumClass(eqx.Module):
 
             f_ext = self.force_function_free(t, force_function, free_mask=free_mask)
             f_pot = self.potential_force_free(Variabs, Strctr, t, x_free, free_mask=free_mask, fixed_mask=fixed_mask,
-                                              fixed_vals=fixed_vals, imposed_mask=imposed_mask, imposed_vals=imposed_vals)
+                                              fixed_vals=fixed_vals, imposed_mask=imposed_mask,
+                                              imposed_vals=imposed_vals)
             accel = (f_ext + f_pot - self.damping_coeff * xdot_free) / self.mass
             return jnp.concatenate([xdot_free, accel], axis=0)
 
@@ -696,7 +702,7 @@ class EquilibriumClass(eqx.Module):
     # ---------------------------------------------------------------
     def _set_fixed_vals(self, fixed_mask) -> jax.array:
         """
-        return jax array (2*N,), nonzero values are values that are fixed along equilibrium calculation 
+        return jax array (2*N,), nonzero values are values that are fixed along equilibrium calculation
         (i.e. 1st and 2nd nodes at chain base)
 
         Parameters:
@@ -710,7 +716,7 @@ class EquilibriumClass(eqx.Module):
         fixed_vals = jnp.zeros((len(fixed_mask),), dtype=float)
         return fixed_vals.at[fixed_mask].set(self.jnp_init_pos.reshape((-1,))[fixed_mask])
 
-    def _set_imposed_vals(self, Strctr: "StructureClass", Sprvsr: "SupervisorClass", tip_pos, tip_angle, 
+    def _set_imposed_vals(self, Strctr: "StructureClass", Sprvsr: "SupervisorClass", imposed_mask, tip_pos, tip_angle,
                           init_pos):
         """
         Build a time-dependent imposed displacement function.
@@ -736,7 +742,7 @@ class EquilibriumClass(eqx.Module):
         Returns:
         --------
         imposed_vals : Callable[[float], jax.Array]
-            A function of time `t` returning flattened position vector (2 * nodes,). Imposed entries are set to the values:
+            A function of time `t` returning flattened position vector (2 * nodes,). Imposed entries set to the values:
                 [x0, y0, x1, y1, ..., x_{N-1}, y_{N-1}]
 
             Used as `imposed_mask` (or `Sprvsr.imposed_mask`) in `solve_dynamics()`
@@ -774,7 +780,7 @@ class EquilibriumClass(eqx.Module):
 
             before_t = helpers_builders._get_before_tip(tip_pos=tip_t, tip_angle=th_t, L=Strctr.L, dtype=init_pos.dtype)
             out = start_vec
-            out = out.at[Sprvsr.imposed_mask].set(jnp.concatenate([before_t, tip_t]))
+            out = out.at[imposed_mask].set(jnp.concatenate([before_t, tip_t]))
             return out
 
         return imposed_vals

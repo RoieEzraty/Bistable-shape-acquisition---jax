@@ -158,16 +158,17 @@ class TrainingConfig:
         desired_buckle_rand_key: int = 169  # key for seed of random sampling of buckle pattern
     elif desired_buckle_type == 'specified':
         # desired_buckle_pattern: tuple = (1, -1, -1, -1, -1)  # which shims should be buckled up, initially
-        desired_buckle_pattern: tuple = (-1, 1, -1, -1)  # which shims should be buckled up, initially
+        desired_buckle_pattern: tuple = (1, 1, -1, -1)  # which shims should be buckled up, initially
         # desired_buckle_pattern: tuple = (-1, 1, 1, 1)  # which shims should be buckled up, initially
 
     # init_buckle_pattern: tuple = (-1, -1, -1, -1, 1)  # which shims should be buckled up, initially
-    init_buckle_pattern: tuple = (-1, -1, -1, -1)  # which shims should be buckled up, initially
+    init_buckle_pattern: tuple = (-1, 1, -1, 1)  # which shims should be buckled up, initially
     # init_buckle_pattern: tuple = (1, 1, 1, -1)  # which shims should be buckled up, initially
     # init_buckle_pattern: tuple = (1)  # which shims should be buckled up, initially
 
     # dataset_sampling: str = 'uniform'  # random uniform vals for x, y, angle
-    dataset_sampling: str = 'predetermined'  # every training step t import measuremed forces through predetermined trajectory
+    # dataset_sampling: str = 'predetermined'  # import measured F along predetermined trajectory every training step t
+    dataset_sampling: str = 'free_tip'  # free tip pos and angle (zero forces at sensor) during measurement
     # dataset_sampling: str = 'specified'  # constant
     # dataset_sampling: str = 'tile'  # constant
     # dataset_sampling = 'almost_flat'  # flat piece w a bit of constant noise, single measurement
@@ -200,9 +201,10 @@ class TrainingConfig:
         alpha = 0.25
     else:
         # alpha = 0.2  # learning rate  #  Apr23
-        alpha = 0.1  # learning rate # Apr30
+        alpha = 0.15  # learning rate # Apr30
 
-    control_tip: bool = True  # imposed tip position in measurement and update. If False, tip is free
+    # control_tip: bool = True  # imposed tip position in measurement and update. If False, tip is free
+    control_tip: bool = False  # imposed tip position in measurement and update. If False, tip is free
     control_first_edge: bool = True  # if True, fix nodes (0, 1) to zero. if Flase, just the first
 
     rand_key_dataset: int = 7  # for random sampling of dataset, if dataset_sampling is True

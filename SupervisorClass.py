@@ -109,35 +109,41 @@ class SupervisorClass:
     total_angle_update_in_t: NDArray[np.float32] = eqx.field(default=None, init=False, static=True)  # (T,)
 
     # ------ for equilibrium calculation, jax arrays ------
-    imposed_mask: jax.ndarray[bool] = eqx.field(static=True)                       # (2*nodes,)
+    # imposed_mask: jax.ndarray[bool] = eqx.field(static=True)                     # (2*nodes,)
+    imposed_mask_w_tip: jax.ndarray[bool] = eqx.field(static=True)                 # (2*nodes,)
+    imposed_mask_free: jax.ndarray[bool] = eqx.field(static=True)                  # (2*nodes,)
 
     # --- scratch (most recent loss vector) ---
     loss: NDArray[np.float32] = eqx.field(init=False, static=True)                 # (2,)
 
     def __init__(self, Strctr, CFG, supress_prints: bool = True) -> None:
-        self.T = int(CFG.Train.T)  # total training-set size (& algorithm time, not to confuse with time to equilib state)
+        self.T = int(CFG.Train.T)  # total training-set size (& algorithm time, dont confuse with time to equilib state)
         self.alpha = float(CFG.Train.alpha)
         self.update_scheme = str(CFG.Train.update_scheme)
         self.control_tip = bool(CFG.Train.control_tip)
-        self.control_first_edge = bool(CFG.Train.control_first_edge)  # if true, fix nodes (0, 1), else fix only node (0)
+        self.control_first_edge = bool(CFG.Train.control_first_edge)  # if true, fix nodes (0, 1), else fix only (0)
 
         # for equilibrium
-        self.imposed_mask = self._build_imposed_mask(Strctr, self.control_tip)
+        self.imposed_mask_w_tip = self._build_imposed_mask(Strctr, control_tip=True)
+        self.imposed_mask_free = self._build_imposed_mask(Strctr, control_tip=False)
 
         # Desired/targets
         if CFG.Train.desired_buckle_type == 'random':  # uniformly distributed values of +1 and -1
             key = jax.random.PRNGKey(CFG.Train.desired_buckle_rand_key)   # seed
             desired_buckle = jax.random.randint(key, (Strctr.hinges, Strctr.shims), minval=-1, maxval=2)  # +1, 0 or -1
             desired_buckle = desired_buckle.at[desired_buckle == 0].set(-1)  # replace 0 w/ -1
-        elif CFG.Train.desired_buckle_type == 'opposite':  # opposite than initial buckle, requires creating the initial buckle
+        elif CFG.Train.desired_buckle_type == 'opposite':  # opposite than init buckle, requires creating initial buckle
             desired_buckle = - helpers_builders._initiate_buckle(Strctr.hinges, Strctr.shims,
-                                                                 buckle_pattern=CFG.Train.init_buckle_pattern, numpify=True)
-        elif CFG.Train.desired_buckle_type == 'straight':  # same as initial buckle, requires creating the initial buckle
+                                                                 buckle_pattern=CFG.Train.init_buckle_pattern,
+                                                                 numpify=True)
+        elif CFG.Train.desired_buckle_type == 'straight':  # same as initial buckle, requires creating initial buckle
             desired_buckle = helpers_builders._initiate_buckle(Strctr.hinges, Strctr.shims,
-                                                               buckle_pattern=CFG.Train.init_buckle_pattern, numpify=True)
+                                                               buckle_pattern=CFG.Train.init_buckle_pattern,
+                                                               numpify=True)
         elif CFG.Train.desired_buckle_type == 'specified':
             desired_buckle = helpers_builders._initiate_buckle(Strctr.hinges, Strctr.shims,
-                                                               buckle_pattern=CFG.Train.desired_buckle_pattern, numpify=True)
+                                                               buckle_pattern=CFG.Train.desired_buckle_pattern,
+                                                               numpify=True)
         self.desired_buckle_arr = np.asarray(desired_buckle, dtype=np.int32)
         self.desired_pos_in_t = zeros((Strctr.nodes, 2, self.T), dtype=np.float32)
         self.desired_Fx_in_t = zeros((self.T), dtype=np.float32)

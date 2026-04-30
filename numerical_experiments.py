@@ -19,7 +19,7 @@ from config import ExperimentConfig
 # Full training
 # ---------------------------------------------------------------
 def train(Strctr: StructureClass, Variabs: VariablesClass, CFG: ExperimentConfig, init_buckle: NDArray,
-          desired_buckle: NDArray, invert_updates: bool = False):
+          desired_buckle: NDArray, invert_updates: bool = False, control_tip: bool = True):
     """
     Run the closed-loop training loop: measure → compute loss → update tip command → relax → buckle.
 
@@ -102,10 +102,12 @@ def train(Strctr: StructureClass, Variabs: VariablesClass, CFG: ExperimentConfig
         else:
             if t == 1 or buckle_bool or CFG.Train.dataset_sampling != 'specified':
                 final_pos, pos_in_t, _, F_in_t = Eq_meas.calculate_state(Variabs, Strctr, Sprvsr,
+                                                                         control_tip=control_tip,
                                                                          init_pos=None,
                                                                          tip_pos=Sprvsr.tip_pos_in_t[t],
                                                                          tip_angle=Sprvsr.tip_angle_in_t[t])
                 final_pos_des, pos_in_t_des, _, F_in_t_des = Eq_des.calculate_state(Variabs, Strctr, Sprvsr,
+                                                                                    control_tip=control_tip,
                                                                                     init_pos=None,
                                                                                     tip_pos=Sprvsr.tip_pos_in_t[t],
                                                                                     tip_angle=Sprvsr.tip_angle_in_t[t])
@@ -133,6 +135,7 @@ def train(Strctr: StructureClass, Variabs: VariablesClass, CFG: ExperimentConfig
 
         final_pos_update, pos_in_t_update, _, F_in_t_udpate = Eq_meas.calculate_state(Variabs, Strctr, Sprvsr,
                                                                                       init_update_pos,
+                                                                                      control_tip=True,
                                                                                       tip_pos=Sprvsr.tip_pos_update_in_t[t],
                                                                                       tip_angle=Sprvsr.tip_angle_update_in_t[t])
 
@@ -339,7 +342,7 @@ def measure_determined_pos_from_file(Strctr: "StructureClass", Variabs: "Variabl
 # Single equilibration
 # ---------------------------------------------------------------
 def one_shot(Strctr: "StructureClass", Variabs: "VariablesClass", Sprvsr: "SupervisorClass", State: "StateClass",
-             CFG: ExperimentConfig, buckle: NDArray, tip_pos: NDArray, tip_angle: float,
+             CFG: ExperimentConfig, buckle: NDArray, tip_pos: NDArray, tip_angle: float, control_tip: bool = True,
              init_pos: Optional[np.ndarray] = None, t: int = 0) -> Tuple[NDArray, NDArray]:
     """
     Perform a single equilibrium computation and state update for the system.
@@ -376,11 +379,13 @@ def one_shot(Strctr: "StructureClass", Variabs: "VariablesClass", Sprvsr: "Super
     # ------ claculate equilibrium from ode dynamics ------
     if init_pos is None:
         final_pos, pos_in_t, vel_in_t, F_in_t = Eq.calculate_state(Variabs, Strctr, Sprvsr, init_pos=State.pos_arr,
+                                                                   control_tip=control_tip,
                                                                    tip_pos=tip_pos, tip_angle=tip_angle)
     else:
         print('init_pose=', init_pos)
-        final_pos, pos_in_t, vel_in_t, F_in_t = Eq.calculate_state(Variabs, Strctr, Sprvsr, init_pos=init_pos,
-                                                                   tip_pos=tip_pos, tip_angle=tip_angle)
+        final_pos, pos_in_t, vel_in_t, F_in_t = Eq.calculate_state(Variabs, Strctr, Sprvsr, control_tip=control_tip,
+                                                                   init_pos=init_pos, tip_pos=tip_pos,
+                                                                   tip_angle=tip_angle)
     # ------ save, plot, print ------
     State._save_data(t, Strctr, final_pos, State.buckle_arr, F_in_t)
     State.buckle(Variabs, Strctr, t, State_measured=State)   
