@@ -358,7 +358,7 @@ class SupervisorClass:
         self.loss_MSE = np.sqrt(np.sum(self.loss**2))
         self.loss_MSE_in_t[t] = self.loss_MSE
 
-    def calc_concavity(self, F_meas_full_traj, F_des_full_traj):
+    def calc_concavity(self, F_meas_full_traj, F_des_full_traj) -> None:
         """
         """
         loss_x_full = F_des_full_traj[:, 0] - F_meas_full_traj[:, 0]
@@ -369,6 +369,19 @@ class SupervisorClass:
         else:
             self.concavity = -((loss_x_full[0] + loss_x_full[-1]) -
                                (loss_x_full[middle-1] + loss_x_full[middle])) / (2 * abs_mean_loss)
+
+    def calc_loss_x_trend(self, F_meas_full_traj, F_des_full_traj) -> None:
+        """
+        Calculate the linear trend/slope of Fx_desired - Fx_measured
+        along the full predetermined trajectory.
+        """
+        loss_x_full = F_des_full_traj[:, 0] - F_meas_full_traj[:, 0]
+
+        if len(loss_x_full) < 2 or np.mean(np.abs(loss_x_full)) < 1e-6:
+            self.loss_x_trend = 0.0
+        else:
+            traj_idx = np.arange(len(loss_x_full), dtype=float)
+            self.loss_x_trend = float(np.polyfit(traj_idx, loss_x_full, deg=1)[0])
 
     def calc_update_tip(self, t: int, Strctr: "StructureClass", Variabs: "VariablesClass",
                         State_meas: "StateClass", State_des: "StateClass", State_update: "StateClass",
@@ -603,9 +616,10 @@ class SupervisorClass:
         """
         return {
             "one_to_one": self._delta_one_to_one,
-            "radial_one_to_one": self._delta_radial_one_to_one,
             "loss_diff": self._delta_loss_diff,
-            "lossx_concavity": self._lossx_concavity
+            "loss_x_trend": self._delta_loss_x_trend,
+            # "radial_one_to_one": self._delta_radial_one_to_one,
+            # "lossx_concavity": self._lossx_concavity
             # "BEASTAL": self._delta_BEASTAL,
             # "radial_BEASTAL": self._delta_radial_BEASTAL,
             # "BEASTAL_no_pinv": self._delta_BEASTAL_no_pinv,
@@ -675,53 +689,70 @@ class SupervisorClass:
         # delta_angle = - self.alpha * loss_add * sgnLossx * (-sgnLossy) * Variabs.norm_angle  # Mar24
         return delta_tip_x, delta_tip_y, delta_angle
 
-    def _lossx_concavity(self, t, Strctr, Variabs, State_meas, State_des):
+    def _delta_loss_x_trend(self, t, Strctr, Variabs, State_meas, State_des):
+        Lx = self.loss[0]
+        Lx_trend = self.loss_x_trend
+        print('trend=', Lx_trend)
+        Ly = self.loss[1]
         sgnx = np.sign(self.tip_pos_update_in_t[t-1, 0])
         sgny = np.sign(self.tip_pos_update_in_t[t-1, 1])
         if sgnx == 0.0:
             sgnx = 1
         if sgny == 0.0:
             sgny = 1
-        sgnLossy = np.sign(self.loss[1])
-        delta_tip_x = - self.alpha * (-self.loss[1]) * (-sgny) * Variabs.norm_pos  # Mar25
-        delta_tip_y = - self.alpha * (-self.loss[1]) * (+sgnx) * Variabs.norm_pos  # Mar25
-
-        delta_angle = - self.alpha * (-self.concavity) * Variabs.norm_angle  # Mar24
+        loss_add = Lx + Ly
+        delta_tip_x = - self.alpha * Lx_trend * (-sgny) * Variabs.norm_pos  # Mar23
+        delta_tip_y = - self.alpha * Lx_trend * (+sgnx) * Variabs.norm_pos  # Mar23
+        delta_angle = - self.alpha * loss_add * Variabs.norm_angle  # Mar23
         return delta_tip_x, delta_tip_y, delta_angle
 
-    def _delta_radial_one_to_one(self, t, Strctr, Variabs, State_meas, State_des):
-        """
-        change tip directly from loss, no pseudo inverse, calculations in polar coordinates
-        dx = -alpha*loss_Theta*y!
-        dy = -alpha*loss_Theta*(-x!)
-        dtheta = -alpha*loss_tip
+    # def _lossx_concavity(self, t, Strctr, Variabs, State_meas, State_des):
+    #     sgnx = np.sign(self.tip_pos_update_in_t[t-1, 0])
+    #     sgny = np.sign(self.tip_pos_update_in_t[t-1, 1])
+    #     if sgnx == 0.0:
+    #         sgnx = 1
+    #     if sgny == 0.0:
+    #         sgny = 1
+    #     sgnLossy = np.sign(self.loss[1])
+    #     delta_tip_x = - self.alpha * (-self.loss[1]) * (-sgny) * Variabs.norm_pos  # Mar25
+    #     delta_tip_y = - self.alpha * (-self.loss[1]) * (+sgnx) * Variabs.norm_pos  # Mar25
 
-        Parameters:
-        ------------
-        t                 : current training time step
-        current_tip_pos   : np.array(float) (2,), during measurement, i.e. Sprvsr.tip_pos_in_t[t]
-        current_tip_angle : float, during measurement, i.e. Sprvsr.tip_angle_in_t[t]
+    #     delta_angle = - self.alpha * (-self.concavity) * Variabs.norm_angle  # Mar24
+    #     return delta_tip_x, delta_tip_y, delta_angle
 
-        Returns:
-        --------
-        3 floats of change in tip position during update
-        """
-        if t == 1:
-            prev_total_angle = helpers_builders._get_total_angle(self.tip_pos_in_t[t], 0.0, Strctr.L)
-            tip_update = self.tip_pos_in_t[t]
-        else:
-            prev_total_angle = self.total_angle_update_in_t[t - 1]
-            tip_update = self.tip_pos_update_in_t[t - 1, :]
+    # def _delta_radial_one_to_one(self, t, Strctr, Variabs, State_meas, State_des):
+    #     """
+    #     change tip directly from loss, no pseudo inverse, calculations in polar coordinates
+    #     dx = -alpha*loss_Theta*y!
+    #     dy = -alpha*loss_Theta*(-x!)
+    #     dtheta = -alpha*loss_tip
 
-        # loss in direction perpindicular to the total chain angle, measured from end of 2nd link
-        loss_total_angle = helpers_builders._get_scalar_in_orthogonal_dir(self.loss, prev_total_angle)
-        # loss in direction perp. to just the tip angle
-        loss_tip = helpers_builders._get_scalar_in_orthogonal_dir(self.loss, self.tip_angle_in_t[t])
+    #     Parameters:
+    #     ------------
+    #     t                 : current training time step
+    #     current_tip_pos   : np.array(float) (2,), during measurement, i.e. Sprvsr.tip_pos_in_t[t]
+    #     current_tip_angle : float, during measurement, i.e. Sprvsr.tip_angle_in_t[t]
 
-        delta_tip_x = (- self.alpha * loss_total_angle) * tip_update[1]
-        delta_tip_y = (- self.alpha * loss_total_angle) * -tip_update[0]
-        delta_angle = - self.alpha * loss_tip * Variabs.norm_angle * 2
-        return delta_tip_x, delta_tip_y, delta_angle
+    #     Returns:
+    #     --------
+    #     3 floats of change in tip position during update
+    #     """
+    #     if t == 1:
+    #         prev_total_angle = helpers_builders._get_total_angle(self.tip_pos_in_t[t], 0.0, Strctr.L)
+    #         tip_update = self.tip_pos_in_t[t]
+    #     else:
+    #         prev_total_angle = self.total_angle_update_in_t[t - 1]
+    #         tip_update = self.tip_pos_update_in_t[t - 1, :]
+
+    #     # loss in direction perpindicular to the total chain angle, measured from end of 2nd link
+    #     loss_total_angle = helpers_builders._get_scalar_in_orthogonal_dir(self.loss, prev_total_angle)
+    #     # loss in direction perp. to just the tip angle
+    #     loss_tip = helpers_builders._get_scalar_in_orthogonal_dir(self.loss, self.tip_angle_in_t[t])
+
+    #     delta_tip_x = (- self.alpha * loss_total_angle) * tip_update[1]
+    #     delta_tip_y = (- self.alpha * loss_total_angle) * -tip_update[0]
+    #     delta_angle = - self.alpha * loss_tip * Variabs.norm_angle * 2
+    #     return delta_tip_x, delta_tip_y, delta_angle
 
     # def _delta_BEASTAL(self, t, Strctr, Variabs, State, current_tip_pos, current_tip_angle):
     #     inputs_normalized = array([

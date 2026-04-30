@@ -158,11 +158,11 @@ class TrainingConfig:
         desired_buckle_rand_key: int = 169  # key for seed of random sampling of buckle pattern
     elif desired_buckle_type == 'specified':
         # desired_buckle_pattern: tuple = (1, -1, -1, -1, -1)  # which shims should be buckled up, initially
-        desired_buckle_pattern: tuple = (1, -1, -1, -1)  # which shims should be buckled up, initially
+        desired_buckle_pattern: tuple = (-1, 1, -1, -1)  # which shims should be buckled up, initially
         # desired_buckle_pattern: tuple = (-1, 1, 1, 1)  # which shims should be buckled up, initially
 
     # init_buckle_pattern: tuple = (-1, -1, -1, -1, 1)  # which shims should be buckled up, initially
-    init_buckle_pattern: tuple = (-1, -1, -1, 1)  # which shims should be buckled up, initially
+    init_buckle_pattern: tuple = (-1, -1, -1, -1)  # which shims should be buckled up, initially
     # init_buckle_pattern: tuple = (1, 1, 1, -1)  # which shims should be buckled up, initially
     # init_buckle_pattern: tuple = (1)  # which shims should be buckled up, initially
 
@@ -180,8 +180,9 @@ class TrainingConfig:
 
     # # tip values to buckle shims - 'BEASTAL' for the BEASTAL scheme, else 'one_to_one'
     # update_scheme: str = 'one_to_one'  # direct normalized loss, equal to num of outputs
-    update_scheme: str = 'loss_diff'  # difference of x and y loss components
-    # update_scheme: str = 'lossx_concavity'  # tip_angle changes due to concavity of loss x along trajectory. 
+    # update_scheme: str = 'loss_diff'  # difference of x and y loss components
+    update_scheme: str = 'loss_x_trend'  # delta tip by trend of loss x, delta angle by addition of losses
+    # update_scheme: str = 'lossx_concavity'  # tip_angle changes due to concavity of loss x along trajectory.
     #                                         # tip pos due to loss_y sign
     # update_scheme: str = 'radial_one_to_one'  # evolve tip angle and large radius due to instantaneous loss
     # update_scheme: str = 'BEASTAL'  # update using the BEASTAL scheme (with pseudoinverse of the incidence matrix).
@@ -198,7 +199,8 @@ class TrainingConfig:
     elif normalize_step:
         alpha = 0.25
     else:
-        alpha = 0.2  # learning rate
+        # alpha = 0.2  # learning rate  #  Apr23
+        alpha = 0.1  # learning rate # Apr30
 
     control_tip: bool = True  # imposed tip position in measurement and update. If False, tip is free
     control_first_edge: bool = True  # if True, fix nodes (0, 1) to zero. if Flase, just the first

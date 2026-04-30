@@ -97,7 +97,8 @@ def train(Strctr: StructureClass, Variabs: VariablesClass, CFG: ExperimentConfig
             final_pos_des = State_des.pos_arr_in_t[:, :, 0]
             F_in_t = np.mean(F_meas_full_traj, axis=0)
             F_in_t_des = np.mean(F_des_full_traj, axis=0)
-            Sprvsr.calc_concavity(F_meas_full_traj, F_des_full_traj)
+            # Sprvsr.calc_concavity(F_meas_full_traj, F_des_full_traj)
+            Sprvsr.calc_loss_x_trend(F_meas_full_traj, F_des_full_traj)
         else:
             if t == 1 or buckle_bool or CFG.Train.dataset_sampling != 'specified':
                 final_pos, pos_in_t, _, F_in_t = Eq_meas.calculate_state(Variabs, Strctr, Sprvsr,
@@ -188,11 +189,11 @@ def compress_to_tip_pos(Strctr: "StructureClass", Variabs: "VariablesClass", Spr
 
     Notes
     -----
-    - The function linearly interpolates both the tip position and angle across 
+    - The function linearly interpolates both the tip position and angle across
       `Eq_iterations` steps for smooth deformation.
-    - The last step is performed with increased `T_eq` (×2) and damping (×3) 
+    - The last step is performed with increased `T_eq` (×2) and damping (×3)
       to ensure convergence to a steady-state equilibrium.
-    - Each equilibrium step is executed via `one_shot()`, which performs a 
+    - Each equilibrium step is executed via `one_shot()`, which performs a
       single equilibrium calculation and visualization.
     """
     # initialize positions and forces
