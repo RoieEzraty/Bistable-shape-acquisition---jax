@@ -42,14 +42,14 @@ class SupervisorClass:
     desired_Fx/Fy_in_t : ndarray (T,), forces sensed in the desired buckle configuration for every training step measurement
     tip_pos_in_t       : ndarray (T, 2), training dataset tip positions, Measurement modality.
     tip_angle_in_t     : ndarray (T,), training dataset tip angles, Measurement modality.
-    loss_in_t          : ndarray (T, 2), loss (x and y) for every measurement during training.
+    loss_in_t          : ndarray (T, loss_dim), loss (x and y, optionally angle) for every measurement during training.
     loss_MSE_in_t      : ndarray (T,), Mean Squared Error of the x,y loss.
     tip_pos_update_in_t: ndarray (T, 2), tip position in the Update modality, for every training step.
     tip_angle_update_in_t : ndarray (T, ), tip angle in the Update modality, for every training step.
     total_angle_update_in_t : ndarray (T, ), angle between tip and end of first link, in Update modality, for every training step
     imposed_mask       : # (2*nodes,), boolean of whether a node (ends of edges/facets) is imposed or not
                          True only at two final nodes, if control_tip==True
-    loss               : (2,), instantaneous loss
+    loss               : (2,)/(3,), instantaneous loss (forces/position)
     control_tip        : bool, default=True, control tip position and angle. If False, release tip, chain is free at end.
     control_first_edge : bool, default=True, nodes 0 and 1 are fixed.  If False, only node 0 is fixed.
     normalize_step     : bool, default=True. normalize Update position and angle step size so won't be too large or small
@@ -102,7 +102,7 @@ class SupervisorClass:
     tip_angle_in_t: NDArray[np.float32] = eqx.field(default=None, init=False, static=True)    # (T,)
 
     # --- running logs / losses ---
-    loss_in_t: NDArray[np.float32] = eqx.field(init=False, static=True)            # (T, 2)
+    loss_in_t: NDArray[np.float32] = eqx.field(init=False, static=True)            # (T, 2)/(T, 3)
     loss_MSE_in_t: NDArray[np.float32] = eqx.field(init=False, static=True)        # (T,)
     tip_pos_update_in_t: NDArray[np.float32] = eqx.field(init=False, static=True)  # (T, 2)
     tip_angle_update_in_t: NDArray[np.float32] = eqx.field(default=None, init=False, static=True)  # (T,)
@@ -154,7 +154,10 @@ class SupervisorClass:
         self.tip_angle_in_t = zeros((self.T,), dtype=np.float32)
 
         # Logs / updates
-        loss_size = 2
+        if self.update_scheme == 'pos':
+            loss_size = 3
+        else:
+            loss_size = 2
         self.loss_in_t = zeros((self.T, loss_size), dtype=np.float32)
         self.loss_MSE_in_t = zeros((self.T,), dtype=np.float32)
 
@@ -165,7 +168,7 @@ class SupervisorClass:
         self.tip_angle_update_in_t = zeros((self.T,), dtype=np.float32)
         self.total_angle_update_in_t = zeros((self.T,), dtype=np.float32)
 
-        self.normalize_step = bool(CFG.Train.normalize_step)  # whether to normalize the training step in [x, y, theta] space
+        self.normalize_step = bool(CFG.Train.normalize_step)  # whether to normalize train step in [x, y, theta] space
 
         self.R_free = (Strctr.edges - 2*0.98)*Strctr.L  # maximal radius the chain could have, up to some margin
 
@@ -290,9 +293,9 @@ class SupervisorClass:
                                                                                 total_angle=0.0, R_free=self.R_free,
                                                                                 L=Strctr.L, margin=0.1,
                                                                                 supress_prints=self.supress_prints)
-        elif sampling in {'flat', 'almost_flat', 'specified', 'predetermined'}:
+        elif sampling in {'flat', 'almost_flat', 'specified', 'predetermined', 'free_tip'}:
             end = float(Strctr.edges*Strctr.L)
-            if sampling in {'flat', 'predetermined'}:
+            if sampling in {'flat', 'predetermined', 'free_tip'}:
                 tip_pos = array([end, 0], dtype=np.float32)
                 tip_angle = 0.0
             elif sampling == 'almost_flat':
@@ -336,7 +339,8 @@ class SupervisorClass:
     # ---------------------------------------------------------------
     # Calculations - loss and Update values
     # ---------------------------------------------------------------
-    def calc_loss(self, Variabs: "VariablesClass", t: int, Fx: float, Fy: float) -> None:
+    def calc_loss(self, Variabs: "VariablesClass", t: int, Fx: Optional[float] = None, Fy: Optional[float] = None,
+                  pos: Optional[NDArray] = None, pos_des: Optional[NDArray] = None) -> None:
         """Compute loss vector (Fx,Fy) at step t and log it.
 
         Parameters:
@@ -352,10 +356,15 @@ class SupervisorClass:
         loss     - float, F_hat-F in 2d
         loss_MSE - float, mean squared loss
         """
-        self.loss = array([self.desired_Fx_in_t[t] - Fx, self.desired_Fy_in_t[t] - Fy], dtype=np.float32)  # [mN]
+        dispatch = self._get_loss_dispatch()
+        if self.update_scheme == 'pos':
+            fn = dispatch.get("position", None)
+        else:
+            fn = dispatch.get("force", None)
+        self.loss = fn(Variabs, t, Fx, Fy, pos, pos_des)
 
         # normalize loss
-        self.loss = self.loss / Variabs.norm_force  # [dimless]
+        # self.loss = self.loss / Variabs.norm_force  # [dimless]
 
         # put in loss vec
         self.loss_in_t[t, :self.loss.shape[0]] = self.loss
@@ -412,7 +421,6 @@ class SupervisorClass:
         float, total_angle_update_in_t [mN]
         """
         # ------ delta tip and angle ------
-        # through BEASTAL, one_to_one or radial_one_to_one
         dispatch = self._get_delta_dispatch()
         fn = dispatch.get(self.update_scheme, None)  # function to calculate delta tip and angle from update_scheme
         if fn is None:
@@ -515,19 +523,24 @@ class SupervisorClass:
             self._restart_flat_with_y_bias(t, Strctr, side_sign=side_sign)
             print(f'setting update tip pos={self.tip_pos_update_in_t[t, :]}, angle={self.tip_angle_update_in_t[t]}')
             prev_total_angle = 0.0
+            self.restart = True
             self.last_restart_reason = "origin_cut"
 
         elif correct_for_coil and cond_coil:
             print('coiled up too much')
-            self.tip_pos_update_in_t[t, :] = self.tip_pos_in_t[t, :]
-            self.tip_angle_update_in_t[t] = self.tip_angle_in_t[t]
-            self.total_angle_update_in_t[t] = 0.0
+            self.origin_cut_restart_count = 0
+            self.coil_count += 1
+
+            # self.tip_pos_update_in_t[t, :] = self.tip_pos_in_t[t, :]
+            # self.tip_angle_update_in_t[t] = self.tip_angle_in_t[t]
+            # self.total_angle_update_in_t[t] = 0.0
+            # print(f'setting update tip pos={self.tip_pos_update_in_t[t, :]}, angle={self.tip_angle_update_in_t[t]}')
+            side_sign = np.sign(delta_angle)
+            self._restart_flat_with_y_bias(t, Strctr, side_sign=side_sign)
             print(f'setting update tip pos={self.tip_pos_update_in_t[t, :]}, angle={self.tip_angle_update_in_t[t]}')
             prev_total_angle = 0.0
             self.restart = True
             self.last_restart_reason = "coil"
-            self.origin_cut_restart_count = 0
-            self.coil_count += 1
 
         elif correct_for_update_force and cond_tip_force:
             print('update forces too big')
@@ -611,6 +624,23 @@ class SupervisorClass:
         if not self.supress_prints:
             print(f"cut origin for the {self.origin_cut_restart_count} time")
 
+    def _get_loss_dispatch(self):
+        return {"force": self._loss_force,
+                "position": self._loss_tip_pos,
+                }
+
+    def _loss_force(self, Variabs, t, Fx=None, Fy=None, pos=None, pos_des=None):
+        loss = array([self.desired_Fx_in_t[t] - Fx,
+                      self.desired_Fy_in_t[t] - Fy], dtype=np.float32)
+        return loss / Variabs.norm_force
+
+    def _loss_tip_pos(self, Variabs, t, Fx=None, Fy=None, pos=None, pos_des=None):
+        theta_meas = helpers_builders._get_tip_angle(pos)
+        theta_des = helpers_builders._get_tip_angle(pos_des)
+        loss_pos = (pos_des[-1] - pos[-1]) / Variabs.norm_pos
+        loss_angle = (theta_des - theta_meas) / Variabs.norm_angle
+        return np.append(loss_pos, loss_angle)
+
     def _get_delta_dispatch(self):
         """
         Map update_scheme -> function that computes (delta_tip_x, delta_tip_y, delta_angle).
@@ -624,6 +654,7 @@ class SupervisorClass:
             "one_to_one": self._delta_one_to_one,
             "loss_diff": self._delta_loss_diff,
             "loss_x_trend": self._delta_loss_x_trend,
+            "pos": self._delta_pos
             # "radial_one_to_one": self._delta_radial_one_to_one,
             # "lossx_concavity": self._lossx_concavity
             # "BEASTAL": self._delta_BEASTAL,
@@ -711,6 +742,18 @@ class SupervisorClass:
         delta_tip_x = - self.alpha * Lx_trend * tradeoff_pos_theta * (-sgny) * Variabs.norm_pos  # Mar23
         delta_tip_y = - self.alpha * Lx_trend * tradeoff_pos_theta * (+sgnx) * Variabs.norm_pos  # Mar23
         delta_angle = - self.alpha * loss_add * Variabs.norm_angle  # Mar23
+        return delta_tip_x, delta_tip_y, delta_angle
+
+    def _delta_pos(self, t, Strctr, Variabs, State_meas, State_des):
+        sgnx = np.sign(self.tip_pos_update_in_t[t-1, 0])
+        sgny = np.sign(self.tip_pos_update_in_t[t-1, 1])
+        if sgnx == 0.0:
+            sgnx = 1
+        if sgny == 0.0:
+            sgny = 1
+        delta_tip_x = - self.alpha * (-self.loss[0]) * (-sgny) * Variabs.norm_pos  # Mar23
+        delta_tip_y = - self.alpha * (-self.loss[1]) * (+sgnx) * Variabs.norm_pos  # Mar23
+        delta_angle = - self.alpha * (-self.loss[2]) * Variabs.norm_angle  # Mar23
         return delta_tip_x, delta_tip_y, delta_angle
 
     # def _lossx_concavity(self, t, Strctr, Variabs, State_meas, State_des):
