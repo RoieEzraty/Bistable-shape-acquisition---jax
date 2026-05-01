@@ -102,15 +102,16 @@ def train(Strctr: StructureClass, Variabs: VariablesClass, CFG: ExperimentConfig
         else:
             if t == 1 or buckle_bool or CFG.Train.dataset_sampling != 'specified':
                 final_pos, pos_in_t, _, F_in_t = Eq_meas.calculate_state(Variabs, Strctr, Sprvsr,
-                                                                         control_tip=control_tip,
+                                                                         control_tip=Sprvsr.control_tip,
                                                                          init_pos=None,
                                                                          tip_pos=Sprvsr.tip_pos_in_t[t],
                                                                          tip_angle=Sprvsr.tip_angle_in_t[t])
-                final_pos_des, pos_in_t_des, _, F_in_t_des = Eq_des.calculate_state(Variabs, Strctr, Sprvsr,
-                                                                                    control_tip=control_tip,
-                                                                                    init_pos=None,
-                                                                                    tip_pos=Sprvsr.tip_pos_in_t[t],
-                                                                                    tip_angle=Sprvsr.tip_angle_in_t[t])
+                if Sprvsr.dataset_sampling != 'free_tip':
+                    final_pos_des, pos_in_t_des, _, F_in_t_des = Eq_des.calculate_state(Variabs, Strctr, Sprvsr,
+                                                                                        control_tip=control_tip,
+                                                                                        init_pos=None,
+                                                                                        tip_pos=Sprvsr.tip_pos_in_t[t],
+                                                                                        tip_angle=Sprvsr.tip_angle_in_t[t])
 
         meas_count += 1
 
@@ -121,7 +122,10 @@ def train(Strctr: StructureClass, Variabs: VariablesClass, CFG: ExperimentConfig
         Sprvsr.set_desired(final_pos_des, State_des.Fx, State_des.Fy, t)
 
         # ------ loss ------
-        Sprvsr.calc_loss(Variabs, t, State_meas.Fx, State_meas.Fy)
+        if Sprvsr.dataset_sampling == 'free_tip':
+            Sprvsr.calc_loss(Variabs, t, pos=final_pos, pos_des=final_pos_des)
+        else:
+            Sprvsr.calc_loss(Variabs, t, Fx=State_meas.Fx, Fy=State_meas.Fy)
 
         ## UPDATE
         Sprvsr.calc_update_tip(t, Strctr, Variabs, State_meas, State_des, State_update, correct_for_total_angle=True,
