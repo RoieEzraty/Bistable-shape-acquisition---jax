@@ -486,19 +486,39 @@ class SupervisorClass:
                 print(f'add delta tip angle {delta_total_angle} to correct for total angle ')
 
         # ------ correct for to big a stretch ------
-        self.tip_pos_update_in_t[t, :] = helpers_builders._correct_big_stretch(self.tip_pos_update_in_t[t],
-                                                                               self.tip_angle_update_in_t[t],
-                                                                               total_angle, self.R_free, Strctr.L,
-                                                                               margin=0.1,
-                                                                               supress_prints=self.supress_prints)
-        if not self.supress_prints:
-            print(f'tip after correct big stretch={self.tip_pos_update_in_t[t, :]}')
+        if self.dataset_sampling == 'free_tip' and self.update_scheme == 'pos':
+            # If the raw x/y update exits the reachable disk, slide along the
+            # effective-radius perimeter instead of radially projecting back.
+            R_eff = helpers_builders.effective_radius(self.R_free, Strctr.L, total_angle=total_angle,
+                                                      tip_angle=float(self.tip_angle_update_in_t[t]),
+                                                      supress_prints=self.supress_prints)
+            before_prev = helpers_builders._get_before_tip(prev_tip_update_pos, float(prev_tip_update_angle),
+                                                           Strctr.L, xp=np)
+            tip_new, _, clamped = helpers_builders.clamp_pos_same_delta(before_prev=before_prev,
+                                                                        tip_angle_new=float(self.tip_angle_update_in_t[t]),
+                                                                        tip_raw=self.tip_pos_update_in_t[t, :],
+                                                                        second_node=array([Strctr.L, 0.0], dtype=float),
+                                                                        R_lim=R_eff, L=Strctr.L)
+
+            self.tip_pos_update_in_t[t, :] = tip_new
+
+            if (not self.supress_prints) and clamped:
+                print(f'tip slid on effective-radius perimeter to {self.tip_pos_update_in_t[t, :]}')
+
+        else:
+            self.tip_pos_update_in_t[t, :] = helpers_builders._correct_big_stretch(self.tip_pos_update_in_t[t],
+                                                                                   self.tip_angle_update_in_t[t],
+                                                                                   total_angle, self.R_free, Strctr.L,
+                                                                                   margin=0.1,
+                                                                                   supress_prints=self.supress_prints)
+            if not self.supress_prints:
+                print(f'tip after correct big stretch={self.tip_pos_update_in_t[t, :]}')
 
         # ------ correct for coil or cut origin ------
         cond_coil = helpers_builders.coil(self.tip_angle_update_in_t[t], revolutions=1.5)
 
-        cond_cut_origin = helpers_builders.swept_last_edge_crosses_first_edge(tip_prev=self.tip_pos_update_in_t[t-1, :],
-                                                                              angle_prev=self.tip_angle_update_in_t[t-1],
+        cond_cut_origin = helpers_builders.swept_last_edge_crosses_first_edge(tip_prev=prev_tip_update_pos,
+                                                                              angle_prev=prev_tip_update_angle,
                                                                               tip_new=self.tip_pos_update_in_t[t, :],
                                                                               angle_new=self.tip_angle_update_in_t[t],
                                                                               L=Strctr.L, include_endpoints=False)
@@ -568,8 +588,8 @@ class SupervisorClass:
         #     self.invert_delta_tip = True
 
         if not self.supress_prints:
-            delta_tip_after_corr = self.tip_pos_update_in_t[t, :] - self.tip_pos_update_in_t[t-1, :]
-            delta_angle_after_corr = self.tip_angle_update_in_t[t] - self.tip_angle_update_in_t[t-1]
+            delta_tip_after_corr = self.tip_pos_update_in_t[t, :] - prev_tip_update_pos
+            delta_angle_after_corr = self.tip_angle_update_in_t[t] - prev_tip_update_angle
             print(f'delta_tip after correcting coil and cut origin {delta_tip_after_corr}')
             print(f'delta_angle after correcting coil and cut origin {delta_angle_after_corr}')
 
@@ -751,10 +771,26 @@ class SupervisorClass:
             sgnx = 1
         if sgny == 0.0:
             sgny = 1
-        delta_tip_x = - self.alpha * (-self.loss[0]) * (-sgny) * Variabs.norm_pos  # Mar23
-        delta_tip_y = - self.alpha * (-self.loss[1]) * (+sgnx) * Variabs.norm_pos  # Mar23
+        # delta_tip_x = - self.alpha * (-self.loss[0]) * (-sgny) * Variabs.norm_pos  # Mar23
+        # delta_tip_y = - self.alpha * (-self.loss[1]) * (+sgnx) * Variabs.norm_pos  # Mar23
+        delta_tip_x = - self.alpha * (-self.loss[0]) * Variabs.norm_pos  # May3 for rotation matrix
+        delta_tip_y = - self.alpha * (-self.loss[1]) * Variabs.norm_pos  # May3 for rotation matrix
         delta_angle = - self.alpha * (-self.loss[2]) * Variabs.norm_angle  # Mar23
-        return delta_tip_x, delta_tip_y, delta_angle
+
+        # Initial total angle. For free_tip flat this is basically 0,
+        # but compute it for generality.
+        state_meas_tip_0 = State_meas.pos_arr_in_t[-2:, :, t][0]
+        theta0 = helpers_builders._get_total_angle(state_meas_tip_0, prev_total_angle=0.0, L=Strctr.L)
+
+        # Use the previous accepted update angle, since the new one is not known yet.
+        if t <= 1:
+            theta = theta0
+        else:
+            theta = float(self.total_angle_update_in_t[t-1])
+
+        delta_tip_xy_rot = helpers_builders._rot2(theta - theta0) @ np.array([delta_tip_x, delta_tip_y])
+
+        return float(delta_tip_xy_rot[0]), float(delta_tip_xy_rot[1]), float(delta_angle)
 
     # def _lossx_concavity(self, t, Strctr, Variabs, State_meas, State_des):
     #     sgnx = np.sign(self.tip_pos_update_in_t[t-1, 0])

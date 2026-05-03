@@ -27,7 +27,7 @@ if TYPE_CHECKING:
 class StateClass:
     """
     Dynamic state of the chain (positions + hinge stiffness regime).
-    
+
     Numpy side container that stores and updates the evolving geometry from jax instances across training time steps
     Tracks: 1) nodal positions, 2) hinge angles, 3) "buckle state" (upwards or downwards) of each hinge.
 
@@ -41,7 +41,7 @@ class StateClass:
                      `1` = buckle downwards
                      `-1` = buckle upwards
     buckle_in_t    - (H,S,T) ndarray, [-1's and 1's], history of buckle states over the training time.
-    Fx, Fy         - floats, [mN], force on tip in x, y directions, 
+    Fx, Fy         - floats, [mN], force on tip in x, y directions,
                      if 2 last nodes or imposed, force is summed over both
     edge_lengths   - (edges,) ndarray, [m], current edge lengths, for convenience (last stored snapshot).
 
@@ -58,10 +58,10 @@ class StateClass:
         Update buckle states using current hinge angles and per-hinge/per-shim thresholds.
         Returns True if any shim flipped at time step ``t``, else False.
     stretch_energy(Variabs, Strctr) -> ndarray, shape (edges,)
-        Compute per-edge stretching energy-like term ``k_stretch * (ℓ - ℓ0)^2`` 
+        Compute per-edge stretching energy-like term ``k_stretch * (ℓ - ℓ0)^2``
     bending_energy(Variabs, Strctr) -> ndarray, shape (hinges,)
-        Compute per-hinge bending energy using experimental torque curve: ``E_bend(θ) ≈ τ(θ) * (θ - buckle * θ_ss)``.
-    """ 
+        Compute per-hinge bending energy using experimental torque curve: E_bend(θ) ≈ τ(θ) * (θ - buckle * θ_ss).
+    """
     # --- instantaneous state ---
     pos_arr: NDArray[np.float32] = eqx.field(static=True)          # (nodes, 2), [m]
     theta_arr: NDArray[np.float32] = eqx.field(static=True)        # (hinges,), [rad]
@@ -88,10 +88,10 @@ class StateClass:
         ----------
         Strctr     - StructureClass. Chain topology (number of nodes/hinges/shims).
         Sprvsr     - SupervisorClass. Provides number of training steps ``T``.
-        pos_arr    - (nodes, 2) ndarray, [m], optional. Initial nodal positions. 
+        pos_arr    - (nodes, 2) ndarray, [m], optional. Initial nodal positions.
                      If None = initialized as a straight chain using `helpers_builders._initiate_pos`.
-        buckle_arr - ndarray, optional, shape (hinges, shims). Initial buckle pattern. 
-                     If None = initialized with `helpers_builders._initiate_buckle` (all down/up depending on implementation).
+        buckle_arr - ndarray, optional, shape (hinges, shims). Initial buckle pattern.
+                     If None, initialize with helpers_builders._initiate_buckle (all down/up depending on implementation).
         """
         # ------ positions ------
         if pos_arr is None:
@@ -101,7 +101,7 @@ class StateClass:
         self.pos_arr_in_t = zeros((Strctr.nodes, 2, Sprvsr.T), dtype=np.float32)           # (nodes, 2, T)
 
         # ------ angles ------
-        self.theta_arr = zeros((Strctr.hinges,), dtype=np.float32)                         # (H,) hinge angles  
+        self.theta_arr = zeros((Strctr.hinges,), dtype=np.float32)                         # (H,) hinge angles
         self.theta_arr_in_t = zeros((Strctr.hinges, Sprvsr.T), dtype=np.float32)           # (H,) hinge angles in training time
 
         # ------ buckle pattern ------

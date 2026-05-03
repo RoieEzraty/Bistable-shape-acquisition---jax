@@ -818,6 +818,32 @@ def _orient(p: NDArray[np.float64], q: NDArray[np.float64], r: NDArray[np.float6
     return float((q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]))
 
 
+def _get_scalar_in_orthogonal_dir(vec: NDArray[np.floating], angle: float) -> float:
+    """
+    Compute scalar projection of vector onto direction orthogonal angle.
+
+    Notes
+    -----
+    - The orthogonal direction is defined as n = [-sin(angle), cos(angle)] corresponding to +90° rotation of unit vector
+      `[cos(angle), sin(angle)]`.
+
+    Parameters
+    ----------
+    vec : NDArray, (2,) , vector whose orthogonal component is extracted.
+    angle : float, Reference direction angle in radians.
+
+    Returns
+    -------
+    scalar : float, Scalar projection of `vec` onto the orthogonal direction.
+    """
+    return -vec[0]*np.sin(angle) + vec[1]*np.cos(angle)
+
+
+def _rot2(angle: float) -> np.ndarray:
+    c, s = np.cos(angle), np.sin(angle)
+    return np.array([[c, -s], [s,  c]], dtype=float)
+
+
 # ---------------------------------------------------------------
 # DOFs - free and essential - jax instances
 # ---------------------------------------------------------------
@@ -962,32 +988,9 @@ def _get_first_in_file(r: Mapping[str, Union[str, float, int, None]], keys: Iter
     raise KeyError(f"None of {keys} found for {name}")
 
 
-def _get_scalar_in_orthogonal_dir(vec: NDArray[np.floating], angle: float) -> float:
-    """
-    Compute scalar projection of vector onto direction orthogonal angle.
-
-    Notes
-    -----
-    - The orthogonal direction is defined as n = [-sin(angle), cos(angle)] corresponding to +90° rotation of unit vector
-      `[cos(angle), sin(angle)]`.
-
-    Parameters
-    ----------
-    vec : NDArray, (2,) , vector whose orthogonal component is extracted.
-    angle : float, Reference direction angle in radians.
-
-    Returns
-    -------
-    scalar : float, Scalar projection of `vec` onto the orthogonal direction.
-    """
-    return -vec[0]*np.sin(angle) + vec[1]*np.cos(angle)
-
-
 # -------------------------------------------------------------------
 # Buckle helpers
 # -------------------------------------------------------------------
-
-
 def infer_buckle_columns(df: pd.DataFrame) -> list[str]:
     buckle_cols = [c for c in df.columns if re.fullmatch(r"buckle_h\d+_s\d+", c)]
     # buckle_cols = sort_buckle_columns(buckle_cols)
@@ -1247,12 +1250,12 @@ def buckle_cell_to_array(cell) -> np.ndarray:
 # def torque(tip_angle: float, Fx: float, Fy: float, L: float) -> float:
 #     """
 #     total torque
-    
+
 #     tip_angle - float, angle of tip of chain
 #     Fx        - force [mN] in global x direction
 #     Fy        - force [mN] in global y direction
 #     """
-#     F_orthogonal = _get_scalar_in_orthogonal_dir(array([Fx, Fy]), tip_angle) 
+#     F_orthogonal = _get_scalar_in_orthogonal_dir(array([Fx, Fy]), tip_angle)
 #     return F_orthogonal * L
 
 

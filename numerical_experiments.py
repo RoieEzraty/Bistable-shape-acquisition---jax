@@ -76,6 +76,13 @@ def train(Strctr: StructureClass, Variabs: VariablesClass, CFG: ExperimentConfig
     State_update._save_data(0, Strctr, State_meas.pos_arr, State_update.buckle_arr)
     State_des._save_data(0, Strctr, State_des.pos_arr, State_des.buckle_arr)
 
+    if Sprvsr.dataset_sampling == 'free_tip':
+        final_pos_des, pos_in_t_des , _, F_in_t_des = Eq_des.calculate_state(Variabs, Strctr, Sprvsr,
+                                                                             control_tip=Sprvsr.control_tip,
+                                                                             init_pos=None,
+                                                                             tip_pos=Sprvsr.tip_pos_in_t[0],
+                                                                             tip_angle=Sprvsr.tip_angle_in_t[0])
+
     buckle_bool = False
     meas_count = 0  # for tile
 
