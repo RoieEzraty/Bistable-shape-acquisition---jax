@@ -407,7 +407,8 @@ def animate_arm_w_arcs(traj_pos, L, Fx: Optional[NDArray] = None, Fy: Optional[N
     # start as bullets only
     (line_fx,) = ax_force.plot([], [], linestyle="-", marker="o", markersize=6, label=r"$F_x$")
     (line_fy,) = ax_force.plot([], [], linestyle="-", marker="o", markersize=6, label=r"$F_y$")
-    ax_force.set_ylim([-1.2*max_F, 1.2*max_F])
+    # ax_force.set_ylim([-1.2*max_F, 1.2*max_F])
+    ax_force.set_ylim([-1300, 1300])
     ax_force.set_xlim([-1, T+1])
 
     def init():

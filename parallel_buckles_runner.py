@@ -93,44 +93,44 @@ def run_one_job(job):
                 csv_path = str(run_dir / f"final_loss_{Sprvsr.loss_MSE_in_t[t]:.6g}_init_{init_buckle_str}_desired_{desired_buckle_str}{suffix}.csv")
                 file_funcs.export_training_csv(str(csv_path), Strctr, Sprvsr, T=t + 1, State_meas=State_meas, State_update=State_update)
 
-            if Sprvsr.loss_MSE > 10**(-6):
-                print('failed to train with Sprvsr.invert_delta_tip=', Sprvsr.invert_delta_tip)
-                Strctr, Variabs, Sprvsr, State_meas, State_des, State_update, Eq_meas, Eq_des, t = _train_one_pair(init_buckle=init_buckle,
-                                                                                                                   desired_buckle=desired_buckle,
-                                                                                                                   invert_updates=True)
+            # if Sprvsr.loss_MSE > 10**(-6):
+            #     print('failed to train with Sprvsr.invert_delta_tip=', Sprvsr.invert_delta_tip)
+            #     Strctr, Variabs, Sprvsr, State_meas, State_des, State_update, Eq_meas, Eq_des, t = _train_one_pair(init_buckle=init_buckle,
+            #                                                                                                        desired_buckle=desired_buckle,
+            #                                                                                                        invert_updates=True)
 
-                F_meas_in_t = np.array([State_meas.Fx_in_t, State_meas.Fy_in_t])
-                F_des_in_t = np.array([State_des.Fx_in_t, State_des.Fy_in_t])
+            #     F_meas_in_t = np.array([State_meas.Fx_in_t, State_meas.Fy_in_t])
+            #     F_des_in_t = np.array([State_des.Fx_in_t, State_des.Fy_in_t])
 
-                gif_path = None
-                png_path = None
-                csv_path = None
+            #     gif_path = None
+            #     png_path = None
+            #     csv_path = None
 
-                if save_gifs:
-                    pos_in_t_update = np.moveaxis(State_update.pos_arr_in_t, 2, 0)
-                    buckle_in_t = np.moveaxis(State_meas.buckle_in_t, 2, 0)
-                    final_frame = min(t + 3, pos_in_t_update.shape[0])
-                    # gif_path = str(run_dir / f"gif_init_{init_buckle_str}_desired_{desired_buckle_str}_inverted.gif")
-                    gif_path = str(run_dir / f"gif_init_{init_buckle_str}_desired_{desired_buckle_str}_inverted.html")
-                    plot_funcs.animate_arm_w_arcs(pos_in_t_update[1:final_frame, :, :], Strctr.L,
-                                                  Fx=State_update.Fx_in_t, Fy=State_update.Fy_in_t,
-                                                  frames=max(1, final_frame - 1), interval_ms=400,
-                                                  save_path=str(gif_path), fps=2,
-                                                  buckle_traj=buckle_in_t[1:final_frame, :, :])
-                    plt.close("all")
+            #     if save_gifs:
+            #         pos_in_t_update = np.moveaxis(State_update.pos_arr_in_t, 2, 0)
+            #         buckle_in_t = np.moveaxis(State_meas.buckle_in_t, 2, 0)
+            #         final_frame = min(t + 3, pos_in_t_update.shape[0])
+            #         # gif_path = str(run_dir / f"gif_init_{init_buckle_str}_desired_{desired_buckle_str}_inverted.gif")
+            #         gif_path = str(run_dir / f"gif_init_{init_buckle_str}_desired_{desired_buckle_str}_inverted.html")
+            #         plot_funcs.animate_arm_w_arcs(pos_in_t_update[1:final_frame, :, :], Strctr.L,
+            #                                       Fx=State_update.Fx_in_t, Fy=State_update.Fy_in_t,
+            #                                       frames=max(1, final_frame - 1), interval_ms=400,
+            #                                       save_path=str(gif_path), fps=2,
+            #                                       buckle_traj=buckle_in_t[1:final_frame, :, :])
+            #         plt.close("all")
 
-                if save_pngs:
-                    png_path = str(run_dir / f"final_loss_{Sprvsr.loss_MSE_in_t[t]:.6g}_init_{init_buckle_str}_desired_{desired_buckle_str}_inverted.png")
-                    plot_funcs.loss_and_buckle_in_t(Sprvsr.tip_pos_in_t, Sprvsr.tip_angle_in_t, Sprvsr.loss_in_t, State_update.buckle_in_t, 
-                                                    F_meas_in_t, F_des_in_t, Sprvsr.tip_pos_update_in_t, Sprvsr.tip_angle_update_in_t, 
-                                                    start=0, end=t, save_path=png_path)
-                    plt.close("all")
+            #     if save_pngs:
+            #         png_path = str(run_dir / f"final_loss_{Sprvsr.loss_MSE_in_t[t]:.6g}_init_{init_buckle_str}_desired_{desired_buckle_str}_inverted.png")
+            #         plot_funcs.loss_and_buckle_in_t(Sprvsr.tip_pos_in_t, Sprvsr.tip_angle_in_t, Sprvsr.loss_in_t, State_update.buckle_in_t, 
+            #                                         F_meas_in_t, F_des_in_t, Sprvsr.tip_pos_update_in_t, Sprvsr.tip_angle_update_in_t, 
+            #                                         start=0, end=t, save_path=png_path)
+            #         plt.close("all")
 
-                if save_csvs:
-                    suffix = "_intersect" if State_update.self_intersection else ""  # append intersection str if chain intersects
-                    csv_path = str(run_dir / f"final_loss_{Sprvsr.loss_MSE_in_t[t]:.6g}_init_{init_buckle_str}_desired_{desired_buckle_str}_inverted{suffix}.csv")
-                    file_funcs.export_training_csv(str(csv_path), Strctr, Sprvsr, T=t + 1, State_meas=State_meas,
-                                                   State_update=State_update)
+            #     if save_csvs:
+            #         suffix = "_intersect" if State_update.self_intersection else ""  # append intersection str if chain intersects
+            #         csv_path = str(run_dir / f"final_loss_{Sprvsr.loss_MSE_in_t[t]:.6g}_init_{init_buckle_str}_desired_{desired_buckle_str}_inverted{suffix}.csv")
+            #         file_funcs.export_training_csv(str(csv_path), Strctr, Sprvsr, T=t + 1, State_meas=State_meas,
+            #                                        State_update=State_update)
 
         return {
             "ok": True,

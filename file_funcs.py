@@ -346,7 +346,7 @@ def build_success_matrix(folder: Path, old: bool = False, N: int = 16, near_miss
     M_flag = np.zeros((N, N), dtype=int)
     B = np.zeros((N, N)) + 1.0
 
-    thresh = 10e-4 if near_miss else 1e-6
+    thresh = 10e-2 if near_miss else 1e-6
 
     for file in folder.glob("final_loss_*.csv"):
         name = file.stem

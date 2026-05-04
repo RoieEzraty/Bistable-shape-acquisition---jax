@@ -570,7 +570,7 @@ def coil(angle: float, revolutions: float = 1.5):
 
 
 def tip_force(Fx, Fy, norm_force):
-    if np.linalg.norm(np.array([Fx, Fy])) >= norm_force*10:
+    if np.linalg.norm(np.array([Fx, Fy])) >= norm_force*20:
         return True
     return False
 

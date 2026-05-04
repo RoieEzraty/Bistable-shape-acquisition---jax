@@ -779,8 +779,8 @@ class SupervisorClass:
 
         # Initial total angle. For free_tip flat this is basically 0,
         # but compute it for generality.
-        state_meas_tip_0 = State_meas.pos_arr_in_t[-2:, :, t][0]
-        theta0 = helpers_builders._get_total_angle(state_meas_tip_0, prev_total_angle=0.0, L=Strctr.L)
+        state_meas_tip = State_meas.pos_arr_in_t[-2:, :, t][0]
+        theta0 = helpers_builders._get_total_angle(state_meas_tip, prev_total_angle=0.0, L=Strctr.L)
 
         # Use the previous accepted update angle, since the new one is not known yet.
         if t <= 1:
