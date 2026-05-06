@@ -170,7 +170,7 @@ def _initiate_buckle(hinges: int, shims: int, buckle_pattern: tuple = (), numpif
 # Physical helpers
 # ---------------------------------------------------------------
 def clamp_pos_same_delta(*, before_prev: NDArray, tip_angle_new: float, tip_raw: NDArray, second_node: NDArray,
-                         R_lim: float, L: float, eps=1e-12):
+                         R_lim: float, L: float, mod="outer", eps=1e-12):
     """
     Enforce ||node before tip - second_node|| <= R_lim
     while preserving ||new node before tip - before_prev|| = ||before_raw - before_prev|| (when possible).
@@ -197,6 +197,7 @@ def clamp_pos_same_delta(*, before_prev: NDArray, tip_angle_new: float, tip_raw:
     second_node   - np.array(float), (2,), Reference point for radius constraint (typically second fixed node [L, 0])
     R_lim         - float. Maximal allowed distance from second_node to node-before-tip. Calculated in effective_radius()
     L             - float. Link length between the tip node and the node-before-tip.
+    mod           - str. "outer" = clamp tip to inside of large radius, "inner" = vice verse
     eps           - float, optional, Small tolerance for numerical stability and comparisons.
 
     Returns
@@ -210,19 +211,24 @@ def clamp_pos_same_delta(*, before_prev: NDArray, tip_angle_new: float, tip_raw:
     second_node = np.asarray(second_node, float).reshape(2,)
     R_lim = float(R_lim)
 
+    # circle-circle intersection: constraint circle & step circle
+    if mod == "outer":
+        center = second_node
+    elif mod == "inner":
+        center = second_node/2
+
     # raw before-tip implied by tip_raw and tip_angle_new
     before_raw = tip_raw - L*array([np.cos(tip_angle_new), np.sin(tip_angle_new)], float)
 
-    disp_raw = before_raw - second_node
+    disp_raw = before_raw - center
     r_raw = np.linalg.norm(disp_raw)
 
-    if r_raw <= R_lim + eps:
+    if (r_raw <= R_lim + eps and mod == "outer") or (r_raw >= R_lim - eps and mod == "inner"):
         return tip_raw, before_raw, False  # no clamp
 
     step = np.linalg.norm(before_raw - before_prev)
 
-    # circle-circle intersection: constraint circle & step circle
-    pts = _circle_circle_intersections_np(second_node, R_lim, before_prev, step, eps=eps)
+    pts = _circle_circle_intersections_np(center, R_lim, before_prev, step, eps=eps)
 
     if len(pts) == 0:
         # fallback: radial clamp in before-space

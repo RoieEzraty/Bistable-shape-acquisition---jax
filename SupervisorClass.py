@@ -87,6 +87,7 @@ class SupervisorClass:
     control_first_edge: bool = eqx.field(static=True)
     normalize_step: bool = eqx.field(static=True)
     R_free: float = eqx.field(static=True)
+    R_min: float = eqx.field(static=True)
     convert_pos: float = 1000  # convert [m] to [mm]
     convert_angle: float = 180/np.pi  # convert rad to deg
     convert_F: float = 1  # already in [mN]
@@ -171,6 +172,7 @@ class SupervisorClass:
         self.normalize_step = bool(CFG.Train.normalize_step)  # whether to normalize train step in [x, y, theta] space
 
         self.R_free = (Strctr.edges - 2*0.98)*Strctr.L  # maximal radius the chain could have, up to some margin
+        self.R_min = Strctr.L*0.75  # minimal radius around [L/2, 0] that tip cannot cross
 
         # for output files
         self.convert_pos = CFG.Train.convert_pos
@@ -494,11 +496,17 @@ class SupervisorClass:
                                                       supress_prints=self.supress_prints)
             before_prev = helpers_builders._get_before_tip(prev_tip_update_pos, float(prev_tip_update_angle),
                                                            Strctr.L, xp=np)
-            tip_new, _, clamped = helpers_builders.clamp_pos_same_delta(before_prev=before_prev,
-                                                                        tip_angle_new=float(self.tip_angle_update_in_t[t]),
-                                                                        tip_raw=self.tip_pos_update_in_t[t, :],
-                                                                        second_node=array([Strctr.L, 0.0], dtype=float),
-                                                                        R_lim=R_eff, L=Strctr.L)
+            tip_new, _, clamped_outer = helpers_builders.clamp_pos_same_delta(before_prev=before_prev,
+                                                                              tip_angle_new=float(self.tip_angle_update_in_t[t]),
+                                                                              tip_raw=self.tip_pos_update_in_t[t, :],
+                                                                              second_node=array([Strctr.L, 0.0], dtype=float),
+                                                                              R_lim=R_eff, L=Strctr.L, mod="outer")
+
+            tip_new, _, clamped_inner = helpers_builders.clamp_pos_same_delta(before_prev=before_prev, 
+                                                                              tip_angle_new=float(self.tip_angle_update_in_t[t]),
+                                                                              tip_raw=tip_new,
+                                                                              second_node=array([Strctr.L, 0.0], dtype=float),
+                                                                              R_lim=self.R_min, L=Strctr.L, mod="inner")
 
             self.tip_pos_update_in_t[t, :] = tip_new
 
