@@ -605,21 +605,21 @@ def buckle_transitions(folder: str | Path, only_init_and_final_buckles: bool = F
 # ---------------------------------------------------------------
 # Build functions from file
 # ---------------------------------------------------------------
-def build_torque_and_k_from_file(path: str, *, contact: bool = True, angles_in_degrees: bool = True, 
+def build_torque_and_k_from_file(path: str, *, contact: bool = True, angles_in_degrees: bool = True,
                                  savgol_window: Optional[int] = None, 
                                  contact_scale: float = 1e2,) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray,
-                                                                       Callable[[jnp.ndarray], jnp.ndarray], 
+                                                                       Callable[[jnp.ndarray], jnp.ndarray],
                                                                        Callable[[jnp.ndarray], jnp.ndarray]]:
     """
-    Load torque–angle measurements from file and construct JAX-compatible interpolation functions for torque and stiffness.
+    Load torque–angle measurement from file and construct JAX-compatible interpolation funcs for torque & stiffness
     Stiffness ``k = dτ/dθ``
 
     Parameters
     ----------
     path              - str, path to the text/CSV file containing two columns: angle and torque.
-    contact           - bool, If True, extend torque function outside measured range to represent contact-induced divergence.
+    contact           - bool, If True, extend torque function outside measured range for contact-induced divergence.
     angles_in_degrees - bool, If True, convert angles from degrees to radians.
-    savgol_window     - Optional[int], window length for Savitzky–Golay smoothing of the stiffness curve. Must be odd integer > 2.
+    savgol_window     - int, window length for Savitzky–Golay smoothing of stiffness curve. Must be odd int>2
     contact_scale     - float, contact scaling factor relative to maximal measured torque.
 
     Returns
@@ -643,8 +643,8 @@ def build_torque_and_k_from_file(path: str, *, contact: bool = True, angles_in_d
     theta = data[:, 0]
     tau = data[:, 1]
 
-    if path in {"single_hinge_files/Roie_metal_singleMylar_short.csv", 
-                "single_hinge_files/Stress_Strain_steel_1myl1tp_short.csv", 
+    if path in {"single_hinge_files/Roie_metal_singleMylar_short.csv",
+                "single_hinge_files/Stress_Strain_steel_1myl1tp_short.csv",
                 "single_hinge_files/Stress_Strain_1myl1tp_otherEnd_short.csv"}:  # flip axes
         tau = -tau
 
@@ -705,9 +705,17 @@ def build_torque_and_k_from_file(path: str, *, contact: bool = True, angles_in_d
 
 
 # -----------------------------
+# parallel jobs
+# -----------------------------
+def already_done_in_dir(job, prev_dir):
+    init = correct_buckle_string(np.array(job["init_buckle_tup"]).reshape(4, 1))
+    des = correct_buckle_string(np.array(job["desired_buckle_tup"]).reshape(4, 1))
+    return any(Path(prev_dir).glob(f"*init_{init}_desired_{des}*"))
+
+
+# -----------------------------
 # File helpers
 # -----------------------------
-
 def correct_buckle_string(buckle_arr: NDArray):
     buckle = copy.copy(buckle_arr)
     buckle[buckle_arr == -1] = 0

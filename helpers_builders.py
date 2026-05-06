@@ -115,7 +115,7 @@ def dof_idx(node: int, comp: int) -> int:
 def _initiate_pos(nodes: int, L: float, numpify: bool = False) -> jax.Array:
     """
     `(hinges+2, 2)` each pair is (xi, yi) of point i going like [[0, 0], [1, 0], [2, 0], etc]
-    
+
     Parameters
     ----------
     hinges  - int. Number of hinges. Number of nodes will be hinges + 2 (two end nodes + internal ones).
@@ -169,8 +169,8 @@ def _initiate_buckle(hinges: int, shims: int, buckle_pattern: tuple = (), numpif
 # ---------------------------------------------------------------
 # Physical helpers
 # ---------------------------------------------------------------
-def clamp_pos_same_delta(*, before_prev: NDArray, tip_angle_new: float, tip_raw: NDArray, second_node: NDArray, R_lim: float,
-                         L: float, eps=1e-12):
+def clamp_pos_same_delta(*, before_prev: NDArray, tip_angle_new: float, tip_raw: NDArray, second_node: NDArray,
+                         R_lim: float, L: float, eps=1e-12):
     """
     Enforce ||node before tip - second_node|| <= R_lim
     while preserving ||new node before tip - before_prev|| = ||before_raw - before_prev|| (when possible).
@@ -194,8 +194,8 @@ def clamp_pos_same_delta(*, before_prev: NDArray, tip_angle_new: float, tip_raw:
     before_prev   - np.array(float), (2,), Position of the node-before-tip at previous step.
     tip_angle_new - float. Updated tip angle (radians), measured CCW, used to infer the before-tip point.
     tip_raw       - np.array(float), (2,), Proposed updated tip position *before* applying radius clamp.
-    second_node   - np.array(float), (2,), Reference point for radius constraint (typically second fixed node, e.g. ``[L, 0]``)
-    R_lim         - float. Maximum allowed distance from second_node to node-before-tip. Calculated at effective_radius()
+    second_node   - np.array(float), (2,), Reference point for radius constraint (typically second fixed node [L, 0])
+    R_lim         - float. Maximal allowed distance from second_node to node-before-tip. Calculated in effective_radius()
     L             - float. Link length between the tip node and the node-before-tip.
     eps           - float, optional, Small tolerance for numerical stability and comparisons.
 
@@ -240,7 +240,7 @@ def clamp_pos_same_delta(*, before_prev: NDArray, tip_angle_new: float, tip_raw:
 
 def _circle_circle_intersections_np(c0: NDArray[np.float64], r0: float, c1: NDArray[np.float64], r1: float, eps=1e-12):
     """
-    Intersection points of two circles in 2D (NumPy version). 
+    Intersection points of two circles in 2D (NumPy version).
     - Circle 0: center ``c0`` and radius ``r0``
     - Circle 1: center ``c1`` and radius ``r1``
     this function returns their intersection point(s), if they exist.
