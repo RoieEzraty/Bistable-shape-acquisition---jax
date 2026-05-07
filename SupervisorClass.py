@@ -172,7 +172,7 @@ class SupervisorClass:
         self.normalize_step = bool(CFG.Train.normalize_step)  # whether to normalize train step in [x, y, theta] space
 
         self.R_free = (Strctr.edges - 2*0.98)*Strctr.L  # maximal radius the chain could have, up to some margin
-        self.R_min = Strctr.L*0.75  # minimal radius around [L/2, 0] that tip cannot cross
+        self.R_min = Strctr.L  # minimal radius around [L/2, 0] that tip cannot cross
 
         # for output files
         self.convert_pos = CFG.Train.convert_pos
@@ -496,22 +496,35 @@ class SupervisorClass:
                                                       supress_prints=self.supress_prints)
             before_prev = helpers_builders._get_before_tip(prev_tip_update_pos, float(prev_tip_update_angle),
                                                            Strctr.L, xp=np)
-            tip_new, _, clamped_outer = helpers_builders.clamp_pos_same_delta(before_prev=before_prev,
+            # print("raw tip", self.tip_pos_update_in_t[t, :])
+            # print("u", np.array([np.cos(self.tip_angle_update_in_t[t]), np.sin(self.tip_angle_update_in_t[t])]))
+            # print("before_prev", before_prev)
+            # print("before_raw", self.tip_pos_update_in_t[t, :] - Strctr.L*np.array([
+            #     np.cos(self.tip_angle_update_in_t[t]),
+            #     np.sin(self.tip_angle_update_in_t[t])
+            # ]))
+            print("R_eff", R_eff)
+            # print("total_angle", total_angle, "tip_angle", self.tip_angle_update_in_t[t])
+            # clamp outside inner radius
+            tip_new, _, clamped_inner = helpers_builders.clamp_pos_same_delta(before_prev=before_prev,
                                                                               tip_angle_new=float(self.tip_angle_update_in_t[t]),
                                                                               tip_raw=self.tip_pos_update_in_t[t, :],
                                                                               second_node=array([Strctr.L, 0.0], dtype=float),
-                                                                              R_lim=R_eff, L=Strctr.L, mod="outer")
-
-            tip_new, _, clamped_inner = helpers_builders.clamp_pos_same_delta(before_prev=before_prev, 
+                                                                              R_lim=self.R_min, L=Strctr.L, mod="inner")
+            # clamp outside outer radius
+            tip_new, _, clamped_outer = helpers_builders.clamp_pos_same_delta(before_prev=before_prev,
                                                                               tip_angle_new=float(self.tip_angle_update_in_t[t]),
                                                                               tip_raw=tip_new,
                                                                               second_node=array([Strctr.L, 0.0], dtype=float),
-                                                                              R_lim=self.R_min, L=Strctr.L, mod="inner")
+                                                                              R_lim=R_eff, L=Strctr.L, mod="outer")
 
             self.tip_pos_update_in_t[t, :] = tip_new
 
-            if (not self.supress_prints) and clamped:
-                print(f'tip slid on effective-radius perimeter to {self.tip_pos_update_in_t[t, :]}')
+            if not self.supress_prints:
+                if clamped_outer:
+                    print(f'tip slid on effective outer radius to {self.tip_pos_update_in_t[t, :]}')
+                if clamped_inner:
+                    print(f'tip slid on effective inner radius to {self.tip_pos_update_in_t[t, :]}')
 
         else:
             self.tip_pos_update_in_t[t, :] = helpers_builders._correct_big_stretch(self.tip_pos_update_in_t[t],
@@ -787,14 +800,16 @@ class SupervisorClass:
 
         # Initial total angle. For free_tip flat this is basically 0,
         # but compute it for generality.
-        state_meas_tip = State_meas.pos_arr_in_t[-2:, :, t][0]
-        theta0 = helpers_builders._get_total_angle(state_meas_tip, prev_total_angle=0.0, L=Strctr.L)
+        # state_meas_tip = State_meas.pos_arr_in_t[-2:, :, t][0]
+        # theta0 = helpers_builders._get_total_angle(state_meas_tip, prev_total_angle=0.0, L=Strctr.L)
+        theta0 = helpers_builders._get_tip_angle(State_meas.pos_arr_in_t[:, :, t])
 
         # Use the previous accepted update angle, since the new one is not known yet.
         if t <= 1:
             theta = theta0
         else:
-            theta = float(self.total_angle_update_in_t[t-1])
+            # theta = float(self.total_angle_update_in_t[t-1])
+            theta = float(self.tip_angle_update_in_t[t-1])
 
         delta_tip_xy_rot = helpers_builders._rot2(theta - theta0) @ np.array([delta_tip_x, delta_tip_y])
 

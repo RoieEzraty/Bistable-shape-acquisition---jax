@@ -218,7 +218,14 @@ def clamp_pos_same_delta(*, before_prev: NDArray, tip_angle_new: float, tip_raw:
         center = second_node/2
 
     # raw before-tip implied by tip_raw and tip_angle_new
-    before_raw = tip_raw - L*array([np.cos(tip_angle_new), np.sin(tip_angle_new)], float)
+    u = array([np.cos(tip_angle_new), np.sin(tip_angle_new)], float)
+    before_raw = tip_raw - L * u
+
+    if mod == "inner":
+        r_before = np.linalg.norm(before_raw - center)
+        r_tip = np.linalg.norm(tip_raw - center)
+        if r_tip < r_before:
+            center = center - L * u
 
     disp_raw = before_raw - center
     r_raw = np.linalg.norm(disp_raw)
@@ -233,14 +240,14 @@ def clamp_pos_same_delta(*, before_prev: NDArray, tip_angle_new: float, tip_raw:
     if len(pts) == 0:
         # fallback: radial clamp in before-space
         if r_raw < eps:
-            before_new = second_node + array([R_lim, 0.0])
+            before_new = center + array([R_lim, 0.0])
         else:
-            before_new = second_node + disp_raw * (R_lim / r_raw)
+            before_new = center + disp_raw * (R_lim / r_raw)
     else:
         # pick intersection closest to raw proposal
         before_new = min(pts, key=lambda p: np.sum((p - before_raw)**2))
 
-    tip_new = before_new + L*array([np.cos(tip_angle_new), np.sin(tip_angle_new)], float)
+    tip_new = before_new + L * u
     return tip_new, before_new, True
 
 
@@ -417,8 +424,10 @@ def effective_radius(R: float, L: float, total_angle: float, tip_angle: float, m
         print('shrink due to partial tip revolution [mm]', shrink_partial_tip)
 
     # ------ total angle ------
-    n_halfturns = int(np.floor((np.abs(total_angle) + np.pi) / (2.0 * np.pi)))
-    shrink_full_total_angle = (1.0 * L) * n_halfturns
+    # n_halfturns = int(np.floor((np.abs(total_angle) + np.pi) / (2.0 * np.pi)))
+    # shrink_full_total_angle = (1.0 * L) * n_halfturns
+    wrap_frac = np.abs(total_angle) / (2.0 * np.pi)
+    shrink_full_total_angle = L * wrap_frac
     if not supress_prints:
         print('shrink due to total angle revolutions around base [mm]', shrink_full_total_angle)
 
@@ -646,7 +655,7 @@ def _get_before_tip(tip_pos: NDArray, tip_angle: float, L: float, *, xp=jnp, dty
     return tip_pos - xp.array([dx, dy], dtype=dtype)
 
 
-def _get_total_angle(tip_pos: NDArray, prev_total_angle: float, L: float) -> float:
+def _get_total_angle(tip_pos: NDArray, prev_total_angle: float, L: float, origin="first_node") -> float:
     """
     angle between tip and last fixed node, CCW
 
@@ -661,7 +670,11 @@ def _get_total_angle(tip_pos: NDArray, prev_total_angle: float, L: float) -> flo
     new_total_angle : float, The unwrapped angle (can exceed ±pi, ±2pi, ±3pi, ...).
     """
     # ------ total angle [-pi/2, pi/2] ------
-    dx, dy = array([L, 0]) - tip_pos  # displacement vector
+    if origin == "first_node":
+        origin_node = array([0, 0])
+    elif origin == "second_node":
+        origin_node = array([L, 0])
+    dx, dy = origin_node - tip_pos  # displacement vector
 
     # shift so that 0 is along -x
     total_angle = np.arctan2(dy, dx) - np.pi
