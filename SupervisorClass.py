@@ -792,28 +792,28 @@ class SupervisorClass:
             sgnx = 1
         if sgny == 0.0:
             sgny = 1
-        # delta_tip_x = - self.alpha * (-self.loss[0]) * (-sgny) * Variabs.norm_pos  # Mar23
-        # delta_tip_y = - self.alpha * (-self.loss[1]) * (+sgnx) * Variabs.norm_pos  # Mar23
-        delta_tip_x = - self.alpha * (-self.loss[0]) * Variabs.norm_pos  # May3 for rotation matrix
-        delta_tip_y = - self.alpha * (-self.loss[1]) * Variabs.norm_pos  # May3 for rotation matrix
+        delta_tip_x = - self.alpha * (-self.loss[0]) * (-sgny) * Variabs.norm_pos  # Mar23
+        delta_tip_y = - self.alpha * (-self.loss[1]) * (+sgnx) * Variabs.norm_pos  # Mar23
+        # delta_tip_x = - self.alpha * (-self.loss[0]) * Variabs.norm_pos  # May3 for rotation matrix
+        # delta_tip_y = - self.alpha * (-self.loss[1]) * Variabs.norm_pos  # May3 for rotation matrix
         delta_angle = - self.alpha * (-self.loss[2]) * Variabs.norm_angle  # Mar23
 
         # Initial total angle. For free_tip flat this is basically 0,
         # but compute it for generality.
-        # state_meas_tip = State_meas.pos_arr_in_t[-2:, :, t][0]
-        # theta0 = helpers_builders._get_total_angle(state_meas_tip, prev_total_angle=0.0, L=Strctr.L)
-        theta0 = helpers_builders._get_tip_angle(State_meas.pos_arr_in_t[:, :, t])
+        state_meas_tip = State_meas.pos_arr_in_t[-2:, :, t][0]
+        theta0 = helpers_builders._get_total_angle(state_meas_tip, prev_total_angle=0.0, L=Strctr.L)
+        # theta0 = helpers_builders._get_tip_angle(State_meas.pos_arr_in_t[:, :, t])
 
         # Use the previous accepted update angle, since the new one is not known yet.
         if t <= 1:
             theta = theta0
         else:
-            # theta = float(self.total_angle_update_in_t[t-1])
-            theta = float(self.tip_angle_update_in_t[t-1])
+            theta = float(self.total_angle_update_in_t[t-1])
+            # theta = float(self.tip_angle_update_in_t[t-1])
 
-        delta_tip_xy_rot = helpers_builders._rot2(theta - theta0) @ np.array([delta_tip_x, delta_tip_y])
-
-        return float(delta_tip_xy_rot[0]), float(delta_tip_xy_rot[1]), float(delta_angle)
+        # delta_tip_xy_rot = helpers_builders._rot2(theta - theta0) @ np.array([delta_tip_x, delta_tip_y])
+        # return float(delta_tip_xy_rot[0]), float(delta_tip_xy_rot[1]), float(delta_angle)
+        return float(delta_tip_x), float(delta_tip_y), float(delta_angle)
 
     # def _lossx_concavity(self, t, Strctr, Variabs, State_meas, State_des):
     #     sgnx = np.sign(self.tip_pos_update_in_t[t-1, 0])

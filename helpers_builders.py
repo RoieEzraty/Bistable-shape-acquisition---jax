@@ -407,16 +407,12 @@ def effective_radius(R: float, L: float, total_angle: float, tip_angle: float, m
     -------
     R_eff - float,  Effective maximal reachable radius after accounting for coil-induced shrinkage.
     """
-    two_pi = 2.0 * np.pi
-
-    # ------ tip ------
+    # ------ tip angle ------
     delta = float(np.abs(total_angle - tip_angle))  # radians, unwrapped
-
-    n_rev = int(np.floor(delta / two_pi))
-    rem = delta - n_rev * two_pi  # in [0, 2π)
+    n_rev = int(np.floor(delta / (2.0 * np.pi)))
+    rem = delta - n_rev * (2.0 * np.pi)  # in [0, 2π)
 
     shrink_full_tip = (2.0 * L) * n_rev
-
     shrink_partial_tip = L * (1.0 - np.cos(rem / 2.0))  # in [0, 2L)
     # shrink_partial = L * (1.0 - np.cos(rem))  # in [0, 2L)
     if not supress_prints:
@@ -427,6 +423,7 @@ def effective_radius(R: float, L: float, total_angle: float, tip_angle: float, m
     # n_halfturns = int(np.floor((np.abs(total_angle) + np.pi) / (2.0 * np.pi)))
     # shrink_full_total_angle = (1.0 * L) * n_halfturns
     wrap_frac = np.abs(total_angle) / (2.0 * np.pi)
+
     shrink_full_total_angle = L * wrap_frac
     if not supress_prints:
         print('shrink due to total angle revolutions around base [mm]', shrink_full_total_angle)
