@@ -89,8 +89,9 @@ def run_one_job(job):
                 plt.close("all")
 
             if save_csvs:
-                suffix = "_intersect" if State_update.self_intersection else ""  # append intersection str if chain intersects
-                csv_path = str(run_dir / f"final_loss_{Sprvsr.loss_MSE_in_t[t]:.6g}_init_{init_buckle_str}_desired_{desired_buckle_str}{suffix}.csv")
+                suffix1 = "_intersect" if State_update.self_intersection else ""  # append str if chain intersects
+                suffix2 = "_flip_chain" if Sprvsr.symmetrical_chain else ""    # append if chain is symmetrical to des
+                csv_path = str(run_dir / f"final_loss_{Sprvsr.loss_MSE_in_t[t]:.6g}_init_{init_buckle_str}_desired_{desired_buckle_str}{suffix1}{suffix2}.csv")
                 file_funcs.export_training_csv(str(csv_path), Strctr, Sprvsr, T=t + 1, State_meas=State_meas, State_update=State_update)
 
             # if Sprvsr.loss_MSE > 10**(-6):

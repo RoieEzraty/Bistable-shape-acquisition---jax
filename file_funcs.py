@@ -344,6 +344,7 @@ def build_success_matrix(folder: Path, old: bool = False, N: int = 16, near_miss
     """
     M = np.zeros((N, N)) + 1.0
     M_flag = np.zeros((N, N), dtype=int)
+    M_flip = np.zeros((N, N), dtype=int)
     B = np.zeros((N, N)) + 1.0
 
     thresh = 10e-2 if near_miss else 1e-6
@@ -376,15 +377,18 @@ def build_success_matrix(folder: Path, old: bool = False, N: int = 16, near_miss
         success: bool = loss < thresh
 
         # flag of intersection
-        flagged = "_intersect" in name
+        flagged_int = "_intersect" in name
+        flagged_flip = "_flip_chain" in name
 
         if success:
             B[i, j] = 0
             M[i, j] = 0
-            M_flag[i, j] = int(flagged)   # flag for intersection in successful run
+            M_flag[i, j] = int(flagged_int)   # flag for intersection in successful run
+            M_flip[i, j] = int(flagged_flip)  # flag for chain symmetrical to desired
         else:
-            if M[i, j] == 2 and flagged:
-                M_flag[i, j] = int(flagged)   # flag for intersection in both unsuccessful runs
+            if M[i, j] == 2 and flagged_int:
+                M_flag[i, j] = int(flagged_int)   # flag for intersection in both unsuccessful runs
+                M_flip[i, j] = int(flagged_flip)  # flag for chain symmetrical to desired
             M[i, j] = 2
 
         # symmetry
@@ -392,7 +396,7 @@ def build_success_matrix(folder: Path, old: bool = False, N: int = 16, near_miss
             B[N-1-i, N-1-j] = B[i, j]
             M[N-1-i, N-1-j] = M[i, j]
 
-    return M, M_flag
+    return M, M_flag, M_flip
 
 
 # This was merged into build_success_matrix

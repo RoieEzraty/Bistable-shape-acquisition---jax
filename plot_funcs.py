@@ -483,12 +483,14 @@ def animate_arm_w_arcs(traj_pos, L, Fx: Optional[NDArray] = None, Fy: Optional[N
 # ----------------------------
 # Post Processing
 # ----------------------------
-def plot_success_matrix(M: NDArray, N: int = 16, M_flag: Optional[NDArray] = None) -> None:
+def plot_success_matrix(M: NDArray, N: int = 16, M_flag: Optional[NDArray] = None, M_flip: Optional[NDArray] = None) -> None:
     """
     Roie - document!
     """
     # ------ colors ------
     colors_lst, _, custom_cmap = colors.color_scheme()
+    flag_color = colors_lst[4]
+    flip_color = colors_lst[0]
 
     # ------ labels ------
     labels = []
@@ -506,14 +508,23 @@ def plot_success_matrix(M: NDArray, N: int = 16, M_flag: Optional[NDArray] = Non
     # success matrix
     im = plt.imshow(M_masked, cmap=custom_cmap, vmin=0, vmax=4, origin="lower")
 
-    # plot flagged runs
+    # plot flagged runs (intersections)
     if M_flag is not None:
         nrows, ncols = M_flag.shape
         for i in range(nrows):
             for j in range(ncols):
                 if M_flag[i, j]:
-                    plt.plot([j - 0.35, j + 0.35], [i - 0.35, i + 0.35], color=colors_lst[4], linestyle="-", linewidth=2.0)
-                    plt.plot([j - 0.35, j + 0.35], [i + 0.35, i - 0.35], color=colors_lst[4], linestyle="-", linewidth=2.0)
+                    plt.plot([j - 0.35, j + 0.35], [i - 0.35, i + 0.35], color=flag_color, linestyle="-", linewidth=2.0)
+                    # plt.plot([j - 0.35, j + 0.35], [i + 0.35, i - 0.35], color=flag_color, linestyle="-", linewidth=2.0)
+
+    # plot runs that ended in chain symmetrical to desired
+    if M_flip is not None:
+        nrows, ncols = M_flip.shape
+        for i in range(nrows):
+            for j in range(ncols):
+                if M_flip[i, j]:
+                    plt.plot([j - 0.35, j + 0.35], [i + 0.35, i - 0.35], color=flip_color, linestyle="-", linewidth=2.0)
+                    # plt.plot([j - 0.35, j + 0.35], [i + 0.35, i - 0.35], color=flip_color, linestyle="-", linewidth=2.0)
 
     # ------ ticks, legend and labels ------
     plt.xticks(range(N), labels, rotation=90)
@@ -526,6 +537,8 @@ def plot_success_matrix(M: NDArray, N: int = 16, M_flag: Optional[NDArray] = Non
                        patches.Patch(facecolor=custom_cmap(im.norm(2)), label="Failure")]
     if M_flag is not None:
         legend_elements.append(Line2D([0], [0], color=colors_lst[4], linestyle="-", linewidth=2, label="Self-intersection"))
+    if M_flip is not None:
+        legend_elements.append(Line2D([0], [0], color=colors_lst[4], linestyle="-", linewidth=2, label="Symmetrical chain"))
     plt.legend(handles=legend_elements, loc="upper left", bbox_to_anchor=(1.02, 1))
 
     # ------ show ------
