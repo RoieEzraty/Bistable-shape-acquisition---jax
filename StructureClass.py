@@ -271,7 +271,7 @@ class StructureClass(eqx.Module):
     def _get_edge_length(self, pos_arr: jax.Array, edge: int) -> jax.Array:
         """
         Length of one edge given current positions pos: (Npoints,2) float.
-        
+
         Returns
         -------
         length - jax.Array (scalar). Euclidean length of the edge.

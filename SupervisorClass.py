@@ -182,6 +182,9 @@ class SupervisorClass:
         # invert tip changes if training fails
         self.invert_delta_tip = False
 
+        # chain in structure that is symmetrical to desired
+        self.symmetrical_state = False
+
         # tip restart bookkeeping for origin-cut handling
         self.origin_cut_restart_count = 0  # consecutive origin-cut restarts
         self.coil_count = 0  # consecutive restarts due to tip coiling
@@ -342,7 +345,8 @@ class SupervisorClass:
     # Calculations - loss and Update values
     # ---------------------------------------------------------------
     def calc_loss(self, Variabs: "VariablesClass", t: int, Fx: Optional[float] = None, Fy: Optional[float] = None,
-                  pos: Optional[NDArray] = None, pos_des: Optional[NDArray] = None) -> None:
+                  pos: Optional[NDArray] = None, pos_des: Optional[NDArray] = None,
+                  thresh_for_symmetrical=10**(-3)) -> None:
         """Compute loss vector (Fx,Fy) at step t and log it.
 
         Parameters:
@@ -371,8 +375,17 @@ class SupervisorClass:
         # put in loss vec
         self.loss_in_t[t, :self.loss.shape[0]] = self.loss
 
-        # same for Mean Squared Error
-        self.loss_MSE = np.sqrt(np.sum(self.loss**2))
+        if (pos is not None) and (pos_des is not None):
+            is_symmetrical = helpers_builders.symmetrical_chain_state(pos, pos_des, thresh_for_symmetrical)
+        else:
+            is_symmetrical = False
+
+        if is_symmetrical:
+            print('symmetrical chain state, invert chain, training is done')
+            self.symmetrical_state = True
+            self.loss_MSE = 0.0
+        else:
+            self.loss_MSE = np.sqrt(np.sum(self.loss**2))
         self.loss_MSE_in_t[t] = self.loss_MSE
 
     def calc_concavity(self, F_meas_full_traj, F_des_full_traj) -> None:
@@ -443,8 +456,8 @@ class SupervisorClass:
             else:
                 # tradeoff_pos_angle = 1/2
                 tradeoff_pos_angle = 2
-            delta_tip = copy.copy(delta_tip)/step_size*self.alpha
-            delta_angle = copy.copy(delta_angle)/step_size*self.alpha * tradeoff_pos_angle
+            delta_tip = copy.copy(delta_tip) / step_size * self.alpha
+            delta_angle = copy.copy(delta_angle) / step_size * self.alpha * tradeoff_pos_angle
 
             if not self.supress_prints:
                 print(f'normalized position to {delta_tip}')
@@ -456,8 +469,8 @@ class SupervisorClass:
             prev_tip_update_pos = self.tip_pos_in_t[t, :]
             prev_tip_update_angle = self.tip_angle_in_t[t]
         else:
-            prev_tip_update_pos = self.tip_pos_update_in_t[t-1, :]
-            prev_tip_update_angle = self.tip_angle_update_in_t[t-1]
+            prev_tip_update_pos = self.tip_pos_update_in_t[t - 1, :]
+            prev_tip_update_angle = self.tip_angle_update_in_t[t - 1]
         if not self.supress_prints:
             print(f'prev_tip_update_pos{prev_tip_update_pos}')
             print(f'prev_tip_update_angle{prev_tip_update_angle}')
@@ -477,7 +490,7 @@ class SupervisorClass:
             if t == 1:
                 prev_total_angle = 0.0
             else:
-                prev_total_angle = self.total_angle_update_in_t[t-1]
+                prev_total_angle = self.total_angle_update_in_t[t - 1]
             total_angle: float = helpers_builders._get_total_angle(self.tip_pos_update_in_t[t, :], prev_total_angle,
                                                                    Strctr.L)
             self.total_angle_update_in_t[t] = total_angle
@@ -496,6 +509,10 @@ class SupervisorClass:
                                                       supress_prints=self.supress_prints)
             before_prev = helpers_builders._get_before_tip(prev_tip_update_pos, float(prev_tip_update_angle),
                                                            Strctr.L, xp=np)
+
+            raw_tip_before_clamp = self.tip_pos_update_in_t[t, :].copy()
+            # preferred_tip_delta = raw_tip_before_clamp - prev_tip_update_pos
+
             # print("raw tip", self.tip_pos_update_in_t[t, :])
             # print("u", np.array([np.cos(self.tip_angle_update_in_t[t]), np.sin(self.tip_angle_update_in_t[t])]))
             # print("before_prev", before_prev)
@@ -503,26 +520,43 @@ class SupervisorClass:
             #     np.cos(self.tip_angle_update_in_t[t]),
             #     np.sin(self.tip_angle_update_in_t[t])
             # ]))
-            print("R_eff", R_eff)
+            # print("R_eff", R_eff)
             # print("total_angle", total_angle, "tip_angle", self.tip_angle_update_in_t[t])
-            # clamp outside inner radius
+            # # clamp outside inner radius
             tip_new, _, clamped_inner = helpers_builders.clamp_pos_same_delta(before_prev=before_prev,
                                                                               tip_angle_new=float(self.tip_angle_update_in_t[t]),
                                                                               tip_raw=self.tip_pos_update_in_t[t, :],
                                                                               second_node=array([Strctr.L, 0.0], dtype=float),
                                                                               R_lim=self.R_min, L=Strctr.L, mod="inner")
+
             # clamp outside outer radius
+            # tip_new = helpers_builders._correct_big_stretch(tip_new, self.tip_angle_update_in_t[t], total_angle,
+            #                                                 self.R_free, Strctr.L, margin=0.0,
+            #                                                 supress_prints=self.supress_prints)
             tip_new, _, clamped_outer = helpers_builders.clamp_pos_same_delta(before_prev=before_prev,
                                                                               tip_angle_new=float(self.tip_angle_update_in_t[t]),
                                                                               tip_raw=tip_new,
                                                                               second_node=array([Strctr.L, 0.0], dtype=float),
-                                                                              R_lim=R_eff, L=Strctr.L, mod="outer")
+                                                                              R_lim=R_eff, L=Strctr.L, mod="outer",
+                                                                              tip_update_prev=prev_tip_update_pos,
+                                                                              raw_update_tip=delta_tip)
+
+            if clamped_outer:
+                corrected_delta = tip_new - prev_tip_update_pos
+                print(
+                    "outer clamp:",
+                    "raw_delta=", delta_tip,
+                    "corrected_delta=", corrected_delta,
+                    "raw_dy=", delta_tip[1],
+                    "corrected_dy=", corrected_delta[1],
+                    "prev_y=", prev_tip_update_pos[1],
+                )
 
             self.tip_pos_update_in_t[t, :] = tip_new
 
             if not self.supress_prints:
-                if clamped_outer:
-                    print(f'tip slid on effective outer radius to {self.tip_pos_update_in_t[t, :]}')
+                # if clamped_outer:
+                #     print(f'tip slid on effective outer radius to {self.tip_pos_update_in_t[t, :]}')
                 if clamped_inner:
                     print(f'tip slid on effective inner radius to {self.tip_pos_update_in_t[t, :]}')
 
@@ -633,13 +667,13 @@ class SupervisorClass:
         tip_pos : np.ndarray, shape (2,)
         tip_angle : float
         """
-        tip_angle = np.pi/2 * self.rng_tip.random()
+        tip_angle = np.pi / 2 * self.rng_tip.random()
 
         # uniform in disk
         R_eff = helpers_builders.effective_radius(self.R_free, Strctr.L, total_angle=0, tip_angle=tip_angle)
         r_min = 0.75 * R_eff
         r = r_min + (R_eff - r_min) * np.sqrt(self.rng_tip.random())
-        phi = np.pi/4 * self.rng_tip.random()
+        phi = np.pi / 4 * self.rng_tip.random()
         tip_pos = np.array([r * np.cos(phi), r * np.sin(phi)], dtype=float)
 
         return tip_pos, tip_angle
@@ -647,6 +681,7 @@ class SupervisorClass:
     def _restart_flat_with_y_bias(self, t: int, Strctr: "StructureClass", side_sign: float) -> None:
         """
         Restart from flat, but bias the tip slightly above/below the x-axis.
+
         Repeated origin cuts increase the vertical bias magnitude.
         """
         mag = (self.origin_restart_base_frac +
@@ -786,7 +821,7 @@ class SupervisorClass:
         return delta_tip_x, delta_tip_y, delta_angle
 
     def _delta_pos(self, t, Strctr, Variabs, State_meas, State_des):
-        sgnx = np.sign(self.tip_pos_update_in_t[t-1, 0])
+        sgnx = np.sign(self.tip_pos_update_in_t[t-1, 0] - Strctr.L/2)
         sgny = np.sign(self.tip_pos_update_in_t[t-1, 1])
         if sgnx == 0.0:
             sgnx = 1
@@ -798,18 +833,18 @@ class SupervisorClass:
         # delta_tip_y = - self.alpha * (-self.loss[1]) * Variabs.norm_pos  # May3 for rotation matrix
         delta_angle = - self.alpha * (-self.loss[2]) * Variabs.norm_angle  # Mar23
 
-        # Initial total angle. For free_tip flat this is basically 0,
-        # but compute it for generality.
-        state_meas_tip = State_meas.pos_arr_in_t[-2:, :, t][0]
-        theta0 = helpers_builders._get_total_angle(state_meas_tip, prev_total_angle=0.0, L=Strctr.L)
-        # theta0 = helpers_builders._get_tip_angle(State_meas.pos_arr_in_t[:, :, t])
+        # # angle for rotation of delta update
+        # # Initial total angle. For free_tip flat this is basically 0, but compute it for generality.
+        # state_meas_tip = State_meas.pos_arr_in_t[-2:, :, t][0]
+        # theta0 = helpers_builders._get_total_angle(state_meas_tip, prev_total_angle=0.0, L=Strctr.L)
+        # # theta0 = helpers_builders._get_tip_angle(State_meas.pos_arr_in_t[:, :, t])
 
-        # Use the previous accepted update angle, since the new one is not known yet.
-        if t <= 1:
-            theta = theta0
-        else:
-            theta = float(self.total_angle_update_in_t[t-1])
-            # theta = float(self.tip_angle_update_in_t[t-1])
+        # # Use the previous accepted update angle, since the new one is not known yet.
+        # if t <= 1:
+        #     theta = theta0
+        # else:
+        #     theta = float(self.total_angle_update_in_t[t-1])
+        #     # theta = float(self.tip_angle_update_in_t[t-1])
 
         # delta_tip_xy_rot = helpers_builders._rot2(theta - theta0) @ np.array([delta_tip_x, delta_tip_y])
         # return float(delta_tip_xy_rot[0]), float(delta_tip_xy_rot[1]), float(delta_angle)

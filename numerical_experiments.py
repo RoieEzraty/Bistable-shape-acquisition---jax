@@ -161,6 +161,8 @@ def train(Strctr: StructureClass, Variabs: VariablesClass, CFG: ExperimentConfig
         # break if training succeeded
         if Sprvsr.loss_MSE <= 10**(-6):
             Sprvsr.loss_MSE = 0.0
+            if Sprvsr.symmetrical_state:
+                print('chain in state symmetrical to desired, flip it')
             print('successful training')
             # add fictitious times just for gif plot
             for i in range(breath_for_gif):
