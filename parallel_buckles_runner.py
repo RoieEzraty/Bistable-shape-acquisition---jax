@@ -3,13 +3,13 @@ from __future__ import annotations
 import os
 import copy
 import traceback
-from pathlib import Path
-from contextlib import redirect_stdout, redirect_stderr
-
 import numpy as np
 import matplotlib
-matplotlib.use("Agg", force=True)
 import matplotlib.pyplot as plt
+
+from pathlib import Path
+from contextlib import redirect_stdout, redirect_stderr
+from typing import Optional, TypedDict, Union
 
 from config import CFG
 from StructureClass import StructureClass
@@ -20,11 +20,44 @@ from EquilibriumClass import EquilibriumClass
 
 import numerical_experiments, plot_funcs, file_funcs
 
+matplotlib.use("Agg", force=True)
 
-def _train_one_pair(init_buckle, desired_buckle, invert_updates=False):
-    Strctr = StructureClass(CFG, update_scheme=CFG.Train.update_scheme)
-    Variabs = VariablesClass(Strctr, CFG)
-    Sprvsr = SupervisorClass(Strctr, CFG, supress_prints=True)
+
+class ParallelJob(TypedDict):
+    """Input specification for one parallel buckle-training run."""
+
+    k: int
+    l: int
+    init_buckle_tup: tuple[int, int, int, int]
+    desired_buckle_tup: tuple[int, int, int, int]
+    run_dir: Union[str, Path]
+    save_gifs: bool
+    save_pngs: bool
+    save_csvs: bool
+
+
+class ParallelJobResult(TypedDict):
+    """Result summary returned by one parallel buckle-training run."""
+
+    ok: bool
+    k: int
+    l: int
+    init_buckle_tup: tuple[int, int, int, int]
+    desired_buckle_tup: tuple[int, int, int, int]
+    loss: float
+    gif_path: Optional[str]
+    png_path: Optional[str]
+    csv_path: Optional[str]
+    log_path: str
+
+
+def _train_one_pair(init_buckle: np.ndarray, desired_buckle: np.ndarray,
+                    invert_updates: bool = False) -> tuple[StructureClass, VariablesClass, SupervisorClass,
+                                                           StateClass, StateClass, StateClass, EquilibriumClass,
+                                                           EquilibriumClass, int]:
+    Strctr: "StructureClass" = StructureClass(CFG, update_scheme=CFG.Train.update_scheme)
+    Variabs: "VariablesClass" = VariablesClass(Strctr, CFG)
+    Sprvsr: "SupervisorClass" = SupervisorClass(Strctr, CFG, supress_prints=True)
 
     Sprvsr, State_meas, State_des, State_update, Eq_meas, Eq_des, t = numerical_experiments.train(Strctr, Variabs,
                                                                                                   CFG, init_buckle,
@@ -33,7 +66,38 @@ def _train_one_pair(init_buckle, desired_buckle, invert_updates=False):
     return Strctr, Variabs, Sprvsr, State_meas, State_des, State_update, Eq_meas, Eq_des, t
 
 
-def run_one_job(job):
+def run_one_job(job: ParallelJob) -> ParallelJobResult:
+    """
+    Run one buckle-training and save requested output artifacts.
+
+    Parameters
+    ----------
+    job
+        Dictionary describing one training run. Required keys are:
+        k, l               - Integer success_matrix indices for identifying result.
+        init_buckle_tup    - Initial buckle pattern as a length-4 tuple of ``-1``/``+1`` values.
+        desired_buckle_tup - Desired buckle pattern as a length-4 tuple of ``-1``/``+1`` values.
+        run_dir            - Directory of log file & optional output files to write (created if not existing)
+        save_gifs          - True = save HTML animation of update trajectory in training time.
+        save_pngs          - True = save sizes during training time t as graphs in PNG.
+        save_csvs          - True = export training trajectory and state history to CSV.
+
+    Returns
+    -------
+    ParallelJobResult
+        Dictionary summarizing the run:
+        ok - True = run completed without raising exception.
+        k, l - The input job indices, copied into the result.
+        init_buckle_tup, desired_buckle_tup - The input buckle patterns, copied into the result.
+        loss - Final scalar MSE-like loss from ``Sprvsr.loss_MSE`` on success. ``np.nan`` if run failed.
+        gif_path, png_path, csv_path - Paths to generated output files, None if not requested or if run failed.
+        log_path - Path to per-job log file. On failure, traceback is appended to this file.
+
+    Notes
+    -----
+    Interactive per-step plotting is disabled inside the worker process by
+    replacing ``plot_funcs.plot_arm`` with a no-op.
+    """
     k = int(job["k"])
     l = int(job["l"])
     init_buckle_tup = tuple(job["init_buckle_tup"])
@@ -90,7 +154,7 @@ def run_one_job(job):
 
             if save_csvs:
                 suffix1 = "_intersect" if State_update.self_intersection else ""  # append str if chain intersects
-                suffix2 = "_flip_chain" if Sprvsr.symmetrical_chain else ""    # append if chain is symmetrical to des
+                suffix2 = "_flip_chain" if Sprvsr.symmetrical_state else ""    # append if chain is symmetrical to des
                 csv_path = str(run_dir / f"final_loss_{Sprvsr.loss_MSE_in_t[t]:.6g}_init_{init_buckle_str}_desired_{desired_buckle_str}{suffix1}{suffix2}.csv")
                 file_funcs.export_training_csv(str(csv_path), Strctr, Sprvsr, T=t + 1, State_meas=State_meas, State_update=State_update)
 

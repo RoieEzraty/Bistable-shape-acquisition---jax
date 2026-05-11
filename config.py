@@ -67,7 +67,6 @@ class VariablesConfig:
             # object.__setattr__(self, "tau_file", "single_hinge_files/Stress_Strain_steel_1myl1tp_short.csv")
             # object.__setattr__(self, "thresh", 1.53)  # Feb23 realistically from just before red south
             # object.__setattr__(self, "tau_file", "single_hinge_files/Stress_Strain_1myl1tp_otherEnd_short.csv")
-            # object.__setattr__(self, "tau_file", "single_hinge_files/Stress_Strain_1myl1tp_flipped_Feb26_2_average.csv")
             # object.__setattr__(self, "tau_file", "single_hinge_files/Mar9_filled_average.csv")
             object.__setattr__(self, "tau_file", "single_hinge_files/Mar12_dl90.csv")
             object.__setattr__(self, "thresh", 1.24)  # Mar12 dl90 

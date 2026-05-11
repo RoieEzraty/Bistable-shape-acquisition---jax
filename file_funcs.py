@@ -714,7 +714,9 @@ def build_torque_and_k_from_file(path: str, *, contact: bool = True, angles_in_d
 def already_done_in_dir(job, prev_dir):
     init = correct_buckle_string(np.array(job["init_buckle_tup"]).reshape(4, 1))
     des = correct_buckle_string(np.array(job["desired_buckle_tup"]).reshape(4, 1))
-    return any(Path(prev_dir).glob(f"*init_{init}_desired_{des}*"))
+
+    pattern = f"*init_{init}_desired_{des}*"
+    return any(p.is_file() and not p.name.startswith("log_") for p in Path(prev_dir).glob(pattern))
 
 
 # -----------------------------

@@ -536,9 +536,9 @@ def plot_success_matrix(M: NDArray, N: int = 16, M_flag: Optional[NDArray] = Non
                        patches.Patch(facecolor=custom_cmap(im.norm(1)), label="Missing"),
                        patches.Patch(facecolor=custom_cmap(im.norm(2)), label="Failure")]
     if M_flag is not None:
-        legend_elements.append(Line2D([0], [0], color=colors_lst[4], linestyle="-", linewidth=2, label="Self-intersection"))
+        legend_elements.append(Line2D([0], [0], color=flag_color, linestyle="-", linewidth=2, label="Self-intersection"))
     if M_flip is not None:
-        legend_elements.append(Line2D([0], [0], color=colors_lst[4], linestyle="-", linewidth=2, label="Symmetrical chain"))
+        legend_elements.append(Line2D([0], [0], color=flip_color, linestyle="-", linewidth=2, label="Symmetrical chain"))
     plt.legend(handles=legend_elements, loc="upper left", bbox_to_anchor=(1.02, 1))
 
     # ------ show ------
