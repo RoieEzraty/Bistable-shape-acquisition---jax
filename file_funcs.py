@@ -95,14 +95,16 @@ def load_pos_force(path: str, mod: Literal["dict", "arrays"] = "dict",
 
             for r in reader:
                 # ---- time ----
-                t_val, _ = helpers_builders._get_first_in_file(r, ["t_unix", "time", "t"], name="time", allow_missing=True)
+                t_val, _ = helpers_builders._get_first_in_file(r, ["t_unix", "time", "t"], name="time",
+                                                               allow_missing=True)
                 if t_val is not None:
                     T.append(t_val)
 
                 # ---- position / tip pose ----
                 x, _ = helpers_builders._get_first_in_file(r, ["pos_x", "x_tip", "Px"], name="x")
                 y, _ = helpers_builders._get_first_in_file(r, ["pos_y", "y_tip", "Py"], name="y")
-                theta, theta_key = helpers_builders._get_first_in_file(r, ["theta", "tip_angle_rad", "tip_angle_deg", "pos_z"], name="theta")
+                theta, theta_key = helpers_builders._get_first_in_file(r, ["theta", "tip_angle_rad",
+                                                                           "tip_angle_deg", "pos_z"], name="theta")
 
                 if stretch_factor is not None:
                     x *= stretch_factor
@@ -321,7 +323,8 @@ def loss_from_filename(file: Path):
 
 
 def build_success_matrix(folder: Path, old: bool = False, N: int = 16, near_miss: bool = False,
-                         symmetry: bool = False, omit_inverted: bool = False) -> Tuple[NDArray, NDArray]:
+                         symmetry: bool = False, omit_inverted: bool = False,
+                         find_symmetrical: bool = False) -> Tuple[NDArray, NDArray]:
     """
     Build matrix marking which runs successded (M) alongside which runs had self-intersections (M_flag).
 
@@ -378,7 +381,12 @@ def build_success_matrix(folder: Path, old: bool = False, N: int = 16, near_miss
 
         # flag of intersection
         flagged_int = "_intersect" in name
-        flagged_flip = "_flip_chain" in name
+        if find_symmetrical:
+            flagged_flip = is_symmetrical_reached(file=file)
+            if flagged_flip:
+                success = True
+        else:
+            flagged_flip = "_flip_chain" in name
 
         if success:
             B[i, j] = 0
@@ -397,40 +405,6 @@ def build_success_matrix(folder: Path, old: bool = False, N: int = 16, near_miss
             M[N-1-i, N-1-j] = M[i, j]
 
     return M, M_flag, M_flip
-
-
-# This was merged into build_success_matrix
-# def build_intersection_matrix(folder: Path, N: int = 16) -> NDArray[np.int_]:
-#     """
-#     Build a matrix marking which runs had self-intersections.
-
-#     Returns
-#     -------
-#     M_flag : (N, N) ndarray of int
-#         1 where the run file exists and is flagged as intersecting,
-#         0 otherwise.
-#     """
-#     M_flag = np.zeros((N, N), dtype=int)
-
-#     for file in folder.glob("final_loss_*.csv"):
-#         name = file.stem
-
-#         init_bits = re.search(r"init_([01]+)", name).group(1)
-#         desired_bits = re.search(r"desired_([01]+)", name).group(1)
-
-#         # buckle_to_index accepts either 0/1 or -1/+1 effectively,
-#         # because it maps x == 1 -> 1, else -> 0
-#         init = [int(ch) for ch in init_bits]
-#         desired = [int(ch) for ch in desired_bits]
-
-#         i = helpers_builders.buckle_to_index(init)
-#         j = helpers_builders.buckle_to_index(desired)
-
-#         flagged = "_intersect" in name
-#         if flagged:
-#             M_flag[i, j] = 1
-
-#     return M_flag
 
 
 def shortest_success_paths(M: np.ndarray):
@@ -562,6 +536,27 @@ def get_pathway_between_states(init_state: str, desired_state: str, next_hop: np
     if not path:
         return None
     return [helpers_builders.index_to_buckle(k) for k in path]
+
+
+def is_symmetrical_reached(file: Path) -> bool:
+
+    name = file.name
+
+    target_str = re.search(r"desired_([01]+)", name).group(1)
+    target_arr = helpers_builders.buckle_cell_to_array(target_str)
+    symmetrical_target = -target_arr
+    # print('target_arr=', target_arr)
+
+    df = pd.read_csv(file)
+
+    buckles = df["buckle_arr_update"].apply(lambda s: np.array(json.loads(s), dtype=int))
+
+    reached = buckles.apply(lambda a: np.array_equal(a, symmetrical_target)).any()
+
+    if reached:
+        return True
+
+    return False
 
 
 # ---------------------------------------------------------------

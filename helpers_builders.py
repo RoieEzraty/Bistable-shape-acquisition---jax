@@ -310,7 +310,7 @@ def clamp_pos_same_delta(*, before_prev: NDArray, tip_angle_new: float, tip_raw:
 
             valid = np.ones(len(pts), dtype=bool)
 
-            # For your case: if raw dy says "go up", never accept a candidate
+            # If raw dy says "go up", never accept a candidate
             # whose corrected dy goes down, unless numerical tolerance makes it zero.
             if abs(raw_update_tip[1]) > eps:
                 sy = np.sign(raw_update_tip[1])
@@ -1331,27 +1331,30 @@ def index_to_buckle(i: int, n_bits: int = 4) -> str:
     return format(i, f"0{n_bits}b")
 
 
-def buckle_cell_to_array(cell) -> np.ndarray:
+def buckle_cell_to_array(cell, *, keep_2d: bool = True) -> np.ndarray:
     """
-    Convert CSV buckle cell into numpy array.
-    Supports:
-        - JSON string
-        - python list
-        - numpy array
-    Returns shape (H,) with ints ±1
+    Supports JSON cells and filename bit strings like "0110".
+    0 -> -1, 1 -> +1.
     """
     if isinstance(cell, np.ndarray):
-        arr = cell
+        arr = np.asarray(cell, dtype=int)
 
     elif isinstance(cell, list):
         arr = np.array(cell, dtype=int)
 
     elif isinstance(cell, str):
-        arr = np.array(json.loads(cell), dtype=int)
+        s = cell.strip()
+
+        if re.fullmatch(r"[01]+", s):
+            arr = np.array([1 if ch == "1" else -1 for ch in s], dtype=int).reshape(-1, 1)
+        else:
+            arr = np.array(json.loads(s), dtype=int)
 
     else:
         raise TypeError(f"Unsupported buckle cell type: {type(cell)}")
 
+    if keep_2d:
+        return arr.reshape(-1, 1)
     return arr.reshape(-1)
 
 

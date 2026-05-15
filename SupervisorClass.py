@@ -238,7 +238,7 @@ class SupervisorClass:
                        tip_angle: Optional[float] = None, dist_noise: float = 0.01, angle_noise: float = 0.1) -> None:
         """
         Generate and store commanded tip positions and angles for the supervisor.
-        according to sampling strategy. These trajectories are used in measurement, update, or stress–strain protocols.
+        according to sampling strategy. These are used in measurement, update, or stress–strain protocols.
 
         Parameters
         ----------
@@ -821,7 +821,22 @@ class SupervisorClass:
         return delta_tip_x, delta_tip_y, delta_angle
 
     def _delta_pos(self, t, Strctr, Variabs, State_meas, State_des):
-        sgnx = np.sign(self.tip_pos_update_in_t[t-1, 0] - Strctr.L/2)
+
+        x_rel = self.tip_pos_update_in_t[t-1, 0] - Strctr.L/2
+        # Up to May 11 - relative sign
+        sgnx = np.sign(x_rel)
+
+        # # May 11 - hysteretic sign
+        # deadband = 0.1 * Strctr.L
+        # if not hasattr(self, "sgnx_branch"):
+        #     self.sgnx_branch = 1.0
+
+        # if x_rel > deadband:
+        #     self.sgnx_branch = 1.0
+        # elif x_rel < -deadband:
+        #     self.sgnx_branch = -1.0
+        # sgnx = self.sgnx_branch
+
         sgny = np.sign(self.tip_pos_update_in_t[t-1, 1])
         if sgnx == 0.0:
             sgnx = 1
