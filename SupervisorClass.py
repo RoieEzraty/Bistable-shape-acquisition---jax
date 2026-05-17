@@ -824,8 +824,10 @@ class SupervisorClass:
 
         x_rel = self.tip_pos_update_in_t[t-1, 0] - Strctr.L/2
         # Up to May 11 - relative sign
-        sgnx = np.sign(x_rel)
-
+        sgnx_update = np.sign(x_rel)
+        sgny_update = np.sign(self.tip_pos_update_in_t[t-1, 1])
+        sgnx_meas = np.sign(State_meas.pos_arr[-1][0])
+        sgny_meas = np.sign(State_meas.pos_arr[-1][1])
         # # May 11 - hysteretic sign
         # deadband = 0.1 * Strctr.L
         # if not hasattr(self, "sgnx_branch"):
@@ -837,13 +839,17 @@ class SupervisorClass:
         #     self.sgnx_branch = -1.0
         # sgnx = self.sgnx_branch
 
-        sgny = np.sign(self.tip_pos_update_in_t[t-1, 1])
-        if sgnx == 0.0:
-            sgnx = 1
-        if sgny == 0.0:
-            sgny = 1
-        delta_tip_x = - self.alpha * (-self.loss[0]) * (-sgny) * Variabs.norm_pos  # Mar23
-        delta_tip_y = - self.alpha * (-self.loss[1]) * (+sgnx) * Variabs.norm_pos  # Mar23
+        if sgnx_update == 0.0:
+            sgnx_update = 1
+        if sgny_update == 0.0:
+            sgny_update = 1
+        if sgnx_meas == 0.0:
+            sgnx_meas = 1
+        if sgny_meas == 0.0:
+            sgny_meas = 1
+
+        delta_tip_x = - self.alpha * (-self.loss[0]) * (-sgny_update) * (-sgny_meas) * Variabs.norm_pos  # Mar23
+        delta_tip_y = - self.alpha * (-self.loss[1]) * (+sgnx_update) * (+sgnx_meas) * Variabs.norm_pos  # Mar23
         # delta_tip_x = - self.alpha * (-self.loss[0]) * Variabs.norm_pos  # May3 for rotation matrix
         # delta_tip_y = - self.alpha * (-self.loss[1]) * Variabs.norm_pos  # May3 for rotation matrix
         delta_angle = - self.alpha * (-self.loss[2]) * Variabs.norm_angle  # Mar23

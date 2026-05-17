@@ -245,7 +245,7 @@ def clamp_pos_same_delta(*, before_prev: NDArray, tip_angle_new: float, tip_raw:
         else:
             before_new = center + disp_raw * (R_lim / r_raw)
     else:
-        # before 7May
+        # # before 7May
         # before_new = min(pts, key=lambda p: np.sum((p - before_raw)**2))
 
         # evening 7May
@@ -314,32 +314,66 @@ def clamp_pos_same_delta(*, before_prev: NDArray, tip_angle_new: float, tip_raw:
             # whose corrected dy goes down, unless numerical tolerance makes it zero.
             if abs(raw_update_tip[1]) > eps:
                 sy = np.sign(raw_update_tip[1])
-                valid &= np.array([
-                    np.sign(cd[1]) == sy or abs(cd[1]) < eps
-                    for cd in cand_delta
-                ])
+                valid &= np.array([np.sign(cd[1]) == sy or abs(cd[1]) < eps for cd in cand_delta])
 
             # Optional: also preserve x direction if meaningful.
             if np.any(valid) and abs(raw_update_tip[0]) > eps:
                 sx = np.sign(raw_update_tip[0])
-                valid_x = valid & np.array([
-                    np.sign(cd[0]) == sx or abs(cd[0]) < eps
-                    for cd in cand_delta
-                ])
+                valid_x = valid & np.array([np.sign(cd[0]) == sx or abs(cd[0]) < eps for cd in cand_delta])
                 if np.any(valid_x):
                     valid = valid_x
 
             if np.any(valid):
                 inds = np.where(valid)[0]
-                best_idx = min(
-                    inds,
-                    key=lambda k: np.sum((tip_candidates[k] - tip_raw) ** 2)
-                )
+                best_idx = min(inds, key=lambda k: np.sum((tip_candidates[k] - tip_raw) ** 2))  # May 10
                 before_new = pts[int(best_idx)]
             else:
                 before_new = min(pts, key=lambda p: np.sum((p - before_raw) ** 2))
         else:
             before_new = min(pts, key=lambda p: np.sum((p - before_raw) ** 2))
+
+    # # from May15
+    # # Choose the clamped candidate whose TIP displacement best preserves
+    # # the raw requested update direction, especially y.
+    # u = np.asarray(u, dtype=float).reshape(2,)
+    # tip_candidates = [p + L * u for p in pts]
+    # if raw_update_tip is not None and tip_update_prev is not None:
+    #     tip_update_prev = np.asarray(tip_update_prev, dtype=float).reshape(2,)
+    #     raw_update_tip = np.asarray(raw_update_tip, dtype=float).reshape(2,)
+
+    #     cand_delta = [tc - tip_update_prev for tc in tip_candidates]
+
+    #     r = before_prev - center
+    #     r_norm = np.linalg.norm(r)
+
+    #     if r_norm > eps:
+    #         r_hat = r / r_norm
+    #         t_ccw = np.array([-r_hat[1], r_hat[0]])
+    #         t_cw = np.array([r_hat[1], -r_hat[0]])
+
+    #         # choose whether raw update wants CW or CCW
+    #         raw_tangent_score = np.dot(raw_update_tip, t_ccw)
+
+    #         if abs(raw_tangent_score) > eps:
+    #             desired_tangent = t_ccw if raw_tangent_score > 0 else t_cw
+
+    #             scores = np.array([
+    #                 np.dot(cd, desired_tangent)
+    #                 for cd in cand_delta
+    #             ])
+
+    #             valid = scores > -eps
+
+    #             if np.any(valid):
+    #                 inds = np.where(valid)[0]
+    #                 best_idx = inds[np.argmax(scores[inds])]
+    #                 before_new = pts[int(best_idx)]
+    #             else:
+    #                 before_new = min(pts, key=lambda p: np.sum((p - before_raw) ** 2))
+    #         else:
+    #             before_new = min(pts, key=lambda p: np.sum((p - before_raw) ** 2))
+    #     else:
+    #         before_new = min(pts, key=lambda p: np.sum((p - before_raw) ** 2))
 
         # morning 7May
         # u = np.asarray(u, dtype=float).reshape(2,)
