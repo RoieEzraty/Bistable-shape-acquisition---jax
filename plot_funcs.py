@@ -269,9 +269,10 @@ def plot_tau_afo_theta(torque_func) -> None:
     plt.show()
 
 
-def plot_compare_sim_exp_stress_strain(exp_dfs: List[pd.DataFrame], sim_df: pd.DataFrame, translate_ratio: float) -> None:
+def plot_compare_sim_exp_stress_strain(exp_dfs: List[pd.DataFrame], sim_df: pd.DataFrame,
+                                       translate_ratio: float) -> None:
     """
-    Plot experimental and simulated stress–strain curves for comparison of a full chain sumulation.
+    Plot experimental and simulated stress–strain curves for comparison of a full chain simulation.
 
     Parameters
     ----------
@@ -331,6 +332,113 @@ def plot_compare_sim_exp_stress_strain(exp_dfs: List[pd.DataFrame], sim_df: pd.D
     plt.xlabel("pos [mm]", fontsize=font_size)
     plt.ylabel("Force [N]", fontsize=font_size)
     plt.legend(legend_labels, fontsize=font_size)
+    plt.show()
+
+
+def plot_compare_sim_exp_training(exp_file_path: str, sim_file_path: str,
+                                  translate_ratio: float, final_t: Optional[int] = None,
+                                  save: bool = False) -> None:
+    """
+    Plot experimental and simulated training for comparison of a full chain simulation.
+
+    Parameters
+    ----------
+    exp_dfs : List[pandas.DataFrame]
+        A list of experimental dataframes. Each dataframe must contain
+        the columns:
+            - "Position (mm)" : tip position in millimeters
+            - "Load2 (N)"    : measured load (force) in Newtons
+
+    sim_df : pandas.DataFrame
+        Simulation results. Must contain:
+            - "x_tip" : simulated tip x-position
+            - "Fx"    : simulated x-direction force
+
+    translate_ratio : float
+        Factor converting displacement units (e.g., mm). Applied as:
+            (x_tip - x_tip_initial) * translate_ratio
+
+    Returns
+    -------
+    None
+        matplotlib figure
+
+    Notes
+    -----
+    - Experimental curves are smoothed using a Savitzky–Golay filter
+      with window length 16 and polynomial order 4.
+    - Simulation force is plotted as -Fx to match the experimental sign
+      convention.
+    """
+    colors_lst, red, custom_cmap = colors.color_scheme()
+    plt.rcParams["axes.prop_cycle"] = plt.cycler("color", colors_lst)
+    font_size = 16
+
+    # read experimental dataframe and extract sizes
+    exp_df = pd.read_csv(exp_file_path)
+
+    F_exp_meas = np.vstack([exp_df["F_x_meas"].to_numpy(dtype=float),
+                            exp_df["F_y_meas"].to_numpy(dtype=float)])  # shape (2, T)
+    F_exp_des = np.vstack([exp_df["F_x_des"].to_numpy(dtype=float),
+                           exp_df["F_y_des"].to_numpy(dtype=float)])  # shape (2, T)
+    loss_MSE_exp = exp_df["loss_MSE"].to_numpy(dtype=float)
+
+    # read simulation dataframe
+    sim_df = pd.read_csv(sim_file_path)
+
+    F_sim_meas = np.vstack([sim_df["F_x_meas"].to_numpy(dtype=float),
+                            sim_df["F_y_meas"].to_numpy(dtype=float)])  # shape (2, T)
+    F_sim_des = np.vstack([sim_df["F_x_des"].to_numpy(dtype=float),
+                           sim_df["F_y_des"].to_numpy(dtype=float)])  # shape (2, T)
+    loss_MSE_sim = sim_df["loss_MSE"].to_numpy(dtype=float)
+
+    # time steps
+    T = int(F_exp_meas.shape[1])
+    if final_t is None:
+        final_t = T
+    sl = slice(1, final_t)
+    t = np.arange(T, dtype=int)
+
+    fig, axs = plt.subplots(nrows=2, ncols=2, sharex=True, figsize=(6, 6), gridspec_kw={"height_ratios": [1, 1]})
+
+    # ===== top: forces =====
+    markersize = 10.0
+
+    axs[0].plot(t[sl], F_exp_meas[0, sl],
+                marker=".", linestyle="None", markersize=markersize,
+                color=colors_lst[1], label="Fx measured")
+    axs[0].plot(t[sl], F_exp_des[0, sl],
+                marker=".", linestyle="None", markersize=markersize,
+                color=colors_lst[1], label="Fx desired")
+
+    axs[0].plot(t[sl], F_exp_meas[1, sl],
+                marker=".", linestyle="None", markersize=markersize,
+                color=colors_lst[2], label="Fy measured")
+    axs[0].plot(t[sl], F_exp_des[1, sl],
+                marker=".", linestyle="None", markersize=markersize,
+                color=colors_lst[2], label="Fy desired")
+
+    axs[0].plot(t[sl], F_sim_meas[0, sl], color=colors_lst[1], label="Fx measured")
+    axs[0].plot(t[sl], F_sim_des[0, sl], color=colors_lst[1], linestyle="--", label="Fx desired")
+
+    axs[0].plot(t[sl], F_sim_meas[1, sl], color=colors_lst[2], label="Fy measured")
+    axs[0].plot(t[sl], F_sim_des[1, sl], color=colors_lst[2], linestyle="--", label="Fy desired")
+
+    # ===== bottom: MSE loss =====
+    axs[1].plot(t[sl], loss_MSE_exp[sl], marker=".", linestyle="None", markersize=markersize, color=colors_lst[0], 
+                label="loss MSE")
+    axs[1].plot(t[sl], loss_MSE_sim[sl], color=colors_lst[0])
+    axs[1].plot(t[sl], np.zeros(len(t[sl])), color=colors_lst[0], linestyle="--")
+    axs[1].set_xlabel("t", fontsize=font_size)
+    axs[1].set_ylabel("Loss", fontsize=font_size)
+    axs[1].set_ylim([-2, 2])
+    axs[1].legend(loc="best")
+
+    axs[-1].xaxis.set_major_locator(MaxNLocator(integer=True))
+
+    plt.tight_layout()
+    if save:
+        plt.savefig("importants.png", dpi=300, bbox_inches="tight")
     plt.show()
 
 
@@ -595,12 +703,14 @@ def plot_success_matrix_with_pathways(M_corr: np.ndarray, N: int, title: str = "
     plt.show()
 
 
-def plot_transition_diagram(transitions: Counter, *, only_reached_nodes: bool = False, edge_zero_loss_count=None,
-                            missing_edges=None):
+def plot_transition_diagram(transitions: Counter, *, transitions_between_runs: bool = True,
+                            only_reached_nodes: bool = False, edge_zero_loss_count=None, missing_edges=None):
     colors_lst, _, _ = colors.color_scheme()
-    node_edge = "black"
+    occured_clr = colors_lst[0]
+    success_clr = colors_lst[1]
+    missing_clr = colors_lst[4]
+    node_perim = "black"
     node_face = "white"
-    arrow_color = colors_lst[0]
     text_color = "black"
 
     H = max(max(i, j) for (i, j) in transitions.keys()).bit_length()
@@ -622,7 +732,7 @@ def plot_transition_diagram(transitions: Counter, *, only_reached_nodes: bool = 
         if s not in used_nodes:
             continue
         x, y = pos[s]
-        node = Ellipse((x, y), width=0.1, height=0.08, facecolor=node_face, edgecolor=node_edge, lw=2.5)
+        node = Ellipse((x, y), width=0.1, height=0.08, facecolor=node_face, edgecolor=node_perim, lw=2.5)
         ax.add_patch(node)
         ax.text(x, y, s, ha="center", va="center", fontsize=18, color=text_color)
 
@@ -634,22 +744,6 @@ def plot_transition_diagram(transitions: Counter, *, only_reached_nodes: bool = 
 
     if edge_zero_loss_count is None:
         edge_zero_loss_count = Counter()
-
-    # for (src, dst), count in transitions.items():
-    #     source = helpers_builders.index_to_buckle(src)
-    #     dist = helpers_builders.index_to_buckle(dst)
-    #     x1, y1 = pos[source]
-    #     x2, y2 = pos[dist]
-
-    #     # slight curvature if reverse edge also exists
-    #     rev_exists = (dst, src) in transitions
-    #     rad = 0.18 if rev_exists and src < dst else (-0.18 if rev_exists else 0.0)
-
-    #     lw = 1.5 + 3.0 * count / max_count  # edge width, change to uniform for all arrows at same width
-
-    #     arrow = FancyArrowPatch((x1, y1), (x2, y2), arrowstyle="-|>", mutation_scale=16, lw=lw, color=arrow_color,
-    #                             shrinkA=28, shrinkB=28, connectionstyle=f"arc3,rad={rad}")
-    #     ax.add_patch(arrow)
 
     for (src, dst), count in transitions.items():
         source = helpers_builders.index_to_buckle(src)
@@ -663,20 +757,12 @@ def plot_transition_diagram(transitions: Counter, *, only_reached_nodes: bool = 
         lw = 2.5 + 4.0 * count / max_count
 
         if edge_zero_loss_count[(src, dst)] > 0:
-            edge_color = "c"   # or "cyan"
+            edge_color = success_clr   # or "cyan"
         else:
-            edge_color = arrow_color
+            edge_color = occured_clr
 
-        arrow = FancyArrowPatch(
-            (x1, y1), (x2, y2),
-            arrowstyle="-|>",
-            mutation_scale=22,
-            lw=lw,
-            color=edge_color,
-            shrinkA=20,
-            shrinkB=20,
-            connectionstyle=f"arc3,rad={rad}",
-        )
+        arrow = FancyArrowPatch((x1, y1), (x2, y2), arrowstyle="-|>", mutation_scale=22, lw=lw, color=edge_color,
+                                shrinkA=20, shrinkB=20, connectionstyle=f"arc3,rad={rad}")
         ax.add_patch(arrow)
 
     if missing_edges:
@@ -691,20 +777,23 @@ def plot_transition_diagram(transitions: Counter, *, only_reached_nodes: bool = 
             rev_exists = (dst, src) in observed_edges or (dst, src) in missing_edges
             rad = 0.12 if rev_exists and src < dst else (-0.12 if rev_exists else 0.0)
 
-            arrow = FancyArrowPatch(
-                (x1, y1), (x2, y2),
-                arrowstyle="-|>",
-                mutation_scale=14,
-                lw=1.5,
-                linestyle="--",
-                color=colors_lst[4],
-                alpha=0.75,
-                shrinkA=22,
-                shrinkB=22,
-                connectionstyle=f"arc3,rad={rad}",
-                zorder=0,
-            )
+            arrow = FancyArrowPatch((x1, y1), (x2, y2), arrowstyle="-|>", mutation_scale=14, lw=1.5, linestyle="--",
+                                    color=missing_clr, alpha=0.75, shrinkA=22, shrinkB=22,
+                                    connectionstyle=f"arc3,rad={rad}", zorder=0)
             ax.add_patch(arrow)
+
+    # ------- legend ------
+    legend_handles = []
+
+    if transitions_between_runs:
+        legend_handles += [Line2D([0], [0], color=success_clr, lw=3, label="successful transition"),
+                           Line2D([0], [0], color=occured_clr, lw=3, label="unintentional")]
+    else:
+        legend_handles += [Line2D([0], [0], color=occured_clr, lw=3, label="occurred")]
+
+    legend_handles += [Line2D([0], [0], color=missing_clr, lw=2, linestyle="--", label="missing")]
+
+    ax.legend(handles=legend_handles, loc="upper right", frameon=False, fontsize=14)
 
     ax.set_aspect("equal")
     ax.axis("off")

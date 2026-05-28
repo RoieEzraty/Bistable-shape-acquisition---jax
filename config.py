@@ -68,8 +68,12 @@ class VariablesConfig:
             # object.__setattr__(self, "thresh", 1.53)  # Feb23 realistically from just before red south
             # object.__setattr__(self, "tau_file", "single_hinge_files/Stress_Strain_1myl1tp_otherEnd_short.csv")
             # object.__setattr__(self, "tau_file", "single_hinge_files/Mar9_filled_average.csv")
-            object.__setattr__(self, "tau_file", "single_hinge_files/Mar12_dl90.csv")
-            object.__setattr__(self, "thresh", 1.24)  # Mar12 dl90 
+            # object.__setattr__(self, "tau_file", "single_hinge_files/Mar12_dl90.csv")  # up to May22
+            # object.__setattr__(self, "thresh", 1.24)  # Mar12 dl90
+            # object.__setattr__(self, "tau_file", "single_hinge_files/May22_old_dl90_toughend.csv")
+            # object.__setattr__(self, "thresh", 1.1)  # May22_old_dl90_toughend
+            object.__setattr__(self, "tau_file", "single_hinge_files/May24_dl90_1stEnd.csv")
+            object.__setattr__(self, "thresh", 0.92)  # May22_old_dl90_weakend
             # object.__setattr__(self, "thresh", 1.99)  # Feb23
             # object.__setattr__(self, "thresh", 1.58)
             # object.__setattr__(self, "thresh", 1.9)  # Feb22 measurements from just before Red South
@@ -161,13 +165,13 @@ class TrainingConfig:
         # desired_buckle_pattern: tuple = (-1, 1, 1, 1)  # which shims should be buckled up, initially
 
     # init_buckle_pattern: tuple = (-1, -1, -1, -1, 1)  # which shims should be buckled up, initially
-    init_buckle_pattern: tuple = (1, -1, -1, -1)  # which shims should be buckled up, initially
+    init_buckle_pattern: tuple = (-1, -1, -1, 1)  # which shims should be buckled up, initially
     # init_buckle_pattern: tuple = (1, 1, 1, -1)  # which shims should be buckled up, initially
     # init_buckle_pattern: tuple = (1)  # which shims should be buckled up, initially
 
     # dataset_sampling: str = 'uniform'  # random uniform vals for x, y, angle
-    # dataset_sampling: str = 'predetermined'  # import measured F along predetermined trajectory every training step t
-    dataset_sampling: str = 'free_tip'  # free tip pos and angle (zero forces at sensor) during measurement
+    dataset_sampling: str = 'predetermined'  # import measured F along predetermined trajectory every training step t
+    # dataset_sampling: str = 'free_tip'  # free tip pos and angle (zero forces at sensor) during measurement
     # dataset_sampling: str = 'specified'  # constant
     # dataset_sampling: str = 'tile'  # constant
     # dataset_sampling = 'almost_flat'  # flat piece w a bit of constant noise, single measurement
@@ -175,14 +179,14 @@ class TrainingConfig:
     # dataset_sampling = 'stress strain'
 
     # dataset_file: str = r"Predetermined trajectory\Mar23\buckle={}.csv"
-    dataset_file: str = r"Predetermined trajectory\Mar22\buckle={}.csv"
+    dataset_file: str = r"Predetermined trajectory\May27\short_arc\buckle={}.csv"
     # dataset_file: str = r"Predetermined trajectory\Mar30\zeroDeg_farther\buckle={}.csv"
 
     # # tip values to buckle shims - 'BEASTAL' for the BEASTAL scheme, else 'one_to_one'
     # update_scheme: str = 'one_to_one'  # direct normalized loss, equal to num of outputs
-    # update_scheme: str = 'loss_diff'  # difference of x and y loss components
+    update_scheme: str = 'loss_diff'  # difference of x and y loss components
     # update_scheme: str = 'loss_x_trend'  # delta tip by trend of loss x, delta angle by addition of losses
-    update_scheme: str = 'pos'  # difference in measured and desired tip position and angle
+    # update_scheme: str = 'pos'  # difference in measured and desired tip position and angle
     # update_scheme: str = 'lossx_concavity'  # tip_angle changes due to concavity of loss x along trajectory.
     #                                         # tip pos due to loss_y sign
     # update_scheme: str = 'radial_one_to_one'  # evolve tip angle and large radius due to instantaneous loss

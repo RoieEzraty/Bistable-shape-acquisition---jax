@@ -385,7 +385,7 @@ class SupervisorClass:
             self.symmetrical_state = True
             self.loss_MSE = 0.0
         else:
-            self.loss_MSE = np.sqrt(np.sum(self.loss**2))
+            self.loss_MSE = np.mean(self.loss**2)
         self.loss_MSE_in_t[t] = self.loss_MSE
 
     def calc_concavity(self, F_meas_full_traj, F_des_full_traj) -> None:
