@@ -305,7 +305,8 @@ def measure_determined_pos_from_file(Strctr: "StructureClass", Variabs: "Variabl
     State = StateClass(Strctr, Sprvsr, buckle_arr=buckle)
 
     # Tip calibration simulation-to-experiment
-    tip_offset = np.array([-0.003, 0.0], dtype=float)
+    # tip_offset = np.array([-0.003, 0.0], dtype=float)  # up to May21
+    tip_offset = np.array([0.0, 0.0], dtype=float)  # up to May21
 
     prev_final_pos = None  # warm-start position for next step
 
@@ -401,7 +402,7 @@ def one_shot(Strctr: "StructureClass", Variabs: "VariablesClass", Sprvsr: "Super
                                                                    tip_angle=tip_angle)
     # ------ save, plot, print ------
     State._save_data(t, Strctr, final_pos, State.buckle_arr, F_in_t)
-    State.buckle(Variabs, Strctr, t, State_measured=State)   
+    State.buckle(Variabs, Strctr, t, State_measured=State)
     print('pos_arr', final_pos)
     print('edge len', Strctr.all_edge_lengths(State.pos_arr))
     print('total edge error', np.sum((Strctr.all_edge_lengths(State.pos_arr)-Strctr.L)**2)/(Strctr.edges*Strctr.L**2))

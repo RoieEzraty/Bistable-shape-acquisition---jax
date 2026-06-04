@@ -32,9 +32,9 @@ if TYPE_CHECKING:
 # ---------------------------------------------------------------
 # Imports
 # ---------------------------------------------------------------
-def load_pos_force(path: str, mod: Literal["dict", "arrays"] = "dict", 
-                   stretch_factor: Optional[float] = None) -> Union[List[Dict[str, Any]], 
-                                                                    Tuple[NDArray[np.float64], NDArray[np.float64], 
+def load_pos_force(path: str, mod: Literal["dict", "arrays"] = "dict",
+                   stretch_factor: Optional[float] = None) -> Union[List[Dict[str, Any]],
+                                                                    Tuple[NDArray[np.float64], NDArray[np.float64],
                                                                           NDArray[np.float64]]]:
     """
     Load tip positions and forces from a CSV file using csv.DictReader, and convert it into either:
@@ -47,7 +47,8 @@ def load_pos_force(path: str, mod: Literal["dict", "arrays"] = "dict",
     mod            : {"dict", "arrays"}, default="dict"
                      - `"dict"`   = list of dictionaries with keys `"t_unix"`, `"pos"`, `"force"`
                      - `"arrays"` = tuple `(T, P, F)` of NumPy arrays
-    stretch_factor : Optional[float], Optional scaling applied to x and y positions, for rescaling experimental trajectories.
+    stretch_factor : Optional[float], Optional scaling applied to x and y positions,
+                                      for rescaling experimental trajectories.
 
     Returns
     -------
@@ -124,6 +125,50 @@ def load_pos_force(path: str, mod: Literal["dict", "arrays"] = "dict",
 
     else:
         raise ValueError(f"Unknown mode: {mod}")
+
+
+def load_full_pos_in_t(path: str | Path, stretch_factor: Optional[float] = None) -> NDArray[np.float64]:
+    """Load full arm positions in time from a CSV column.
+
+    Parameters
+    ----------
+    path : str | Path
+        CSV path containing a ``final_pos_update`` column.
+    stretch_factor : float | None, optional
+        If provided, multiply all positions by this factor.
+
+    Returns
+    -------
+    NDArray[np.float64]
+        Positions in time, shape ``(T, N, 2)``.
+    """
+    P_lst: list[NDArray[np.float64]] = []
+    B_lst: list[NDArray[np.float64]] = []
+
+    with Path(path).open(newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+
+        for r in reader:
+            pos, _ = helpers_builders._get_first_in_file(r, ["final_pos_update"], name="final_pos_update",
+                                                         type="NDArray")
+            buckle, _ = helpers_builders._get_first_in_file(r, ["buckle_arr_update"], name="buckle_arr_update",
+                                                            type="NDArray")
+
+            pos = np.asarray(pos, dtype=float)
+            buckle = np.asarray(buckle, dtype=float)
+
+            if stretch_factor is not None:
+                pos = pos * stretch_factor
+
+            P_lst.append(pos)
+            B_lst.append(buckle)
+
+    if not P_lst:
+        return np.empty((0, 0, 2), dtype=float)
+    if not B_lst:
+        return np.empty((0, 0), dtype=float)
+
+    return np.stack(P_lst, axis=0), np.stack(B_lst, axis=0)
 
 
 # ---------------------------------------------------------------

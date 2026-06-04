@@ -106,7 +106,7 @@ class StructureClass(eqx.Module):
         update_scheme      - {"one_to_one", "BEASTAL"}
                              If "BEASTAL", build the learning incidence structure (DM, NE, NN, ...).
                              If "one_to_one", each force effects only its corresponding position index
-        Nin, Nout          - int, optional. N Input / output, 
+        Nin, Nout          - int, optional. N Input / output,
                              for `learning_funcs.build_incidence` when the "BEASTAL" update scheme is used.
         control_first_edge - bool, default True
                              True = first two nodes are fixed (nodes 0 and 1).
@@ -132,7 +132,7 @@ class StructureClass(eqx.Module):
         self.fixed_mask = self._build_fixed_mask(control_first_edge)
 
         # learning fields left as None until _build_learning_parameters is called
-       
+
     # ------------------------------------------------------------------
     # Builders
     # ------------------------------------------------------------------

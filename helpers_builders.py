@@ -7,6 +7,7 @@ import jax.numpy as jnp
 import re
 import pandas as pd
 import json
+import ast
 
 from pathlib import Path
 from collections import Counter, defaultdict
@@ -1195,7 +1196,7 @@ def _get_state_free_from_full(state_0: NDArray, fixed_mask: NDArray, imposed_mas
 
 
 def _get_first_in_file(r: Mapping[str, Union[str, float, int, None]], keys: Iterable[str], *, name: str = "",
-                       allow_missing: bool = False) -> Optional[tuple(float, str)]:
+                       type = "float", allow_missing: bool = False) -> Optional[tuple(float, str)]:
     """
     Extract first valid scalar value from a csv, using list of candidate keys. If no valid key is found: returns `None`
 
@@ -1212,7 +1213,10 @@ def _get_first_in_file(r: Mapping[str, Union[str, float, int, None]], keys: Iter
     """
     for k in keys:
         if k in r and r[k] not in ("", None):
-            return float(r[k]), k
+            if type == "float":
+                return float(r[k]), k
+            elif type == "NDArray":
+                return np.asarray(ast.literal_eval(r[k]), dtype=float), k
     if allow_missing:
         return None, None
     raise KeyError(f"None of {keys} found for {name}")

@@ -72,7 +72,7 @@ class VariablesConfig:
             # object.__setattr__(self, "thresh", 1.24)  # Mar12 dl90
             # object.__setattr__(self, "tau_file", "single_hinge_files/May22_old_dl90_toughend.csv")
             # object.__setattr__(self, "thresh", 1.1)  # May22_old_dl90_toughend
-            object.__setattr__(self, "tau_file", "single_hinge_files/May24_dl90_1stEnd.csv")
+            object.__setattr__(self, "tau_file", "single_hinge_files/May24_dl90_2ndEnd.csv")
             object.__setattr__(self, "thresh", 0.92)  # May22_old_dl90_weakend
             # object.__setattr__(self, "thresh", 1.99)  # Feb23
             # object.__setattr__(self, "thresh", 1.58)
