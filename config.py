@@ -72,8 +72,10 @@ class VariablesConfig:
             # object.__setattr__(self, "thresh", 1.24)  # Mar12 dl90
             # object.__setattr__(self, "tau_file", "single_hinge_files/May22_old_dl90_toughend.csv")
             # object.__setattr__(self, "thresh", 1.1)  # May22_old_dl90_toughend
-            object.__setattr__(self, "tau_file", "single_hinge_files/May24_dl90_2ndEnd.csv")
-            object.__setattr__(self, "thresh", 0.92)  # May22_old_dl90_weakend
+            object.__setattr__(self, "tau_file", "single_hinge_files/May24_dl90_2ndEnd.csv")  # May24 2nd end (notated on chain itself)
+            object.__setattr__(self, "thresh", 1.15)  # May24 2nd end (notated on chain itself)
+            # object.__setattr__(self, "tau_file", "single_hinge_files/May24_dl90_1stEnd.csv")   # May24 1st end (notated on chain itself)
+            # object.__setattr__(self, "thresh", 0.96)  # May24 1st end (notated on chain itself)
             # object.__setattr__(self, "thresh", 1.99)  # Feb23
             # object.__setattr__(self, "thresh", 1.58)
             # object.__setattr__(self, "thresh", 1.9)  # Feb22 measurements from just before Red South
@@ -127,7 +129,7 @@ class EquilibriumConfig:
     # k_intersect_factor: float = 100000.0
     tolerance: float = 1e-4  # best one 2026Feb8
     # tolerance: float = 1e-6
-    maxsteps: int = 16000
+    maxsteps: int = 16000  # 2026Apr21
 
     def __post_init__(self):
         if self.material in {"Leon_plastic", "numerical"}:
@@ -136,7 +138,8 @@ class EquilibriumConfig:
             object.__setattr__(self, "damping", 4.0)
             object.__setattr__(self, "mass", 5e-3)
         elif self.material in {"Leon_metal", "Roie_metal"}:
-            object.__setattr__(self, "k_stretch_ratio", 9e3)  # best one 2026Feb8
+            # object.__setattr__(self, "k_stretch_ratio", 9e3)  # best one 2026Feb8
+            object.__setattr__(self, "k_stretch_ratio", 1e5)  # best one 2026Feb8
             # object.__setattr__(self, "T_eq", 0.04)  # best one 2026Feb8
             object.__setattr__(self, "T_eq", 0.64)  # 2026Apr21 good?
             object.__setattr__(self, "damping", 8.0)  # best one 2026Feb8
@@ -179,7 +182,7 @@ class TrainingConfig:
     # dataset_sampling = 'stress strain'
 
     # dataset_file: str = r"Predetermined trajectory\Mar23\buckle={}.csv"
-    dataset_file: str = r"Predetermined trajectory\May27\short_arc\buckle={}.csv"
+    dataset_file: str = r"Predetermined trajectory\May27\short_arc\May24Chain_2ndEnd_stifferk\buckle={}.csv"
     # dataset_file: str = r"Predetermined trajectory\Mar30\zeroDeg_farther\buckle={}.csv"
 
     # # tip values to buckle shims - 'BEASTAL' for the BEASTAL scheme, else 'one_to_one'

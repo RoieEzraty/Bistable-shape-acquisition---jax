@@ -467,8 +467,12 @@ def animate_arm_w_arcs(traj_pos, L, Fx: Optional[NDArray] = None, Fy: Optional[N
     (fig, anim) - tuple[Figure, FuncAnimation], returned when ``show_inline=False``.
     HTML        - IPython display object, returned when ``show_inline=True``.
     """
-    colors_lst, _, _ = colors.color_scheme()
+    colors_lst, red, _ = colors.color_scheme()
     plt.rcParams["axes.prop_cycle"] = plt.cycler("color", colors_lst)
+
+    color_line = red
+    color_arrow = 'k'
+    tip_fontsize = 14
 
     pos = np.asarray(traj_pos, dtype=float)  # (T, N, 2)
     T_all = pos.shape[0]
@@ -503,9 +507,9 @@ def animate_arm_w_arcs(traj_pos, L, Fx: Optional[NDArray] = None, Fy: Optional[N
     ax_chain.set_ylabel("y")
 
     # Polyline + joints + tip label
-    (line,) = ax_chain.plot([], [], linewidth=4)
-    scat = ax_chain.scatter([], [], s=60, zorder=3)
-    tip_text = ax_chain.text(0, 0, "", va="bottom", ha="left")
+    (line,) = ax_chain.plot([], [], linewidth=4, color=color_line)
+    scat = ax_chain.scatter([], [], s=60, zorder=3, color=color_line)
+    tip_text = ax_chain.text(0, 0, "", va="bottom", ha="left", fontsize=tip_fontsize)
 
     # List to hold current arc patches so we can remove them each frame
     arc_patches: list[patches.Arc] = []
@@ -516,7 +520,7 @@ def animate_arm_w_arcs(traj_pos, L, Fx: Optional[NDArray] = None, Fy: Optional[N
     (line_fx,) = ax_force.plot([], [], linestyle="-", marker="o", markersize=6, label=r"$F_x$")
     (line_fy,) = ax_force.plot([], [], linestyle="-", marker="o", markersize=6, label=r"$F_y$")
     # ax_force.set_ylim([-1.2*max_F, 1.2*max_F])
-    ax_force.set_ylim([-1300, 1300])
+    ax_force.set_ylim([-600, 600])
     ax_force.set_xlim([-1, T+1])
 
     def init():
@@ -554,7 +558,7 @@ def animate_arm_w_arcs(traj_pos, L, Fx: Optional[NDArray] = None, Fy: Optional[N
             V = V_3d[:, :2]
             for p, v in zip(pts[1:-1], V):
                 arrow = patches.FancyArrowPatch(p, p + v/np.linalg.norm(v)*0.035, arrowstyle='-|>', mutation_scale=25,
-                                                linewidth=2, capstyle='round', joinstyle='round')
+                                                linewidth=2, capstyle='round', joinstyle='round', color=color_arrow)
                 try:
                     ax_chain.add_patch(arrow)
                     arc_patches.append(arrow)
