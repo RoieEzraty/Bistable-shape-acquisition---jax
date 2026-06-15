@@ -4,6 +4,7 @@ import time
 
 from numpy.typing import NDArray
 from typing import TYPE_CHECKING, Tuple, Optional
+from pathlib import Path
 
 import plot_funcs, file_funcs, helpers_builders
 
@@ -77,11 +78,11 @@ def train(Strctr: StructureClass, Variabs: VariablesClass, CFG: ExperimentConfig
     State_des._save_data(0, Strctr, State_des.pos_arr, State_des.buckle_arr)
 
     if Sprvsr.dataset_sampling == 'free_tip':
-        final_pos_des, pos_in_t_des , _, F_in_t_des = Eq_des.calculate_state(Variabs, Strctr, Sprvsr,
-                                                                             control_tip=Sprvsr.control_tip,
-                                                                             init_pos=None,
-                                                                             tip_pos=Sprvsr.tip_pos_in_t[0],
-                                                                             tip_angle=Sprvsr.tip_angle_in_t[0])
+        final_pos_des, pos_in_t_des, _, F_in_t_des = Eq_des.calculate_state(Variabs, Strctr, Sprvsr,
+                                                                            control_tip=Sprvsr.control_tip,
+                                                                            init_pos=None,
+                                                                            tip_pos=Sprvsr.tip_pos_in_t[0],
+                                                                            tip_angle=Sprvsr.tip_angle_in_t[0])
 
     buckle_bool = False
     meas_count = 0  # for tile
@@ -250,7 +251,8 @@ def compress_to_tip_pos(Strctr: "StructureClass", Variabs: "VariablesClass", Spr
 def measure_determined_pos_from_file(Strctr: "StructureClass", Variabs: "VariablesClass", Sprvsr: "SupervisorClass",
                                      CFG: ExperimentConfig, path: str, buckle: NDArray,
                                      stretch_factor: Optional[float] = None, order: str = 'fwd_and_bcwrd',
-                                     reset_every_step: bool = False) -> Tuple[NDArray, NDArray, NDArray]:
+                                     reset_every_step: bool = False,
+                                     out_filename: Optional[str] = None) -> Tuple[NDArray, NDArray, NDArray]:
     """
     tip performs prescribed trajectory from a CSV file, measure simulated tip forces. Export results to csv,
 
@@ -348,7 +350,7 @@ def measure_determined_pos_from_file(Strctr: "StructureClass", Variabs: "Variabl
             prev_final_pos = pos_traj[-1]
 
     # ------ export ------
-    file_funcs.export_predetermined(Sprvsr, State, order=order, stretch_factor=stretch_factor)
+    file_funcs.export_predetermined(Sprvsr, State, order=order, stretch_factor=stretch_factor, filename=out_filename)
     return State, P, F_x_vec, F_y_vec, F_x_vec_exp, F_y_vec_exp
 
 
@@ -409,6 +411,24 @@ def one_shot(Strctr: "StructureClass", Variabs: "VariablesClass", Sprvsr: "Super
     plot_funcs.plot_arm(State.pos_arr, State.buckle_arr, Strctr.L, modality="measurement")
     plt.show()
     return pos_in_t, F_in_t[-1]
+
+
+# ----------------------------------------------------------------
+# Ensure that file of forces along predetermined trajectory exists
+# ----------------------------------------------------------------
+def ensure_predetermined_file(path: Path, buckle_arr, CFG: ExperimentConfig, Strctr: "StructureClass",
+                              Variabs: "VariablesClass", Sprvsr: "SupervisorClass"):
+    """
+    If a predetermined CSV for this buckle state does not exist,
+    simulate the predetermined trajectory and export it.
+    """
+    path = Path(path)
+
+    if path.exists():
+        return
+
+    measure_determined_pos_from_file(Strctr, Variabs, Sprvsr, CFG, path=str(base_path), buckle=buckle, order=order, reset_every_step=reset_every_step,
+                                     filename=str(output_path))
 
 
 # ---------------------------------------------------------------

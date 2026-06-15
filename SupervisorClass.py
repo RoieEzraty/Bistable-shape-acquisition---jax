@@ -278,6 +278,7 @@ class SupervisorClass:
         self.dataset_sampling = sampling
         if sampling == 'predetermined':
             self.dataset_file = CFG.Train.dataset_file
+            self.predet_traj_file = CFG.Train.predet_traj_file
 
         # tip positions and angles for specified tip dataset
         if sampling == 'uniform':
@@ -452,7 +453,7 @@ class SupervisorClass:
             step_size = np.linalg.norm(np.append(delta_tip, delta_angle))
             # print(f'step_size={step_size}')
             if self.update_scheme == 'loss_diff':
-                tradeoff_pos_angle = 1
+                tradeoff_pos_angle = 1/4 * Strctr.hinges  # generalize to many hinges. with 4 tradeoff should be 1
             else:
                 # tradeoff_pos_angle = 1/2
                 tradeoff_pos_angle = 2
@@ -570,7 +571,7 @@ class SupervisorClass:
                 print(f'tip after correct big stretch={self.tip_pos_update_in_t[t, :]}')
 
         # ------ correct for coil or cut origin ------
-        cond_coil = helpers_builders.coil(self.tip_angle_update_in_t[t], revolutions=1.5)
+        cond_coil = helpers_builders.coil(self.tip_angle_update_in_t[t], revolutions=0.375*Strctr.hinges)
 
         cond_cut_origin = helpers_builders.swept_last_edge_crosses_first_edge(tip_prev=prev_tip_update_pos,
                                                                               angle_prev=prev_tip_update_angle,

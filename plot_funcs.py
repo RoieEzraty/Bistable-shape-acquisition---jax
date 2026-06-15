@@ -39,6 +39,8 @@ def plot_arm(pos_vec: np.ndarray, buckle: np.ndarray, L: float, modality: str, s
     # ------ prelims ------
     colors_lst, _, _ = colors.color_scheme()
 
+    N_nodes = pos_vec[:, 0].shape[0]
+
     # pick axes
     created_ax = ax is None
     if created_ax:
@@ -76,15 +78,8 @@ def plot_arm(pos_vec: np.ndarray, buckle: np.ndarray, L: float, modality: str, s
         if norm_v < 1e-12:
             continue
 
-        arrow = patches.FancyArrowPatch(
-            p,
-            p + (v / norm_v) * 0.02,
-            arrowstyle="-|>",
-            mutation_scale=25,
-            linewidth=3,
-            capstyle="round",
-            joinstyle="round",
-        )
+        arrow = patches.FancyArrowPatch(p, p + (v / norm_v) * 0.004 * N_nodes, arrowstyle="-|>", mutation_scale=25,
+                                        linewidth=3, capstyle="round", joinstyle="round")
         try:
             ax.add_patch(arrow)
         except Exception:
@@ -129,7 +124,7 @@ def loss_and_buckle_in_t(tip_pos_in_t, tip_angle_in_t, loss_in_t, buckle_in_t, F
     # ------ colors ------
     colors_lst, _, _ = colors.color_scheme()
 
-    # -------- time vector / slicing --------
+    # -------- time vector / slicing and buckles --------
     T = np.shape(loss_in_t)[0]
     if end is None or end > T:
         end = T
@@ -137,6 +132,8 @@ def loss_and_buckle_in_t(tip_pos_in_t, tip_angle_in_t, loss_in_t, buckle_in_t, F
         start = 0
 
     t = np.arange(start, end)
+
+    H = buckle_in_t.shape[0]
 
     # -------- instantiate plot --------
     fig, axes = plt.subplots(5, 1, figsize=(6, 9), sharex=True)
@@ -192,7 +189,10 @@ def loss_and_buckle_in_t(tip_pos_in_t, tip_angle_in_t, loss_in_t, buckle_in_t, F
     axes[1].set_ylabel("Force [mN]")
     axes[1].legend(ncol=2)
     axes[1].xaxis.set_major_locator(MaxNLocator(integer=True))
-    axes[1].set_ylim([-200, 500])
+    if H < 6:
+        axes[1].set_ylim([-200, 500])
+    else:
+        axes[1].set_ylim([-160, 160])
 
     # -------- subplot 1: loss --------
     axes[2].plot(t, loss_in_t[start+1:end+1, 0], color=colors_lst[1])
@@ -231,13 +231,13 @@ def loss_and_buckle_in_t(tip_pos_in_t, tip_angle_in_t, loss_in_t, buckle_in_t, F
     axes[3].plot(t, np.zeros(end-start), color='k', linestyle='--')
 
     # -------- subplot 2: buckle states --------
-    H = buckle_in_t.shape[0]
     for i in range(H):
         axes[4].plot(t, buckle_in_t[i, 0, start:end], label=f"hinge {i+1}")
 
     axes[4].set_ylabel("buckle")
     axes[4].set_xlabel("t")
-    axes[4].legend()
+    if H < 6:
+        axes[4].legend()
     axes[4].xaxis.set_major_locator(MaxNLocator(integer=True))
 
     plt.tight_layout()
@@ -476,6 +476,7 @@ def animate_arm_w_arcs(traj_pos, L, Fx: Optional[NDArray] = None, Fy: Optional[N
 
     pos = np.asarray(traj_pos, dtype=float)  # (T, N, 2)
     T_all = pos.shape[0]
+    N_all = pos.shape[1]
     assert pos.ndim == 3 and pos.shape[2] == 2
 
     if np.shape(buckle_traj)[0] != np.shape(traj_pos)[0]:
@@ -501,8 +502,8 @@ def animate_arm_w_arcs(traj_pos, L, Fx: Optional[NDArray] = None, Fy: Optional[N
 
     # ------ left panel: chain ------
     ax_chain.set_aspect("equal", adjustable="box")
-    ax_chain.set_xlim([-L, 8 * L])
-    ax_chain.set_ylim([-4.5 * L, 4.5 * L])
+    ax_chain.set_xlim([-L, (N_all-0.5) * L])
+    ax_chain.set_ylim([-(N_all-0.5)/2 * L, (N_all-0.5)/2 * L])
     ax_chain.set_xlabel("x")
     ax_chain.set_ylabel("y")
 
@@ -557,8 +558,9 @@ def animate_arm_w_arcs(traj_pos, L, Fx: Optional[NDArray] = None, Fy: Optional[N
             V_3d = np.cross(diffs_3d, buckle_3d)
             V = V_3d[:, :2]
             for p, v in zip(pts[1:-1], V):
-                arrow = patches.FancyArrowPatch(p, p + v/np.linalg.norm(v)*0.035, arrowstyle='-|>', mutation_scale=25,
-                                                linewidth=2, capstyle='round', joinstyle='round', color=color_arrow)
+                arrow = patches.FancyArrowPatch(p, p + v/np.linalg.norm(v)*0.004*N_all, arrowstyle='-|>',
+                                                mutation_scale=25, linewidth=2, capstyle='round', joinstyle='round',
+                                                color=color_arrow)
                 try:
                     ax_chain.add_patch(arrow)
                     arc_patches.append(arrow)

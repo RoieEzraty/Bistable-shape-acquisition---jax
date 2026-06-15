@@ -751,9 +751,15 @@ def build_torque_and_k_from_file(path: str, *, contact: bool = True, angles_in_d
 # -----------------------------
 # parallel jobs
 # -----------------------------
-def already_done_in_dir(job, prev_dir):
-    init = correct_buckle_string(np.array(job["init_buckle_tup"]).reshape(4, 1))
-    des = correct_buckle_string(np.array(job["desired_buckle_tup"]).reshape(4, 1))
+def already_done_in_dir(job, prev_dir: Path, H: int):
+    """
+    Roie - document
+
+    parameters:
+    H      - number of hinges
+    """
+    init = correct_buckle_string(np.array(job["init_buckle_tup"]).reshape(H, 1))
+    des = correct_buckle_string(np.array(job["desired_buckle_tup"]).reshape(H, 1))
 
     pattern = f"*init_{init}_desired_{des}*"
     return any(p.is_file() and not p.name.startswith("log_") for p in Path(prev_dir).glob(pattern))

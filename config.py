@@ -4,7 +4,7 @@ import numpy as np
 
 
 # -----------------------------
-# Structure and initial params
+# Relating to all
 # -----------------------------
 
 # MATERIAL = "numerical"
@@ -12,14 +12,16 @@ import numpy as np
 # MATERIAL = "Leon_metal"
 MATERIAL = "Roie_metal"
 
+# Hinges: int = 4  # Hinges
+Hinges: int = 10  # Hinges
+
 
 # -----------------------------
 # Structure and initial params
 # -----------------------------
 @dataclass(frozen=True)
 class StructureConfig:
-    # H: int = 5  # Hinges
-    H: int = 4  # Hinges
+    H: int = Hinges  # Hinges
     S: int = 1  # Shims per hinge
     # Nin: int = 3  # tip position in (x, y) and its angle
     # Nout: int = 3  # Fx, Fy, torque, all on tip
@@ -68,12 +70,12 @@ class VariablesConfig:
             # object.__setattr__(self, "thresh", 1.53)  # Feb23 realistically from just before red south
             # object.__setattr__(self, "tau_file", "single_hinge_files/Stress_Strain_1myl1tp_otherEnd_short.csv")
             # object.__setattr__(self, "tau_file", "single_hinge_files/Mar9_filled_average.csv")
-            object.__setattr__(self, "tau_file", "single_hinge_files/Mar12_dl90.csv")  # up to May22
-            object.__setattr__(self, "thresh", 1.24)  # Mar12 dl90
+            # object.__setattr__(self, "tau_file", "single_hinge_files/Mar12_dl90.csv")  # up to May22
+            # object.__setattr__(self, "thresh", 1.24)  # Mar12 dl90
             # object.__setattr__(self, "tau_file", "single_hinge_files/May22_old_dl90_toughend.csv")
             # object.__setattr__(self, "thresh", 1.1)  # May22_old_dl90_toughend
-            # object.__setattr__(self, "tau_file", "single_hinge_files/May24_dl90_2ndEnd.csv")  # May24 2nd end (notated on chain itself)
-            # object.__setattr__(self, "thresh", 1.15)  # May24 2nd end (notated on chain itself)
+            object.__setattr__(self, "tau_file", "single_hinge_files/May24_dl90_2ndEnd.csv")  # May24 2nd end (notated on chain itself)
+            object.__setattr__(self, "thresh", 1.15)  # May24 2nd end (notated on chain itself)
             # object.__setattr__(self, "tau_file", "single_hinge_files/May24_dl90_1stEnd.csv")   # May24 1st end (notated on chain itself)
             # object.__setattr__(self, "thresh", 0.96)  # May24 1st end (notated on chain itself)
             # object.__setattr__(self, "thresh", 1.99)  # Feb23
@@ -163,14 +165,14 @@ class TrainingConfig:
     if desired_buckle_type == 'random':
         desired_buckle_rand_key: int = 169  # key for seed of random sampling of buckle pattern
     elif desired_buckle_type == 'specified':
-        # desired_buckle_pattern: tuple = (1, -1, -1, -1, -1)  # which shims should be buckled up, initially
-        desired_buckle_pattern: tuple = (-1, -1, -1, -1)  # which shims should be buckled up, initially
-        # desired_buckle_pattern: tuple = (-1, 1, 1, 1)  # which shims should be buckled up, initially
+        # desired_buckle_pattern: tuple = (1, -1, -1, -1, -1)  # desired buckle, 1=up
+        # desired_buckle_pattern: tuple = (-1, -1, -1, -1)  # desired buckle, 1=up
+        desired_buckle_pattern: tuple = (1, -1, 1, -1, 1, -1, -1, -1, -1, -1)  # desired buckle, 1=up
 
-    # init_buckle_pattern: tuple = (-1, -1, -1, -1, 1)  # which shims should be buckled up, initially
-    init_buckle_pattern: tuple = (-1, -1, -1, 1)  # which shims should be buckled up, initially
-    # init_buckle_pattern: tuple = (1, 1, 1, -1)  # which shims should be buckled up, initially
-    # init_buckle_pattern: tuple = (1)  # which shims should be buckled up, initially
+    # init_buckle_pattern: tuple = (-1, -1, -1, -1, 1)  # initial buckle, 1=up
+    # init_buckle_pattern: tuple = (-1, -1, -1, 1)  # initial buckle, 1=up
+    init_buckle_pattern: tuple = (-1, -1, 1, -1, 1, -1, -1, -1, -1, -1)  # initial buckle, 1=up
+    # init_buckle_pattern: tuple = (1)  # initial buckle, 1=up
 
     # dataset_sampling: str = 'uniform'  # random uniform vals for x, y, angle
     dataset_sampling: str = 'predetermined'  # import measured F along predetermined trajectory every training step t
@@ -181,9 +183,11 @@ class TrainingConfig:
     # dataset_sampling = 'flat'  # flat piece, single measurement
     # dataset_sampling = 'stress strain'
 
+    predet_traj_file: str = r"Predetermined trajectory\June15\example_traj.csv"
+
     # dataset_file: str = r"Predetermined trajectory\Mar23\buckle={}.csv"
-    dataset_file: str = r"Predetermined trajectory\May27\short_arc\May24Chain_1stEnd\buckle={}.csv"
-    # dataset_file: str = r"Predetermined trajectory\Mar30\zeroDeg_farther\buckle={}.csv"
+    # dataset_file: str = r"Predetermined trajectory\May27\short_arc\May24Chain_1stEnd\buckle={}.csv"  # 2026June7
+    dataset_file: str = r"Predetermined trajectory\June15\1stEnd\buckle={}.csv"  # 2026June7
 
     # # tip values to buckle shims - 'BEASTAL' for the BEASTAL scheme, else 'one_to_one'
     # update_scheme: str = 'one_to_one'  # direct normalized loss, equal to num of outputs
@@ -208,7 +212,10 @@ class TrainingConfig:
         alpha = 0.25
     else:
         # alpha = 0.2  # learning rate  #  Apr23
-        alpha = 0.15  # learning rate # Apr30
+        if Hinges < 6:
+            alpha = 0.15  # learning rate # Apr30
+        else:
+            alpha = 0.35
 
     # control_tip: bool = True  # imposed tip position in measurement and update. If False, tip is free
     control_tip: bool = False  # imposed tip position in measurement and update. If False, tip is free
