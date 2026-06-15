@@ -68,14 +68,14 @@ class VariablesConfig:
             # object.__setattr__(self, "thresh", 1.53)  # Feb23 realistically from just before red south
             # object.__setattr__(self, "tau_file", "single_hinge_files/Stress_Strain_1myl1tp_otherEnd_short.csv")
             # object.__setattr__(self, "tau_file", "single_hinge_files/Mar9_filled_average.csv")
-            # object.__setattr__(self, "tau_file", "single_hinge_files/Mar12_dl90.csv")  # up to May22
-            # object.__setattr__(self, "thresh", 1.24)  # Mar12 dl90
+            object.__setattr__(self, "tau_file", "single_hinge_files/Mar12_dl90.csv")  # up to May22
+            object.__setattr__(self, "thresh", 1.24)  # Mar12 dl90
             # object.__setattr__(self, "tau_file", "single_hinge_files/May22_old_dl90_toughend.csv")
             # object.__setattr__(self, "thresh", 1.1)  # May22_old_dl90_toughend
             # object.__setattr__(self, "tau_file", "single_hinge_files/May24_dl90_2ndEnd.csv")  # May24 2nd end (notated on chain itself)
             # object.__setattr__(self, "thresh", 1.15)  # May24 2nd end (notated on chain itself)
-            object.__setattr__(self, "tau_file", "single_hinge_files/May24_dl90_1stEnd.csv")   # May24 1st end (notated on chain itself)
-            object.__setattr__(self, "thresh", 0.96)  # May24 1st end (notated on chain itself)
+            # object.__setattr__(self, "tau_file", "single_hinge_files/May24_dl90_1stEnd.csv")   # May24 1st end (notated on chain itself)
+            # object.__setattr__(self, "thresh", 0.96)  # May24 1st end (notated on chain itself)
             # object.__setattr__(self, "thresh", 1.99)  # Feb23
             # object.__setattr__(self, "thresh", 1.58)
             # object.__setattr__(self, "thresh", 1.9)  # Feb22 measurements from just before Red South
