@@ -120,6 +120,7 @@ class SupervisorClass:
     def __init__(self, Strctr, CFG, supress_prints: bool = True) -> None:
         self.T = int(CFG.Train.T)  # total training-set size (& algorithm time, dont confuse with time to equilib state)
         self.alpha = float(CFG.Train.alpha)
+        self.tradeoff_pos_angle = float(CFG.Train.tradeoff_pos_angle)
         self.update_scheme = str(CFG.Train.update_scheme)
         self.control_tip = bool(CFG.Train.control_tip)
         self.control_first_edge = bool(CFG.Train.control_first_edge)  # if true, fix nodes (0, 1), else fix only (0)
@@ -184,6 +185,12 @@ class SupervisorClass:
 
         # chain in structure that is symmetrical to desired
         self.symmetrical_state = False
+
+        # wrap angle while accounting for shortening of tip
+        if Strctr.hinges < 6:
+            self.wrap = True
+        else:
+            self.wrap = False
 
         # tip restart bookkeeping for origin-cut handling
         self.origin_cut_restart_count = 0  # consecutive origin-cut restarts
@@ -297,7 +304,7 @@ class SupervisorClass:
                 self.tip_pos_in_t[t, :] = helpers_builders._correct_big_stretch(tip_pos=self.tip_pos_in_t[t, :],
                                                                                 tip_angle=float(self.tip_angle_in_t[t]),
                                                                                 total_angle=0.0, R_free=self.R_free,
-                                                                                L=Strctr.L, margin=0.1,
+                                                                                L=Strctr.L, margin=0.1, wrap=self.wrap,
                                                                                 supress_prints=self.supress_prints)
         elif sampling in {'flat', 'almost_flat', 'specified', 'predetermined', 'free_tip'}:
             end = float(Strctr.edges*Strctr.L)
@@ -443,6 +450,8 @@ class SupervisorClass:
             raise ValueError(f"Unknown update_scheme='{self.update_scheme}'")
         delta_tip_x, delta_tip_y, delta_angle = fn(t, Strctr, Variabs, State_meas, State_des)
         delta_tip = array([delta_tip_x, delta_tip_y])  # assemble into 3d array
+        # multiply space in factor when number of hinges is large
+        delta_tip *= self.tradeoff_pos_angle
         if not self.supress_prints:
             print(f'delta_tip before corr {delta_tip}')
             print(f'delta_angle before corr {delta_angle}')
@@ -507,7 +516,7 @@ class SupervisorClass:
             # effective-radius perimeter instead of radially projecting back.
             R_eff = helpers_builders.effective_radius(self.R_free, Strctr.L, total_angle=total_angle,
                                                       tip_angle=float(self.tip_angle_update_in_t[t]),
-                                                      supress_prints=self.supress_prints)
+                                                      supress_prints=self.supress_prints, wrap=self.wrap)
             before_prev = helpers_builders._get_before_tip(prev_tip_update_pos, float(prev_tip_update_angle),
                                                            Strctr.L, xp=np)
 
@@ -544,14 +553,12 @@ class SupervisorClass:
 
             if clamped_outer:
                 corrected_delta = tip_new - prev_tip_update_pos
-                print(
-                    "outer clamp:",
-                    "raw_delta=", delta_tip,
-                    "corrected_delta=", corrected_delta,
-                    "raw_dy=", delta_tip[1],
-                    "corrected_dy=", corrected_delta[1],
-                    "prev_y=", prev_tip_update_pos[1],
-                )
+                print("outer clamp:",
+                      "raw_delta=", delta_tip,
+                      "corrected_delta=", corrected_delta,
+                      "raw_dy=", delta_tip[1],
+                      "corrected_dy=", corrected_delta[1],
+                      "prev_y=", prev_tip_update_pos[1])
 
             self.tip_pos_update_in_t[t, :] = tip_new
 
@@ -671,7 +678,7 @@ class SupervisorClass:
         tip_angle = np.pi / 2 * self.rng_tip.random()
 
         # uniform in disk
-        R_eff = helpers_builders.effective_radius(self.R_free, Strctr.L, total_angle=0, tip_angle=tip_angle)
+        R_eff = helpers_builders.effective_radius(self.R_free, Strctr.L, total_angle=0, tip_angle=tip_angle, wrap=self.wrap)
         r_min = 0.75 * R_eff
         r = r_min + (R_eff - r_min) * np.sqrt(self.rng_tip.random())
         phi = np.pi / 4 * self.rng_tip.random()

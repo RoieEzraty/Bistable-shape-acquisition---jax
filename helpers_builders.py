@@ -490,7 +490,8 @@ def _circle_circle_intersections_np(c0: NDArray[np.float64], r0: float, c1: NDAr
 
 
 def _correct_big_stretch(tip_pos: NDArray[np.float64], tip_angle: float, total_angle: float, R_free: float,
-                         L: float, margin: float = 0.0, supress_prints: bool = True) -> NDArray[np.float64]:
+                         L: float, margin: float = 0.0, supress_prints: bool = True,
+                         wrap: bool = True) -> NDArray[np.float64]:
     """
     Radially scale down tip position to maximal reachable radius constraint, if tip position exceeds it.
     Applied to distance between node-before-tip and 2nd node (located at (L, 0)). Scale down is radial towards 2nd node.
@@ -524,7 +525,7 @@ def _correct_big_stretch(tip_pos: NDArray[np.float64], tip_angle: float, total_a
     # chain current radius
     disp = before_last - second_node
     r_chain = np.hypot(disp[0], disp[1])
-    R_eff = effective_radius(R_free, L, total_angle, tip_angle, supress_prints=supress_prints)
+    R_eff = effective_radius(R_free, L, total_angle, tip_angle, supress_prints=supress_prints, wrap=wrap)
 
     if not supress_prints:
         print(f'update vals before correction={tip_pos},{tip_angle}')
@@ -562,7 +563,8 @@ def _correct_big_stretch(tip_pos: NDArray[np.float64], tip_angle: float, total_a
     return tip_new
 
 
-def effective_radius(R: float, L: float, total_angle: float, tip_angle: float, supress_prints: bool = True) -> float:
+def effective_radius(R: float, L: float, total_angle: float, tip_angle: float, supress_prints: bool = True,
+                     wrap: bool = True) -> float:
     """
     Compute effective maximal reachable radius of the chain, accounting for angular wrapping (coil shrinkage).
 
@@ -581,38 +583,19 @@ def effective_radius(R: float, L: float, total_angle: float, tip_angle: float, s
     tip_angle   - float,  Current tip orientation (radians).
     margin      - float, optional,  Additional safety margin subtracted from R.
     supress_prints - bool, optional, If False, prints shrink contributions.
+    wrap           - bool, optional, If True, wrap difference total angle - tip angle so R_eff not too small.
 
     Returns
     -------
     R_eff - float,  Effective maximal reachable radius after accounting for coil-induced shrinkage.
     """
-    # # ------ tip angle ------
-    # delta = float(np.abs(total_angle - tip_angle))  # radians, unwrapped
-    # n_rev = int(np.floor(delta / (2.0 * np.pi)))
-    # rem = delta - n_rev * (2.0 * np.pi)  # in [0, 2π)
-
-    # shrink_full_tip = (2.0 * L) * n_rev
-    # shrink_partial_tip = L * (1.0 - np.cos(rem / 2.0))  # in [0, 2L)
-    # # shrink_partial = L * (1.0 - np.cos(rem))  # in [0, 2L)
-    # if not supress_prints:
-    #     print('shrink due to full tip revolutions [mm]', shrink_full_tip)
-    #     print('shrink due to partial tip revolution [mm]', shrink_partial_tip)
-
-    # # ------ total angle ------
-    # # n_halfturns = int(np.floor((np.abs(total_angle) + np.pi) / (2.0 * np.pi)))
-    # # shrink_full_total_angle = (1.0 * L) * n_halfturns
-    # wrap_frac = np.abs(total_angle) / (2.0 * np.pi)
-
-    # shrink_full_total_angle = L * wrap_frac
-    # if not supress_prints:
-    #     print('shrink due to total angle revolutions around base [mm]', shrink_full_total_angle)
-
-    # shrink = shrink_full_tip + shrink_partial_tip + shrink_full_total_angle
-
     # Local mismatch between radial direction and last-edge direction.
     # Use wrapped difference, not unwrapped difference, otherwise one extra 2π
     # in total_angle looks like another full tip revolution.
-    gamma = abs(wrap_pi(tip_angle - total_angle))
+    if wrap:
+        gamma = abs(wrap_pi(tip_angle - total_angle))
+    else:
+        gamma = abs(tip_angle - total_angle)
     shrink_local = L * (1.0 - np.cos(gamma / 2.0))   # <= L for gamma in [0, pi]
 
     # Global winding penalty only after an actual near-full coil.

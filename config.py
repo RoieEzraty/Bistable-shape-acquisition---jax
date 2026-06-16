@@ -12,8 +12,8 @@ import numpy as np
 # MATERIAL = "Leon_metal"
 MATERIAL = "Roie_metal"
 
-# Hinges: int = 4  # Hinges
-Hinges: int = 10  # Hinges
+# HINGES: int = 4  # Hinges
+HINGES: int = 10  # Hinges
 
 
 # -----------------------------
@@ -21,7 +21,7 @@ Hinges: int = 10  # Hinges
 # -----------------------------
 @dataclass(frozen=True)
 class StructureConfig:
-    H: int = Hinges  # Hinges
+    H: int = HINGES
     S: int = 1  # Shims per hinge
     # Nin: int = 3  # tip position in (x, y) and its angle
     # Nout: int = 3  # Fx, Fy, torque, all on tip
@@ -212,10 +212,12 @@ class TrainingConfig:
         alpha = 0.25
     else:
         # alpha = 0.2  # learning rate  #  Apr23
-        if Hinges < 6:
+        if HINGES < 6:
             alpha = 0.15  # learning rate # Apr30
         else:
             alpha = 0.35
+
+    tradeoff_pos_angle: float = 1/4 * HINGES
 
     # control_tip: bool = True  # imposed tip position in measurement and update. If False, tip is free
     control_tip: bool = False  # imposed tip position in measurement and update. If False, tip is free
