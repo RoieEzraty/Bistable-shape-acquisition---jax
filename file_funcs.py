@@ -171,6 +171,112 @@ def load_full_pos_in_t(path: str | Path, stretch_factor: Optional[float] = None)
     return np.stack(P_lst, axis=0), np.stack(B_lst, axis=0)
 
 
+def load_training(path: str, stretch_factor: Optional[float] = None) -> Tuple[NDArray[np.float64], NDArray[np.float64],
+                                                                              NDArray[np.float64], NDArray[np.float64],
+                                                                              NDArray[np.float64], NDArray[np.float64]]:
+    """
+    Load tip positions and forces from a CSV file using csv.DictReader, and convert it into either:
+    - a list of dictionaries (`mod="dict"`)
+    - NumPy arrays (`mod="arrays"`)
+
+    Parameters
+    ----------
+    path           : str, Path to the CSV file.
+    mod            : {"dict", "arrays"}, default="dict"
+                     - `"dict"`   = list of dictionaries with keys `"t_unix"`, `"pos"`, `"force"`
+                     - `"arrays"` = tuple `(T, P, F)` of NumPy arrays
+    stretch_factor : Optional[float], Optional scaling applied to x and y positions,
+                                      for rescaling experimental trajectories.
+
+    Returns
+    -------
+
+    L        - ndarray, shape (T, loss_dim), loss_0/loss_1/(optional loss_2...)
+    B        - ndarray, shape (T, H, S), measured buckle arrays
+    P_update - ndarray, shape (T, 2), updated tip positions
+    A_update - ndarray, shape (T,), updated tip angles in radians
+
+    Notes
+    -----
+    - The loader accepts multiple possible column names for compatibility
+      with different datasets (e.g. `"x_tip"`, `"pos_x"`, `"Px"`).
+    - Angles always returned in **radians** when `mod="arrays"`.
+    """
+    L, B = [], []
+    P_meas, P_update = [], []
+    tip_update, angle_update = [], []
+
+    with open(path, newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+
+        loss_cols = [c for c in (reader.fieldnames or []) if re.fullmatch(r"loss_\d+", c)]
+        loss_cols = sorted(loss_cols, key=lambda c: int(c.split("_")[1]))
+
+        if len(loss_cols) == 0:
+            raise KeyError(f"No loss_* columns found in {path}")
+
+        for r in reader:
+            # ------ Loss: infer dim from existing loss_* columns ------
+            loss_row = []
+            for c in loss_cols:
+                val, _ = helpers_builders._get_first_in_file(r, [c], name=c)
+                loss_row.append(val)
+            L.append(loss_row)
+
+            # ------ Buckle ------
+            Buckle, _ = helpers_builders._get_first_in_file(r, ["buckle_arr_meas"], name="buckle_arr_meas",
+                                                            type="NDArray")
+            B.append(Buckle)
+
+            # ---- tip position / angle ----
+            X_update, _ = helpers_builders._get_first_in_file(r, ["upd_x_tip"], name="upd_x_tip")
+            Y_update, _ = helpers_builders._get_first_in_file(r, ["upd_y_tip"], name="upd_y_tip")
+            Angle_update, theta_key = helpers_builders._get_first_in_file(r, ["upd_tip_angle"],
+                                                                          name="upd_tip_angle")
+
+            if stretch_factor is not None:
+                X_update *= stretch_factor
+                Y_update *= stretch_factor
+
+            # export_training_csv writes upd_tip_angle in degrees, so convert to radians
+            if theta_key != "tip_angle_rad":
+                Angle_update = np.deg2rad(Angle_update)
+
+            tip_update.append([X_update, Y_update])
+            angle_update.append(Angle_update)
+
+            # ------ Full positions ------
+            pos_meas, _ = helpers_builders._get_first_in_file(r, ["final_pos_meas"], name="final_pos_meas",
+                                                              type="NDArray", allow_missing=True)
+            pos_update, _ = helpers_builders._get_first_in_file(r, ["final_pos_update"], name="final_pos_update",
+                                                                type="NDArray", allow_missing=True)
+
+            if pos_meas is not None:
+                pos_meas = np.asarray(pos_meas, dtype=float)
+                if stretch_factor is not None:
+                    pos_meas *= stretch_factor
+                P_meas.append(pos_meas)
+
+            if pos_update is not None:
+                pos_update = np.asarray(pos_update, dtype=float)
+                if stretch_factor is not None:
+                    pos_update *= stretch_factor
+                P_update.append(pos_update)
+
+    L = np.asarray(L, dtype=float)
+
+    B = np.stack(B, axis=0)          # (T, H, 1)
+    B = np.moveaxis(B, 0, -1)        # (H, 1, T)
+
+    P_meas = np.asarray(P_meas, dtype=float)
+    P_update = np.asarray(P_update, dtype=float)
+
+    tip_update = np.asarray(tip_update, dtype=float)
+    angle_update = np.asarray(angle_update, dtype=float)
+
+    return L, B, P_meas, P_update, tip_update, angle_update
+
+
 # ---------------------------------------------------------------
 # Exports
 # ---------------------------------------------------------------

@@ -171,12 +171,12 @@ class TrainingConfig:
 
     # init_buckle_pattern: tuple = (-1, -1, -1, -1, 1)  # initial buckle, 1=up
     # init_buckle_pattern: tuple = (-1, -1, -1, 1)  # initial buckle, 1=up
-    init_buckle_pattern: tuple = (-1, -1, 1, -1, 1, -1, -1, -1, -1, -1)  # initial buckle, 1=up
+    init_buckle_pattern: tuple = (-1, -1, 1, -1, 1, -1, -1, -1, -1, 1)  # initial buckle, 1=up
     # init_buckle_pattern: tuple = (1)  # initial buckle, 1=up
 
     # dataset_sampling: str = 'uniform'  # random uniform vals for x, y, angle
-    dataset_sampling: str = 'predetermined'  # import measured F along predetermined trajectory every training step t
-    # dataset_sampling: str = 'free_tip'  # free tip pos and angle (zero forces at sensor) during measurement
+    # dataset_sampling: str = 'predetermined'  # import measured F along predetermined trajectory every training step t
+    dataset_sampling: str = 'free_tip'  # free tip pos and angle (zero forces at sensor) during measurement
     # dataset_sampling: str = 'specified'  # constant
     # dataset_sampling: str = 'tile'  # constant
     # dataset_sampling = 'almost_flat'  # flat piece w a bit of constant noise, single measurement
@@ -191,9 +191,9 @@ class TrainingConfig:
 
     # # tip values to buckle shims - 'BEASTAL' for the BEASTAL scheme, else 'one_to_one'
     # update_scheme: str = 'one_to_one'  # direct normalized loss, equal to num of outputs
-    update_scheme: str = 'loss_diff'  # difference of x and y loss components
+    # update_scheme: str = 'loss_diff'  # difference of x and y loss components
     # update_scheme: str = 'loss_x_trend'  # delta tip by trend of loss x, delta angle by addition of losses
-    # update_scheme: str = 'pos'  # difference in measured and desired tip position and angle
+    update_scheme: str = 'pos'  # difference in measured and desired tip position and angle
     # update_scheme: str = 'lossx_concavity'  # tip_angle changes due to concavity of loss x along trajectory.
     #                                         # tip pos due to loss_y sign
     # update_scheme: str = 'radial_one_to_one'  # evolve tip angle and large radius due to instantaneous loss
@@ -217,7 +217,10 @@ class TrainingConfig:
         else:
             alpha = 0.35
 
-    tradeoff_pos_angle: float = 1/4 * HINGES
+    if update_scheme == 'pos':
+        tradeoff_pos_angle: float = 1/4 * HINGES
+    else:
+        tradeoff_pos_angle = 1
 
     # control_tip: bool = True  # imposed tip position in measurement and update. If False, tip is free
     control_tip: bool = False  # imposed tip position in measurement and update. If False, tip is free

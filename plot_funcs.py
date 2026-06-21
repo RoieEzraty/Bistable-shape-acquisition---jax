@@ -114,12 +114,12 @@ def loss_and_buckle_in_t(tip_pos_in_t, tip_angle_in_t, loss_in_t, buckle_in_t, F
 
     Parameters
     ----------
-    loss_in_t - np.ndarray, shape (T, 2)
-    buckle_in_t   - np.ndarray, shape (H, 1, T)  (as in your current indexing)
-    F_meas_in_t   - np.ndarray, shape (T, 2)
-    F_des_in_t    - np.ndarray, shape (T, 2)
-    start         - int, inclusive
-    end           - int, exclusive (None -> full length)
+    loss_in_t   - np.ndarray, shape (T, 2)
+    buckle_in_t - np.ndarray, shape (H, 1, T)  (as in your current indexing)
+    F_meas_in_t - np.ndarray, shape (T, 2)
+    F_des_in_t  - np.ndarray, shape (T, 2)
+    start       - int, inclusive
+    end         - int, exclusive (None -> full length)
     """
     # ------ colors ------
     colors_lst, _, _ = colors.color_scheme()
