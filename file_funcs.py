@@ -47,8 +47,9 @@ def load_pos_force(path: str, mod: Literal["dict", "arrays"] = "dict",
     mod            : {"dict", "arrays"}, default="dict"
                      - `"dict"`   = list of dictionaries with keys `"t_unix"`, `"pos"`, `"force"`
                      - `"arrays"` = tuple `(T, P, F)` of NumPy arrays
-    stretch_factor : Optional[float], Optional scaling applied to x and y positions,
-                                      for rescaling experimental trajectories.
+    stretch_factor : Optional[float], Optional inverse scaling applied to x and y positions.
+                                      For training CSVs exported with ``Sprvsr.convert_pos=1000``,
+                                      pass ``stretch_factor=1000`` to convert mm back to m.
 
     Returns
     -------
@@ -235,8 +236,8 @@ def load_training(path: str, stretch_factor: Optional[float] = None) -> Tuple[ND
                                                                           name="upd_tip_angle")
 
             if stretch_factor is not None:
-                X_update *= stretch_factor
-                Y_update *= stretch_factor
+                X_update /= stretch_factor
+                Y_update /= stretch_factor
 
             # export_training_csv writes upd_tip_angle in degrees, so convert to radians
             if theta_key != "tip_angle_rad":
@@ -254,19 +255,18 @@ def load_training(path: str, stretch_factor: Optional[float] = None) -> Tuple[ND
             if pos_meas is not None:
                 pos_meas = np.asarray(pos_meas, dtype=float)
                 if stretch_factor is not None:
-                    pos_meas *= stretch_factor
+                    pos_meas /= stretch_factor
                 P_meas.append(pos_meas)
 
             if pos_update is not None:
                 pos_update = np.asarray(pos_update, dtype=float)
                 if stretch_factor is not None:
-                    pos_update *= stretch_factor
+                    pos_update /= stretch_factor
                 P_update.append(pos_update)
 
     L = np.asarray(L, dtype=float)
 
     B = np.stack(B, axis=0)          # (T, H, 1)
-    B = np.moveaxis(B, 0, -1)        # (H, 1, T)
 
     P_meas = np.asarray(P_meas, dtype=float)
     P_update = np.asarray(P_update, dtype=float)

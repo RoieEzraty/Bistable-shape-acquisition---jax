@@ -103,6 +103,34 @@ def plot_arm(pos_vec: np.ndarray, buckle: np.ndarray, L: float, modality: str, s
         plt.show()
 
 
+def _buckle_hinge_first(buckle_in_t: NDArray, T: int) -> NDArray:
+    """
+    Return buckle history as ``(H, S, T)`` for plotting.
+
+    Accepts both the historical plotting layout ``(H, S, T)`` and the
+    time-first layout ``(T, H, S)`` used by imported training files and
+    animations.
+    """
+    buckle = np.asarray(buckle_in_t)
+
+    if buckle.ndim == 3:
+        if buckle.shape[-1] == T:
+            return buckle
+        if buckle.shape[0] == T:
+            return np.moveaxis(buckle, 0, -1)
+
+    if buckle.ndim == 2:
+        if buckle.shape[0] == T:
+            return buckle.T[:, np.newaxis, :]
+        if buckle.shape[1] == T:
+            return buckle[:, np.newaxis, :]
+
+    raise ValueError(
+        "buckle_in_t must have time axis of length T and shape (H, S, T), "
+        "(T, H, S), (H, T), or (T, H)"
+    )
+
+
 def loss_and_buckle_in_t(tip_pos_in_t, tip_angle_in_t, loss_in_t, buckle_in_t, F_meas_in_t, F_des_in_t,
                          tip_pos_update_in_t, tip_angle_update_in_t, start=0, end=None,
                          save_path: Optional[str] = None) -> None:
@@ -115,7 +143,7 @@ def loss_and_buckle_in_t(tip_pos_in_t, tip_angle_in_t, loss_in_t, buckle_in_t, F
     Parameters
     ----------
     loss_in_t   - np.ndarray, shape (T, 2)
-    buckle_in_t - np.ndarray, shape (H, 1, T)  (as in your current indexing)
+    buckle_in_t - np.ndarray, shape (H, 1, T) or (T, H, 1)
     F_meas_in_t - np.ndarray, shape (T, 2)
     F_des_in_t  - np.ndarray, shape (T, 2)
     start       - int, inclusive
@@ -133,6 +161,7 @@ def loss_and_buckle_in_t(tip_pos_in_t, tip_angle_in_t, loss_in_t, buckle_in_t, F
 
     t = np.arange(start, end)
 
+    buckle_in_t = _buckle_hinge_first(buckle_in_t, T)
     H = buckle_in_t.shape[0]
 
     # -------- instantiate plot --------
