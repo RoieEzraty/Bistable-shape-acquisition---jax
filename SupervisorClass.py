@@ -553,17 +553,18 @@ class SupervisorClass:
 
             if clamped_outer:
                 corrected_delta = tip_new - prev_tip_update_pos
-                eps = max(1e-12, 1e-6 * Strctr.L)
-                clamp_reversed_x = (abs(delta_tip[0]) > eps
-                                    and np.sign(corrected_delta[0]) != np.sign(delta_tip[0]))
-                clamp_fabricated_x = (abs(delta_tip[0]) <= eps
-                                      and abs(corrected_delta[0]) > abs(corrected_delta[1]) + eps)
-                clamp_erased_y = abs(delta_tip[1]) > eps and abs(corrected_delta[1]) < 0.1 * abs(delta_tip[1])
-                two_step_bounce = (t > 2
-                                   and np.linalg.norm(tip_new - self.tip_pos_update_in_t[t - 2, :]) < eps)
-                if (clamp_erased_y and (clamp_reversed_x or clamp_fabricated_x)) or two_step_bounce:
-                    tip_new = prev_tip_update_pos.copy()
-                    corrected_delta = tip_new - prev_tip_update_pos
+                # # New 2026June25
+                # eps = max(1e-12, 1e-6 * Strctr.L)
+                # clamp_reversed_x = (abs(delta_tip[0]) > eps
+                #                     and np.sign(corrected_delta[0]) != np.sign(delta_tip[0]))
+                # clamp_fabricated_x = (abs(delta_tip[0]) <= eps
+                #                       and abs(corrected_delta[0]) > abs(corrected_delta[1]) + eps)
+                # clamp_erased_y = abs(delta_tip[1]) > eps and abs(corrected_delta[1]) < 0.1 * abs(delta_tip[1])
+                # two_step_bounce = (t > 2
+                #                    and np.linalg.norm(tip_new - self.tip_pos_update_in_t[t - 2, :]) < eps)
+                # if (clamp_erased_y and (clamp_reversed_x or clamp_fabricated_x)) or two_step_bounce:
+                #     tip_new = prev_tip_update_pos.copy()
+                #     corrected_delta = tip_new - prev_tip_update_pos
                 print("outer clamp:",
                       "raw_delta=", delta_tip,
                       "corrected_delta=", corrected_delta,
