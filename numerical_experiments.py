@@ -136,7 +136,7 @@ def train(Strctr: StructureClass, Variabs: VariablesClass, CFG: ExperimentConfig
             Sprvsr.calc_loss(Variabs, t, Fx=State_meas.Fx, Fy=State_meas.Fy)
 
         ## UPDATE
-        Sprvsr.calc_update_tip(t, Strctr, Variabs, State_meas, State_des, State_update, correct_for_total_angle=True,
+        Sprvsr.calc_update_tip(t, Strctr, Variabs, State_meas, State_update, correct_for_total_angle=True,
                                correct_for_coil=True, correct_for_cut_origin=True, correct_for_update_force=True)
 
         # ------ equilibrium -------

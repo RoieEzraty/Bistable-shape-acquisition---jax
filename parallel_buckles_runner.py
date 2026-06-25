@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 
 from pathlib import Path
 from contextlib import redirect_stdout, redirect_stderr
+from dataclasses import replace
 from typing import Optional, TypedDict, Union
 
 from config import CFG
@@ -34,6 +35,7 @@ class ParallelJob(TypedDict):
     save_gifs: bool
     save_pngs: bool
     save_csvs: bool
+    pos_delta_mode: str
 
 
 class ParallelJobResult(TypedDict):
@@ -49,18 +51,24 @@ class ParallelJobResult(TypedDict):
     png_path: Optional[str]
     csv_path: Optional[str]
     log_path: str
+    pos_delta_mode: str
 
 
 def _train_one_pair(init_buckle: np.ndarray, desired_buckle: np.ndarray,
-                    invert_updates: bool = False) -> tuple[StructureClass, VariablesClass, SupervisorClass,
-                                                           StateClass, StateClass, StateClass, EquilibriumClass,
-                                                           EquilibriumClass, int]:
-    Strctr: "StructureClass" = StructureClass(CFG, update_scheme=CFG.Train.update_scheme)
-    Variabs: "VariablesClass" = VariablesClass(Strctr, CFG)
-    Sprvsr: "SupervisorClass" = SupervisorClass(Strctr, CFG, supress_prints=True)
+                    invert_updates: bool = False,
+                    pos_delta_mode: Optional[str] = None) -> tuple[StructureClass, VariablesClass, SupervisorClass,
+                                                                   StateClass, StateClass, StateClass, EquilibriumClass,
+                                                                   EquilibriumClass, int]:
+    cfg = CFG
+    if pos_delta_mode is not None:
+        cfg = replace(CFG, Train=replace(CFG.Train, pos_delta_mode=pos_delta_mode))
+
+    Strctr: "StructureClass" = StructureClass(cfg, update_scheme=cfg.Train.update_scheme)
+    Variabs: "VariablesClass" = VariablesClass(Strctr, cfg)
+    Sprvsr: "SupervisorClass" = SupervisorClass(Strctr, cfg, supress_prints=True)
 
     Sprvsr, State_meas, State_des, State_update, Eq_meas, Eq_des, t = numerical_experiments.train(Strctr, Variabs,
-                                                                                                  CFG, init_buckle,
+                                                                                                  cfg, init_buckle,
                                                                                                   desired_buckle,
                                                                                                   invert_updates=invert_updates)
     return Strctr, Variabs, Sprvsr, State_meas, State_des, State_update, Eq_meas, Eq_des, t
@@ -106,10 +114,33 @@ def run_one_job(job: ParallelJob) -> ParallelJobResult:
     save_gifs = bool(job["save_gifs"])
     save_pngs = bool(job["save_pngs"])
     save_csvs = bool(job["save_csvs"])
+    pos_delta_mode = str(job.get("pos_delta_mode", CFG.Train.pos_delta_mode))
 
     run_dir.mkdir(parents=True, exist_ok=True)
 
     H, S = CFG.Strctr.H, CFG.Strctr.S
+    expected_buckle_size = H * S
+    if len(init_buckle_tup) != expected_buckle_size or len(desired_buckle_tup) != expected_buckle_size:
+        log_path = run_dir / f"log_invalid_job_k_{k}_l_{l}_{pos_delta_mode}.txt"
+        with open(log_path, "w", encoding="utf-8") as log_f:
+            log_f.write(
+                f"Invalid buckle length for CFG.Strctr.H={H}, CFG.Strctr.S={S}. "
+                f"Expected {expected_buckle_size}, got init={len(init_buckle_tup)}, "
+                f"desired={len(desired_buckle_tup)}.\n"
+            )
+        return {
+            "ok": False,
+            "k": k,
+            "l": l,
+            "init_buckle_tup": init_buckle_tup,
+            "desired_buckle_tup": desired_buckle_tup,
+            "loss": np.nan,
+            "gif_path": None,
+            "png_path": None,
+            "csv_path": None,
+            "log_path": str(log_path),
+            "pos_delta_mode": pos_delta_mode,
+        }
 
     init_buckle = np.asarray(init_buckle_tup, dtype=np.int32)
     desired_buckle = np.asarray(desired_buckle_tup, dtype=np.int32)
@@ -129,7 +160,8 @@ def run_one_job(job: ParallelJob) -> ParallelJobResult:
 
             Strctr, Variabs, Sprvsr, State_meas, State_des, State_update, Eq_meas, Eq_des, t = _train_one_pair(init_buckle=init_buckle,
                                                                                                                desired_buckle=desired_buckle,
-                                                                                                               invert_updates=False)
+                                                                                                               invert_updates=False,
+                                                                                                               pos_delta_mode=pos_delta_mode)
 
             F_meas_in_t = np.array([State_meas.Fx_in_t, State_meas.Fy_in_t])
             F_des_in_t = np.array([State_des.Fx_in_t, State_des.Fy_in_t])
@@ -174,6 +206,7 @@ def run_one_job(job: ParallelJob) -> ParallelJobResult:
             "png_path": None if png_path is None else str(png_path),
             "csv_path": None if csv_path is None else str(csv_path),
             "log_path": str(log_path),
+            "pos_delta_mode": pos_delta_mode,
         }
 
     except Exception:
@@ -191,4 +224,5 @@ def run_one_job(job: ParallelJob) -> ParallelJobResult:
             "png_path": None,
             "csv_path": None,
             "log_path": str(log_path),
+            "pos_delta_mode": pos_delta_mode,
         }

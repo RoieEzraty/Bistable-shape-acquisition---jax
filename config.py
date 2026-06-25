@@ -13,7 +13,7 @@ import numpy as np
 MATERIAL = "Roie_metal"
 
 # HINGES: int = 4  # Hinges
-HINGES: int = 10  # Hinges
+HINGES: int = 8  # Hinges
 
 
 # -----------------------------
@@ -194,6 +194,7 @@ class TrainingConfig:
     # update_scheme: str = 'loss_diff'  # difference of x and y loss components
     # update_scheme: str = 'loss_x_trend'  # delta tip by trend of loss x, delta angle by addition of losses
     update_scheme: str = 'pos'  # difference in measured and desired tip position and angle
+    pos_delta_mode: str = 'signed'  # 'signed' = Mar23 sign factors, 'direct' = May3 direct position loss
     # update_scheme: str = 'lossx_concavity'  # tip_angle changes due to concavity of loss x along trajectory.
     #                                         # tip pos due to loss_y sign
     # update_scheme: str = 'radial_one_to_one'  # evolve tip angle and large radius due to instantaneous loss

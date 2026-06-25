@@ -83,6 +83,7 @@ class SupervisorClass:
     T: int = eqx.field(static=True)
     alpha: float = eqx.field(static=True)
     update_scheme: str = eqx.field(static=True)
+    pos_delta_mode: str = eqx.field(static=True)
     control_tip: bool = eqx.field(static=True)
     control_first_edge: bool = eqx.field(static=True)
     normalize_step: bool = eqx.field(static=True)
@@ -122,6 +123,9 @@ class SupervisorClass:
         self.alpha = float(CFG.Train.alpha)
         self.tradeoff_pos_angle = float(CFG.Train.tradeoff_pos_angle)
         self.update_scheme = str(CFG.Train.update_scheme)
+        self.pos_delta_mode = str(getattr(CFG.Train, "pos_delta_mode", "signed"))
+        if self.pos_delta_mode not in {"signed", "direct"}:
+            raise ValueError(f"Unknown pos_delta_mode='{self.pos_delta_mode}'")
         self.control_tip = bool(CFG.Train.control_tip)
         self.control_first_edge = bool(CFG.Train.control_first_edge)  # if true, fix nodes (0, 1), else fix only (0)
 
@@ -854,10 +858,14 @@ class SupervisorClass:
         if sgny_meas == 0.0:
             sgny_meas = 1
 
-        delta_tip_x = - self.alpha * (-self.loss[0]) * (-sgny_update) * (-sgny_meas) * Variabs.norm_pos  # Mar23
-        delta_tip_y = - self.alpha * (-self.loss[1]) * (+sgnx_update) * (+sgnx_meas) * Variabs.norm_pos  # Mar23
-        # delta_tip_x = - self.alpha * (-self.loss[0]) * Variabs.norm_pos  # May3 for rotation matrix
-        # delta_tip_y = - self.alpha * (-self.loss[1]) * Variabs.norm_pos  # May3 for rotation matrix
+        if self.pos_delta_mode == "signed":
+            delta_tip_x = - self.alpha * (-self.loss[0]) * (-sgny_update) * (-sgny_meas) * Variabs.norm_pos  # Mar23
+            delta_tip_y = - self.alpha * (-self.loss[1]) * (+sgnx_update) * (+sgnx_meas) * Variabs.norm_pos  # Mar23
+        elif self.pos_delta_mode == "direct":
+            delta_tip_x = - self.alpha * (-self.loss[0]) * Variabs.norm_pos  # May3 for rotation matrix
+            delta_tip_y = - self.alpha * (-self.loss[1]) * Variabs.norm_pos  # May3 for rotation matrix
+        else:
+            raise ValueError(f"Unknown pos_delta_mode='{self.pos_delta_mode}'")
         delta_angle = - self.alpha * (-self.loss[2]) * Variabs.norm_angle  # Mar23
 
         # # angle for rotation of delta update
