@@ -1199,7 +1199,11 @@ def _get_first_in_file(r: Mapping[str, Union[str, float, int, None]], keys: Iter
             if type == "float":
                 return float(r[k]), k
             elif type == "NDArray":
-                return np.asarray(ast.literal_eval(r[k]), dtype=float), k
+                try:
+                    return np.asarray(ast.literal_eval(r[k]), dtype=float), k
+                except (SyntaxError, ValueError):
+                    vals = np.fromstring(r[k].replace("[", " ").replace("]", " ").replace(",", " "), sep=" ")
+                    return vals, k
     if allow_missing:
         return None, None
     raise KeyError(f"None of {keys} found for {name}")

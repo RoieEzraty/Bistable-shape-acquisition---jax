@@ -183,9 +183,6 @@ def load_training(path: str, stretch_factor: Optional[float] = None) -> Tuple[ND
     Parameters
     ----------
     path           : str, Path to the CSV file.
-    mod            : {"dict", "arrays"}, default="dict"
-                     - `"dict"`   = list of dictionaries with keys `"t_unix"`, `"pos"`, `"force"`
-                     - `"arrays"` = tuple `(T, P, F)` of NumPy arrays
     stretch_factor : Optional[float], Optional scaling applied to x and y positions,
                                       for rescaling experimental trajectories.
 
@@ -227,6 +224,8 @@ def load_training(path: str, stretch_factor: Optional[float] = None) -> Tuple[ND
             # ------ Buckle ------
             Buckle, _ = helpers_builders._get_first_in_file(r, ["buckle_arr_meas"], name="buckle_arr_meas",
                                                             type="NDArray")
+            if Buckle.ndim == 1:
+                Buckle = Buckle.reshape(-1, 1)
             B.append(Buckle)
 
             # ---- tip position / angle ----
@@ -254,12 +253,16 @@ def load_training(path: str, stretch_factor: Optional[float] = None) -> Tuple[ND
 
             if pos_meas is not None:
                 pos_meas = np.asarray(pos_meas, dtype=float)
+                if pos_meas.ndim == 1:
+                    pos_meas = pos_meas.reshape(-1, 2)
                 if stretch_factor is not None:
                     pos_meas /= stretch_factor
                 P_meas.append(pos_meas)
 
             if pos_update is not None:
                 pos_update = np.asarray(pos_update, dtype=float)
+                if pos_update.ndim == 1:
+                    pos_update = pos_update.reshape(-1, 2)
                 if stretch_factor is not None:
                     pos_update /= stretch_factor
                 P_update.append(pos_update)
@@ -275,6 +278,49 @@ def load_training(path: str, stretch_factor: Optional[float] = None) -> Tuple[ND
     angle_update = np.asarray(angle_update, dtype=float)
 
     return L, B, P_meas, P_update, tip_update, angle_update
+
+
+def warm_start_training_from_csv(path: str, Sprvsr: "SupervisorClass", State_meas: "StateClass",
+                                 State_update: "StateClass", Strctr: "StructureClass", t_update: int,
+                                 stretch_factor: Optional[float] = None,
+                                 State_des: Optional["StateClass"] = None) -> int:
+    """Load CSV rows with ``t < t_update`` into existing training objects."""
+    with open(path, newline="", encoding="utf-8") as f:
+        rows = [r for r in csv.DictReader(f) if int(r["t"]) < t_update]
+    if not rows:
+        raise ValueError(f"No rows with t < {t_update} found in {path}")
+    if t_update > Sprvsr.T:
+        raise ValueError(f"t_update={t_update} exceeds Sprvsr.T={Sprvsr.T}")
+
+    L, B, P_meas, P_update, tip_update, angle_update = load_training(path, stretch_factor=stretch_factor)
+    loss_cols = sorted([c for c in rows[0] if re.fullmatch(r"loss_\d+", c)], key=lambda c: int(c.split("_")[1]))
+    for i, r in enumerate(rows):
+        t = int(r["t"])
+        Sprvsr.tip_pos_update_in_t[t, :] = tip_update[i]
+        Sprvsr.tip_angle_update_in_t[t] = angle_update[i]
+        Sprvsr.total_angle_update_in_t[t] = helpers_builders._get_total_angle(Sprvsr.tip_pos_update_in_t[t, :],
+                                                                               0.0 if t == 0 else Sprvsr.total_angle_update_in_t[t - 1],
+                                                                               Strctr.L)
+        Sprvsr.loss_in_t[t, :len(loss_cols)] = L[i, :len(loss_cols)]
+        Sprvsr.loss_MSE_in_t[t] = float(r.get("loss_MSE", 0.0))
+        State_meas.pos_arr_in_t[:, :, t] = P_meas[i]
+        State_update.pos_arr_in_t[:, :, t] = P_update[i]
+        State_meas.buckle_in_t[:, :, t] = B[i]
+        State_update.buckle_in_t[:, :, t] = helpers_builders._get_first_in_file(
+            r, ["buckle_arr_update"], name="buckle_arr_update", type="NDArray")[0].reshape(Strctr.hinges, Strctr.shims)
+        State_meas.Fx_in_t[t], State_meas.Fy_in_t[t] = float(r.get("Fx_meas", 0.0)), float(r.get("Fy_meas", 0.0))
+        State_update.Fx_in_t[t], State_update.Fy_in_t[t] = float(r.get("Fx_update", 0.0)), float(r.get("Fy_update", 0.0))
+        if State_des is not None:
+            State_des.Fx_in_t[t], State_des.Fy_in_t[t] = float(r.get("Fx_des", 0.0)), float(r.get("Fy_des", 0.0))
+
+    last_t = int(rows[-1]["t"])
+    Sprvsr.loss = Sprvsr.loss_in_t[last_t, :len(loss_cols)].copy()
+    for State in (State_meas, State_update):
+        State.pos_arr = State.pos_arr_in_t[:, :, last_t].copy()
+        State.buckle_arr = State.buckle_in_t[:, :, last_t].copy()
+        State.Fx, State.Fy = State.Fx_in_t[last_t], State.Fy_in_t[last_t]
+        State.theta_arr = Strctr.all_hinge_angles(State.pos_arr)
+    return last_t
 
 
 # ---------------------------------------------------------------

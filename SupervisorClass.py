@@ -422,7 +422,7 @@ class SupervisorClass:
             self.loss_x_trend = float(np.polyfit(traj_idx, loss_x_full, deg=1)[0])
 
     def calc_update_tip(self, t: int, Strctr: "StructureClass", Variabs: "VariablesClass",
-                        State_meas: "StateClass", State_des: "StateClass", State_update: "StateClass",
+                        State_meas: "StateClass", State_update: "StateClass",
                         correct_for_total_angle: Optional[bool] = False, correct_for_coil: Optional[bool] = True,
                         correct_for_cut_origin: Optional[bool] = True,
                         correct_for_update_force: Optional[bool] = True) -> None:
@@ -448,7 +448,7 @@ class SupervisorClass:
         fn = dispatch.get(self.update_scheme, None)  # function to calculate delta tip and angle from update_scheme
         if fn is None:
             raise ValueError(f"Unknown update_scheme='{self.update_scheme}'")
-        delta_tip_x, delta_tip_y, delta_angle = fn(t, Strctr, Variabs, State_meas, State_des)
+        delta_tip_x, delta_tip_y, delta_angle = fn(t, Strctr, Variabs, State_meas)
         delta_tip = array([delta_tip_x, delta_tip_y])  # assemble into 3d array
         # multiply space in factor when number of hinges is large
         delta_tip *= self.tradeoff_pos_angle
@@ -553,6 +553,17 @@ class SupervisorClass:
 
             if clamped_outer:
                 corrected_delta = tip_new - prev_tip_update_pos
+                eps = max(1e-12, 1e-6 * Strctr.L)
+                clamp_reversed_x = (abs(delta_tip[0]) > eps
+                                    and np.sign(corrected_delta[0]) != np.sign(delta_tip[0]))
+                clamp_fabricated_x = (abs(delta_tip[0]) <= eps
+                                      and abs(corrected_delta[0]) > abs(corrected_delta[1]) + eps)
+                clamp_erased_y = abs(delta_tip[1]) > eps and abs(corrected_delta[1]) < 0.1 * abs(delta_tip[1])
+                two_step_bounce = (t > 2
+                                   and np.linalg.norm(tip_new - self.tip_pos_update_in_t[t - 2, :]) < eps)
+                if (clamp_erased_y and (clamp_reversed_x or clamp_fabricated_x)) or two_step_bounce:
+                    tip_new = prev_tip_update_pos.copy()
+                    corrected_delta = tip_new - prev_tip_update_pos
                 print("outer clamp:",
                       "raw_delta=", delta_tip,
                       "corrected_delta=", corrected_delta,
@@ -747,7 +758,7 @@ class SupervisorClass:
             # "radial_halfway_BEASTAL": self._delta_radial_halfway_BEASTAL,
         }
 
-    def _delta_one_to_one(self, t, Strctr, Variabs, State_meas, State_des):
+    def _delta_one_to_one(self, t, Strctr, Variabs, State_meas):
         """
         change tip directly from loss, no pseudo inverse, calculations in cartesian coordinates
         dx = +alpha*loss_x*sign(y)
@@ -789,12 +800,9 @@ class SupervisorClass:
         # delta_angle = - self.alpha * self.loss[1] * (-sgnlossx) * Variabs.norm_angle  #
         return delta_tip_x, delta_tip_y, delta_angle
 
-    def _delta_loss_diff(self, t, Strctr, Variabs, State_meas, State_des):
+    def _delta_loss_diff(self, t, Strctr, Variabs, State_meas):
         sgnx = np.sign(self.tip_pos_update_in_t[t-1, 0])
         sgny = np.sign(self.tip_pos_update_in_t[t-1, 1])
-        sgnLossx = np.sign(self.loss[0])
-        sgnLossy = np.sign(self.loss[1])
-        sgnFy_des = np.sign(State_des.Fy)
         if sgnx == 0.0:
             sgnx = 1
         if sgny == 0.0:
@@ -810,7 +818,7 @@ class SupervisorClass:
         # delta_angle = - self.alpha * loss_add * sgnLossx * (-sgnLossy) * Variabs.norm_angle  # Mar24
         return delta_tip_x, delta_tip_y, delta_angle
 
-    def _delta_loss_x_trend(self, t, Strctr, Variabs, State_meas, State_des):
+    def _delta_loss_x_trend(self, t, Strctr, Variabs, State_meas):
         Lx = self.loss[0]
         Lx_trend = self.loss_x_trend
         print('trend=', Lx_trend)
@@ -828,24 +836,13 @@ class SupervisorClass:
         delta_angle = - self.alpha * loss_add * Variabs.norm_angle  # Mar23
         return delta_tip_x, delta_tip_y, delta_angle
 
-    def _delta_pos(self, t, Strctr, Variabs, State_meas, State_des):
+    def _delta_pos(self, t, Strctr, Variabs, State_meas):
 
         x_rel = self.tip_pos_update_in_t[t-1, 0] - Strctr.L/2
-        # Up to May 11 - relative sign
         sgnx_update = np.sign(x_rel)
         sgny_update = np.sign(self.tip_pos_update_in_t[t-1, 1])
         sgnx_meas = np.sign(State_meas.pos_arr[-1][0])
         sgny_meas = np.sign(State_meas.pos_arr[-1][1])
-        # # May 11 - hysteretic sign
-        # deadband = 0.1 * Strctr.L
-        # if not hasattr(self, "sgnx_branch"):
-        #     self.sgnx_branch = 1.0
-
-        # if x_rel > deadband:
-        #     self.sgnx_branch = 1.0
-        # elif x_rel < -deadband:
-        #     self.sgnx_branch = -1.0
-        # sgnx = self.sgnx_branch
 
         if sgnx_update == 0.0:
             sgnx_update = 1
