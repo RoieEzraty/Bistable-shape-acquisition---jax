@@ -44,6 +44,7 @@ class SupervisorClass:
     tip_angle_in_t     : ndarray (T,), training dataset tip angles, Measurement modality.
     loss_in_t          : ndarray (T, loss_dim), loss (x and y, optionally angle) for every measurement during training.
     loss_MSE_in_t      : ndarray (T,), Mean Squared Error of the x,y loss.
+    Hamming_distance_in_t : ndarray (T,), Hamming distance between measured and desired buckles.
     tip_pos_update_in_t: ndarray (T, 2), tip position in the Update modality, for every training step.
     tip_angle_update_in_t : ndarray (T, ), tip angle in the Update modality, for every training step.
     total_angle_update_in_t : ndarray (T, ), angle between tip and end of first link, in Update modality, for every training step
@@ -106,6 +107,7 @@ class SupervisorClass:
     # --- running logs / losses ---
     loss_in_t: NDArray[np.float32] = eqx.field(init=False, static=True)            # (T, 2)/(T, 3)
     loss_MSE_in_t: NDArray[np.float32] = eqx.field(init=False, static=True)        # (T,)
+    Hamming_distance_in_t: NDArray[np.int32] = eqx.field(init=False, static=True)  # (T,)
     tip_pos_update_in_t: NDArray[np.float32] = eqx.field(init=False, static=True)  # (T, 2)
     tip_angle_update_in_t: NDArray[np.float32] = eqx.field(default=None, init=False, static=True)  # (T,)
     total_angle_update_in_t: NDArray[np.float32] = eqx.field(default=None, init=False, static=True)  # (T,)
@@ -166,6 +168,8 @@ class SupervisorClass:
             loss_size = 2
         self.loss_in_t = zeros((self.T, loss_size), dtype=np.float32)
         self.loss_MSE_in_t = zeros((self.T,), dtype=np.float32)
+        self.Hamming_distance_in_t = zeros((self.T,), dtype=np.int32)
+        self.Hamming_distance = 0
 
         # Last loss vector (shape matches control mode)
         self.loss = zeros(loss_size, dtype=np.float32)
@@ -352,6 +356,26 @@ class SupervisorClass:
         self.desired_pos_in_t[:, :, t] = helpers_builders.jax2numpy(pos_arr)  # [m]
         self.desired_Fx_in_t[t] = float(Fx)  # [mN]
         self.desired_Fy_in_t[t] = float(Fy)  # [mN]
+
+    def calc_Hamming_distance(self, measured_buckle_arr: NDArray, t: Optional[int] = None) -> int:
+        """Calculate and store the Hamming distance from measured to desired buckles.
+
+        Parameters:
+        -----------
+        measured_buckle_arr : ndarray, shape (H,S)
+            Current measured buckle configuration.
+        t : Optional[int]
+            Current time step. If supplied, the distance is also stored in the time history.
+        """
+        measured = np.asarray(measured_buckle_arr)
+        desired = np.asarray(self.desired_buckle_arr)
+        if measured.shape != desired.shape:
+            raise ValueError(f"measured_buckle_arr shape {measured.shape} does not match desired {desired.shape}")
+
+        self.Hamming_distance = int(np.count_nonzero(measured != desired))
+        if t is not None:
+            self.Hamming_distance_in_t[t] = self.Hamming_distance
+        return self.Hamming_distance
 
     # ---------------------------------------------------------------
     # Calculations - loss and Update values
@@ -557,18 +581,18 @@ class SupervisorClass:
 
             if clamped_outer:
                 corrected_delta = tip_new - prev_tip_update_pos
-                # # New 2026June25
-                # eps = max(1e-12, 1e-6 * Strctr.L)
-                # clamp_reversed_x = (abs(delta_tip[0]) > eps
-                #                     and np.sign(corrected_delta[0]) != np.sign(delta_tip[0]))
-                # clamp_fabricated_x = (abs(delta_tip[0]) <= eps
-                #                       and abs(corrected_delta[0]) > abs(corrected_delta[1]) + eps)
-                # clamp_erased_y = abs(delta_tip[1]) > eps and abs(corrected_delta[1]) < 0.1 * abs(delta_tip[1])
-                # two_step_bounce = (t > 2
-                #                    and np.linalg.norm(tip_new - self.tip_pos_update_in_t[t - 2, :]) < eps)
-                # if (clamp_erased_y and (clamp_reversed_x or clamp_fabricated_x)) or two_step_bounce:
-                #     tip_new = prev_tip_update_pos.copy()
-                #     corrected_delta = tip_new - prev_tip_update_pos
+                # New 2026June25
+                eps = max(1e-12, 1e-6 * Strctr.L)
+                clamp_reversed_x = (abs(delta_tip[0]) > eps
+                                    and np.sign(corrected_delta[0]) != np.sign(delta_tip[0]))
+                clamp_fabricated_x = (abs(delta_tip[0]) <= eps
+                                      and abs(corrected_delta[0]) > abs(corrected_delta[1]) + eps)
+                clamp_erased_y = abs(delta_tip[1]) > eps and abs(corrected_delta[1]) < 0.1 * abs(delta_tip[1])
+                two_step_bounce = (t > 2
+                                   and np.linalg.norm(tip_new - self.tip_pos_update_in_t[t - 2, :]) < eps)
+                if (clamp_erased_y and (clamp_reversed_x or clamp_fabricated_x)) or two_step_bounce:
+                    tip_new = prev_tip_update_pos.copy()
+                    corrected_delta = tip_new - prev_tip_update_pos
                 print("outer clamp:",
                       "raw_delta=", delta_tip,
                       "corrected_delta=", corrected_delta,

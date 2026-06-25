@@ -444,6 +444,7 @@ def export_training_csv(path_csv: str, Strctr: "StructureClass", Sprvsr: "Superv
     loss_size = Sprvsr.loss_in_t.shape[1]
     header += [f"loss_{i}" for i in range(loss_size)]
     header += ["loss_MSE"]
+    header += ["Hamming_distance"]
 
     if State_meas is not None:  # measured forces
         header += ["Fx_meas", "Fy_meas"]
@@ -484,6 +485,7 @@ def export_training_csv(path_csv: str, Strctr: "StructureClass", Sprvsr: "Superv
             # losses
             row += [float(x) for x in Sprvsr.loss_in_t[t, :]]
             row += [float(Sprvsr.loss_MSE_in_t[t])]
+            row += [int(Sprvsr.Hamming_distance_in_t[t])]
 
             if State_meas is not None:  # measured forces
                 row += [float(meas_Fx[t]), float(meas_Fy[t])]

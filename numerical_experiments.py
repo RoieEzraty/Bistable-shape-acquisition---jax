@@ -76,6 +76,7 @@ def train(Strctr: StructureClass, Variabs: VariablesClass, CFG: ExperimentConfig
     State_meas._save_data(0, Strctr, State_meas.pos_arr, State_meas.buckle_arr)
     State_update._save_data(0, Strctr, State_meas.pos_arr, State_update.buckle_arr)
     State_des._save_data(0, Strctr, State_des.pos_arr, State_des.buckle_arr)
+    Sprvsr.calc_Hamming_distance(State_meas.buckle_arr, 0)
 
     if Sprvsr.dataset_sampling == 'free_tip':
         final_pos_des, pos_in_t_des, _, F_in_t_des = Eq_des.calculate_state(Variabs, Strctr, Sprvsr,
@@ -126,6 +127,7 @@ def train(Strctr: StructureClass, Variabs: VariablesClass, CFG: ExperimentConfig
         # ------ save sizes and plot - measured & desired ------
         State_meas._save_data(t, Strctr, final_pos, State_meas.buckle_arr, F_in_t)
         State_des._save_data(t, Strctr, final_pos_des, State_des.buckle_arr, F_in_t_des)
+        Sprvsr.calc_Hamming_distance(State_meas.buckle_arr, t)
 
         Sprvsr.set_desired(final_pos_des, State_des.Fx, State_des.Fy, t)
 

@@ -506,6 +506,7 @@ def animate_arm_w_arcs(traj_pos, L, Fx: Optional[NDArray] = None, Fy: Optional[N
     pos = np.asarray(traj_pos, dtype=float)  # (T, N, 2)
     T_all = pos.shape[0]
     N_all = pos.shape[1]
+    Edges = N_all - 1
     assert pos.ndim == 3 and pos.shape[2] == 2
 
     if np.shape(buckle_traj)[0] != np.shape(traj_pos)[0]:
@@ -531,8 +532,8 @@ def animate_arm_w_arcs(traj_pos, L, Fx: Optional[NDArray] = None, Fy: Optional[N
 
     # ------ left panel: chain ------
     ax_chain.set_aspect("equal", adjustable="box")
-    ax_chain.set_xlim([-L, (N_all-0.5) * L])
-    ax_chain.set_ylim([-(N_all-0.5)/2 * L, (N_all-0.5)/2 * L])
+    ax_chain.set_xlim([-(Edges-0.5) * L, (Edges+0.5) * L])
+    ax_chain.set_ylim([-(Edges-0.5) * L, (Edges-0.5) * L])
     ax_chain.set_xlabel("x")
     ax_chain.set_ylabel("y")
 
