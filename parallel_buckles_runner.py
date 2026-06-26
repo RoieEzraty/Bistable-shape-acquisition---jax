@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import copy
 import traceback
+import warnings
 import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
@@ -11,6 +12,7 @@ from pathlib import Path
 from contextlib import redirect_stdout, redirect_stderr
 from dataclasses import replace
 from typing import Optional, TypedDict, Union
+from datetime import datetime
 from time import time
 
 from config import CFG
@@ -23,6 +25,11 @@ from EquilibriumClass import EquilibriumClass
 import numerical_experiments, plot_funcs, file_funcs
 
 matplotlib.use("Agg", force=True)
+
+
+def _local_log_time() -> str:
+    """Return a readable local timestamp for worker log files."""
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
 class ParallelJob(TypedDict):
@@ -128,7 +135,7 @@ def run_one_job(job: ParallelJob) -> ParallelJobResult:
                 f"Invalid buckle length for CFG.Strctr.H={H}, CFG.Strctr.S={S}. "
                 f"Expected {expected_buckle_size}, got init={len(init_buckle_tup)}, "
                 f"desired={len(desired_buckle_tup)}.\n"
-                f"start time={time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}\n"
+                f"local start time={_local_log_time()}\n"
             )
         return {
             "ok": False,
@@ -157,13 +164,21 @@ def run_one_job(job: ParallelJob) -> ParallelJobResult:
 
     try:
         with open(log_path, "w", encoding="utf-8") as log_f, redirect_stdout(log_f), redirect_stderr(log_f):
-            # Prevent per-step interactive plotting inside worker processes.
-            plot_funcs.plot_arm = lambda *args, **kwargs: None
+            job_t0 = time()
+            print(f"local start time={_local_log_time()}")
+            print(f"job k={k}, l={l}, init={init_buckle_str}, desired={desired_buckle_str}, pos_delta_mode={pos_delta_mode}")
 
-            Strctr, Variabs, Sprvsr, State_meas, State_des, State_update, Eq_meas, Eq_des, t = _train_one_pair(init_buckle=init_buckle,
-                                                                                                               desired_buckle=desired_buckle,
-                                                                                                               invert_updates=False,
-                                                                                                               pos_delta_mode=pos_delta_mode)
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", message="A JAX array is being set as static!.*", category=UserWarning)
+                warnings.filterwarnings("ignore", message="Using `field\\(init=False\\)` on `equinox\\.Module`.*", category=UserWarning)
+
+                # Prevent per-step interactive plotting inside worker processes.
+                plot_funcs.plot_arm = lambda *args, **kwargs: None
+
+                Strctr, Variabs, Sprvsr, State_meas, State_des, State_update, Eq_meas, Eq_des, t = _train_one_pair(init_buckle=init_buckle,
+                                                                                                                   desired_buckle=desired_buckle,
+                                                                                                                   invert_updates=False,
+                                                                                                                   pos_delta_mode=pos_delta_mode)
 
             F_meas_in_t = np.array([State_meas.Fx_in_t, State_meas.Fy_in_t])
             F_des_in_t = np.array([State_des.Fx_in_t, State_des.Fy_in_t])
@@ -197,6 +212,10 @@ def run_one_job(job: ParallelJob) -> ParallelJobResult:
                 csv_path = str(run_dir / f"final_loss_{Sprvsr.loss_MSE_in_t[t]:.6g}_init_{init_buckle_str}_desired_{desired_buckle_str}{suffix1}{suffix2}.csv")
                 file_funcs.export_training_csv(str(csv_path), Strctr, Sprvsr, T=t + 1, State_meas=State_meas, State_update=State_update)
 
+            print(f"local end time={_local_log_time()}")
+            print(f"elapsed seconds={time() - job_t0:.2f}")
+            print(f"final t={t}, loss={float(Sprvsr.loss_MSE):.6g}")
+
         return {
             "ok": True,
             "k": k,
@@ -213,7 +232,7 @@ def run_one_job(job: ParallelJob) -> ParallelJobResult:
 
     except Exception:
         with open(log_path, "a", encoding="utf-8") as log_f:
-            log_f.write("\n\n=== EXCEPTION ===\n")
+            log_f.write(f"\n\n=== EXCEPTION at {_local_log_time()} ===\n")
             log_f.write(traceback.format_exc())
         return {
             "ok": False,

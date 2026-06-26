@@ -131,7 +131,7 @@ class EquilibriumClass(eqx.Module):
     # main function of EquilibriumClass
     # ---------------------------------------------------------------
     def calculate_state(self, Variabs: "VariablesClass", Strctr: "StructureClass", Sprvsr: "SupervisorClass",
-                        init_pos: NDArray[float], control_tip: bool = True,  tip_pos: jax.Array | None = None,
+                        init_pos: NDArray, control_tip: bool = True,  tip_pos: jax.Array | None = None,
                         tip_angle: float | jax.Array | None = None, pos_noise: float | jax.Array | None = None,
                         vel_noise: float | jax.Array | None = None) -> Tuple[jax.Array, jax.Array, jax.Array,
                                                                              jax.Array]:
@@ -144,7 +144,7 @@ class EquilibriumClass(eqx.Module):
 
         Parameters
         ----------
-        init_pos    : jax.Array (N, 2), [m], initial position of all nodes in x and y
+        init_pos    : jax.Array / np.ndarray [float] (N, 2), [m], initial position of all nodes in x and y
         control_tip : bool, optional
                             If True (default), impose also two final nodes. Else, impose only two first nodes.
         tip_pos     : jax.Array, optional, [m], tip position as (x_tip, y_tip). If None, free tip in position

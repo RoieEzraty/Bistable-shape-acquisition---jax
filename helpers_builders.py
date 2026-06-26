@@ -15,7 +15,12 @@ from jax import grad, jit, vmap
 from typing import Tuple, List
 from numpy import array, zeros
 from numpy.typing import NDArray
+from jax import Array as JArray
+from jaxtyping import Float64
+
 from typing import TYPE_CHECKING, Callable, Union, Optional, Iterable, Mapping
+
+from wcwidth import wrap
 
 if TYPE_CHECKING:
     from StructureClass import StructureClass
@@ -55,7 +60,7 @@ def numpy2jax(arr: NDArray[np.float64]) -> jnp.ndarray:
 # ---------------------------------------------------------------
 # Reshapes
 # ---------------------------------------------------------------
-def _reshape_pos_arr_2_state(pos_arr: jnp.Array[jnp.float64]) -> jnp.Array[jnp.float64]:
+def _reshape_pos_arr_2_state(pos_arr: Float64[JArray, "n"]) -> Float64[JArray, "n"]:
     """
     Flatten position array into a full state vector ([x0, y0, x1, y1, .... x0_dot, y0_dot...]).
 
@@ -76,7 +81,7 @@ def _reshape_pos_arr_2_state(pos_arr: jnp.Array[jnp.float64]) -> jnp.Array[jnp.f
     return jnp.concatenate([first_half, second_half])
 
 
-def _reshape_state_2_pos_arr(state: jnp.Array[jnp.float64], pos_arr: jnp.Array[jnp.float64]) -> jnp.Array[jnp.float64]:
+def _reshape_state_2_pos_arr(state: Float64[JArray, "n"], pos_arr: Float64[JArray, "n"]) -> Float64[JArray, "n"]:
     """
     Reshape a flattened state vector back into node positions.
 
@@ -490,8 +495,7 @@ def _circle_circle_intersections_np(c0: NDArray[np.float64], r0: float, c1: NDAr
 
 
 def _correct_big_stretch(tip_pos: NDArray[np.float64], tip_angle: float, total_angle: float, R_free: float,
-                         L: float, margin: float = 0.0, supress_prints: bool = True,
-                         wrap: bool = True) -> NDArray[np.float64]:
+                         L: float, margin: float = 0.0, supress_prints: bool = True) -> NDArray[np.float64]:
     """
     Radially scale down tip position to maximal reachable radius constraint, if tip position exceeds it.
     Applied to distance between node-before-tip and 2nd node (located at (L, 0)). Scale down is radial towards 2nd node.
@@ -525,7 +529,7 @@ def _correct_big_stretch(tip_pos: NDArray[np.float64], tip_angle: float, total_a
     # chain current radius
     disp = before_last - second_node
     r_chain = np.hypot(disp[0], disp[1])
-    R_eff = effective_radius(R_free, L, total_angle, tip_angle, supress_prints=supress_prints, wrap=wrap)
+    R_eff = effective_radius(R_free, L, total_angle, tip_angle, supress_prints=supress_prints)
 
     if not supress_prints:
         print(f'update vals before correction={tip_pos},{tip_angle}')
@@ -563,49 +567,35 @@ def _correct_big_stretch(tip_pos: NDArray[np.float64], tip_angle: float, total_a
     return tip_new
 
 
-def effective_radius(R: float, L: float, total_angle: float, tip_angle: float, supress_prints: bool = True,
-                     wrap: bool = True) -> float:
+def effective_radius(R_free: float, L: float, total_angle: float, tip_angle: float, supress_prints: bool = True) -> float:
     """
     Compute effective maximal reachable radius of the chain, accounting for angular wrapping (coil shrinkage).
 
     Notes
     -----
     - `total_angle` must be **unwrapped**, i.e. it may exceed ±2π, ±4π, etc.
-    - For every full revolution (2π) in `delta`, the effective radius
-      shrinks by 2L, corresponding to a full loop consuming two edge lengths.
-    - Remaining partial revolution contributes additional shrinkage = L * (1 - cos(rem / 2))
-
+    - Shrinkage starts only after a pi revolution; each additional pi contributes linearly up to L.
+    - Tip shrinkage uses abs(tip_angle - total_angle), so opposite tip rotation can untangle the global wrap.
     Parameters
     ----------
-    R           - float, Nominal free radius before accounting for coiling, calcaulted at init of SupervisorClass.
+    R_free      - float, Nominal free radius before accounting for coiling, calcaulted at init of SupervisorClass.
     L           - float, Edge length of the chain.
     total_angle - float, Unwrapped accumulated chain angle (radians).
     tip_angle   - float,  Current tip orientation (radians).
-    margin      - float, optional,  Additional safety margin subtracted from R.
     supress_prints - bool, optional, If False, prints shrink contributions.
-    wrap           - bool, optional, If True, wrap difference total angle - tip angle so R_eff not too small.
+    wrap        - bool, optional, If False, return the nominal free radius.
 
     Returns
     -------
     R_eff - float,  Effective maximal reachable radius after accounting for coil-induced shrinkage.
     """
-    # Local mismatch between radial direction and last-edge direction.
-    # Use wrapped difference, not unwrapped difference, otherwise one extra 2π
-    # in total_angle looks like another full tip revolution.
-    if wrap:
-        gamma = abs(wrap_pi(tip_angle - total_angle))
-    else:
-        gamma = abs(tip_angle - total_angle)
-    shrink_local = L * (1.0 - np.cos(gamma / 2.0))   # <= L for gamma in [0, pi]
+    # Global wrap uses the base angle; local wrap uses the tip angle relative
+    # to it, allowing opposite tip rotation to untangle the endpoint.
+    def half_turn_shrink(angle: float) -> float:
+        return L * max(0.0, abs(angle) / np.pi - 1.0)
 
-    # Global winding penalty only after an actual near-full coil.
-    coil_start = 1*np.pi
-    excess_winding = max(0.0, abs(total_angle) - coil_start)
-    shrink_global = 1.0 * L * excess_winding / (2.0*np.pi)
-
-    # # Key change: do not add them.
-    # shrink = max(shrink_local, shrink_global)
-    # add them
+    shrink_global = half_turn_shrink(total_angle)
+    shrink_local = half_turn_shrink(tip_angle - total_angle)
     shrink = shrink_local + shrink_global
 
     if not supress_prints:
@@ -613,7 +603,7 @@ def effective_radius(R: float, L: float, total_angle: float, tip_angle: float, s
         print("shrink global winding", shrink_global)
         print("chosen shrink", shrink)
 
-    return max(0.0, R - shrink)
+    return max(0.0, R_free - shrink)
 
 
 def swept_last_edge_crosses_first_edge(tip_prev: np.ndarray, angle_prev: float, tip_new: np.ndarray, angle_new: float,

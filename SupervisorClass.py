@@ -6,6 +6,7 @@ import jax
 import jax.numpy as jnp
 import equinox as eqx
 from jax import vmap
+from datetime import datetime
 
 from typing import Tuple, List
 from numpy import array, zeros
@@ -21,6 +22,11 @@ if TYPE_CHECKING:
     from VariablesClass import VariablesClass
 
 np.set_printoptions(precision=4, suppress=True)
+
+
+def _local_log_time() -> str:
+    """Return a readable local timestamp for sparse event logs."""
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
 # ===================================================
@@ -593,7 +599,7 @@ class SupervisorClass:
                 if (clamp_erased_y and (clamp_reversed_x or clamp_fabricated_x)) or two_step_bounce:
                     tip_new = prev_tip_update_pos.copy()
                     corrected_delta = tip_new - prev_tip_update_pos
-                print("outer clamp:",
+                print(f"[{_local_log_time()}] outer clamp:",
                       "t=", t,
                       "raw_delta=", delta_tip,
                       "corrected_delta=", corrected_delta,
@@ -632,7 +638,7 @@ class SupervisorClass:
         self.restart = False
 
         if correct_for_cut_origin and cond_cut_origin:
-            print('origin is cut')
+            print(f'[{_local_log_time()}] origin is cut at t={t}')
             self.coil_count = 0
             self.origin_cut_restart_count += 1
 
@@ -645,13 +651,13 @@ class SupervisorClass:
             # sign is just from angle direction of tip
             side_sign = np.sign(delta_angle)
             self._restart_flat_with_y_bias(t, Strctr, side_sign=side_sign)
-            print(f'setting update tip pos={self.tip_pos_update_in_t[t, :]}, angle={self.tip_angle_update_in_t[t]}')
+            print(f'[{_local_log_time()}] setting update tip pos={self.tip_pos_update_in_t[t, :]}, angle={self.tip_angle_update_in_t[t]}')
             prev_total_angle = 0.0
             self.restart = True
             self.last_restart_reason = "origin_cut"
 
         elif correct_for_coil and cond_coil:
-            print('coiled up too much')
+            print(f'[{_local_log_time()}] coiled up too much at t={t}')
             self.origin_cut_restart_count = 0
             self.coil_count += 1
 
@@ -661,13 +667,13 @@ class SupervisorClass:
             # print(f'setting update tip pos={self.tip_pos_update_in_t[t, :]}, angle={self.tip_angle_update_in_t[t]}')
             side_sign = np.sign(delta_angle)
             self._restart_flat_with_y_bias(t, Strctr, side_sign=side_sign)
-            print(f'setting update tip pos={self.tip_pos_update_in_t[t, :]}, angle={self.tip_angle_update_in_t[t]}')
+            print(f'[{_local_log_time()}] setting update tip pos={self.tip_pos_update_in_t[t, :]}, angle={self.tip_angle_update_in_t[t]}')
             prev_total_angle = 0.0
             self.restart = True
             self.last_restart_reason = "coil"
 
         elif correct_for_update_force and cond_tip_force:
-            print('update forces too big')
+            print(f'[{_local_log_time()}] update forces too big at t={t}')
             self.coil_count = 0
             self.origin_cut_restart_count = 0
 
@@ -675,7 +681,7 @@ class SupervisorClass:
             self.tip_pos_update_in_t[t, :] = rand_update_tip_pos
             self.tip_angle_update_in_t[t] = rand_update_tip_angle
             self.total_angle_update_in_t[t] = 0.0
-            print(f'setting update tip pos={self.tip_pos_update_in_t[t, :]}, angle={self.tip_angle_update_in_t[t]}')
+            print(f'[{_local_log_time()}] setting update tip pos={self.tip_pos_update_in_t[t, :]}, angle={self.tip_angle_update_in_t[t]}')
             prev_total_angle = 0.0
             self.restart = True
             self.last_restart_reason = "forces"
@@ -685,7 +691,7 @@ class SupervisorClass:
                                 or
                                 np.array_equal(State_meas.buckle_arr, np.array([[-1], [-1], [-1], [-1]])))
         if (cond_cut_origin or cond_coil) and (cond_extremal_buckle):
-            print('conditions for inverting delta tip inside run met, inverting delta tip')
+            print(f'[{_local_log_time()}] conditions for inverting delta tip inside run met, inverting delta tip')
             self.invert_delta_tip = not self.invert_delta_tip
         # if self.coil_count > 1 or self.origin_cut_restart_count > 1:
         #     print(f'inverting tip sign at time t={t}')
@@ -747,7 +753,7 @@ class SupervisorClass:
         self.restart = True
 
         if not self.supress_prints:
-            print(f"cut origin for the {self.origin_cut_restart_count} time")
+            print(f"[{_local_log_time()}] cut origin for the {self.origin_cut_restart_count} time")
 
     def _get_loss_dispatch(self):
         return {"force": self._loss_force,
