@@ -550,7 +550,7 @@ class SupervisorClass:
             # effective-radius perimeter instead of radially projecting back.
             R_eff = helpers_builders.effective_radius(self.R_free, Strctr.L, total_angle=total_angle,
                                                       tip_angle=float(self.tip_angle_update_in_t[t]),
-                                                      supress_prints=self.supress_prints, wrap=self.wrap)
+                                                      supress_prints=self.supress_prints)
             before_prev = helpers_builders._get_before_tip(prev_tip_update_pos, float(prev_tip_update_angle),
                                                            Strctr.L, xp=np)
 
@@ -725,7 +725,7 @@ class SupervisorClass:
         tip_angle = np.pi / 2 * self.rng_tip.random()
 
         # uniform in disk
-        R_eff = helpers_builders.effective_radius(self.R_free, Strctr.L, total_angle=0, tip_angle=tip_angle, wrap=self.wrap)
+        R_eff = helpers_builders.effective_radius(self.R_free, Strctr.L, total_angle=0, tip_angle=tip_angle)
         r_min = 0.75 * R_eff
         r = r_min + (R_eff - r_min) * np.sqrt(self.rng_tip.random())
         phi = np.pi / 4 * self.rng_tip.random()
