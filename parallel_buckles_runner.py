@@ -11,6 +11,7 @@ from pathlib import Path
 from contextlib import redirect_stdout, redirect_stderr
 from dataclasses import replace
 from typing import Optional, TypedDict, Union
+from time import time
 
 from config import CFG
 from StructureClass import StructureClass
@@ -127,6 +128,7 @@ def run_one_job(job: ParallelJob) -> ParallelJobResult:
                 f"Invalid buckle length for CFG.Strctr.H={H}, CFG.Strctr.S={S}. "
                 f"Expected {expected_buckle_size}, got init={len(init_buckle_tup)}, "
                 f"desired={len(desired_buckle_tup)}.\n"
+                f"start time={time.strftime('%Y-%m-%d %H:%M:%S', time.localtime())}\n"
             )
         return {
             "ok": False,

@@ -594,6 +594,7 @@ class SupervisorClass:
                     tip_new = prev_tip_update_pos.copy()
                     corrected_delta = tip_new - prev_tip_update_pos
                 print("outer clamp:",
+                      "t=", t,
                       "raw_delta=", delta_tip,
                       "corrected_delta=", corrected_delta,
                       "raw_dy=", delta_tip[1],

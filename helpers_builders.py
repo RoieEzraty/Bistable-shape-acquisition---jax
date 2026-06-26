@@ -876,7 +876,7 @@ def _get_total_angle(tip_pos: NDArray, prev_total_angle: float, L: float, origin
     prev_theta_wrapped = ((prev_total_angle + np.pi) % (2*np.pi)) - np.pi
     delta = total_angle - prev_theta_wrapped
 
-    # correct jumpt across -x axis - adding or subtracting 2π
+    # correct jump across -x axis - adding or subtracting 2π
     if delta > np.pi:
         delta -= 2*np.pi
     elif delta < -np.pi:

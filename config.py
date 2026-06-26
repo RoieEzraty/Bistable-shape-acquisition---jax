@@ -155,7 +155,7 @@ class EquilibriumConfig:
 # -----------------------------
 @dataclass(frozen=True)
 class TrainingConfig:
-    T: int = 500  # total training set time (not time to reach equilibrium during every step)
+    T: int = 300  # total training set time (not time to reach equilibrium during every step)
 
     # desired_buckle_type: str = 'random'
     # desired_buckle_type: str = 'opposite'
@@ -167,11 +167,11 @@ class TrainingConfig:
     elif desired_buckle_type == 'specified':
         # desired_buckle_pattern: tuple = (1, -1, -1, -1, -1)  # desired buckle, 1=up
         # desired_buckle_pattern: tuple = (-1, -1, -1, -1)  # desired buckle, 1=up
-        desired_buckle_pattern: tuple = (1, -1, 1, -1, 1, -1, -1, -1, -1, -1)  # desired buckle, 1=up
+        desired_buckle_pattern: tuple = (1, -1, -1, -1, -1, 1, 1, 1)  # desired buckle, 1=up
 
     # init_buckle_pattern: tuple = (-1, -1, -1, -1, 1)  # initial buckle, 1=up
     # init_buckle_pattern: tuple = (-1, -1, -1, 1)  # initial buckle, 1=up
-    init_buckle_pattern: tuple = (-1, -1, 1, -1, 1, -1, -1, -1, -1, 1)  # initial buckle, 1=up
+    init_buckle_pattern: tuple = (-1, -1, 1, 1, 1, 1, -1, -1)  # initial buckle, 1=up
     # init_buckle_pattern: tuple = (1)  # initial buckle, 1=up
 
     # dataset_sampling: str = 'uniform'  # random uniform vals for x, y, angle
