@@ -177,7 +177,8 @@ def _initiate_buckle(hinges: int, shims: int, buckle_pattern: tuple = (), numpif
 # ---------------------------------------------------------------
 def clamp_pos_same_delta(*, before_prev: NDArray, tip_angle_new: float, tip_raw: NDArray, second_node: NDArray,
                          R_lim: float, L: float, mod="outer", tip_update_prev: Optional[NDArray] = None,
-                         raw_update_tip: Optional[NDArray] = None, eps=1e-12):
+                         raw_update_tip: Optional[NDArray] = None, eps=1e-12,
+                         clamp_margin: float = 0.0, use_tangent_selection: bool = False):
     """
     Enforce ||node before tip - second_node|| <= R_lim
     while preserving ||new node before tip - before_prev|| = ||before_raw - before_prev|| (when possible).
@@ -205,7 +206,10 @@ def clamp_pos_same_delta(*, before_prev: NDArray, tip_angle_new: float, tip_raw:
     R_lim         - float. Maximal allowed distance from second_node to node-before-tip. Calculated in effective_radius()
     L             - float. Link length between the tip node and the node-before-tip.
     mod           - str. "outer" = clamp tip to inside of large radius, "inner" = vice verse
-    eps           - float, optional, Small tolerance for numerical stability and comparisons.
+    eps           - float, optional, Small tolerance for numerical stability only.
+    clamp_margin  - float, optional, Distance inside the outer radius / outside the inner radius to clamp to.
+    use_tangent_selection - bool, optional. If True, prefer the candidate that preserves clockwise/counter-clockwise
+                 motion along the constraint circle. Defaults to False to preserve older behavior.
 
     Returns
     -------
@@ -217,12 +221,17 @@ def clamp_pos_same_delta(*, before_prev: NDArray, tip_angle_new: float, tip_raw:
     tip_raw = np.asarray(tip_raw, float).reshape(2,)
     second_node = np.asarray(second_node, float).reshape(2,)
     R_lim = float(R_lim)
+    clamp_margin = max(0.0, float(clamp_margin))
 
     # circle-circle intersection: constraint circle & step circle
     if mod == "outer":
         center = second_node
+        R_clamp = max(0.0, R_lim - clamp_margin)
     elif mod == "inner":
         center = second_node/2
+        R_clamp = R_lim + clamp_margin
+    else:
+        raise ValueError(f"Unknown clamp mode '{mod}'")
 
     # raw before-tip implied by tip_raw and tip_angle_new
     u = array([np.cos(tip_angle_new), np.sin(tip_angle_new)], float)
@@ -237,19 +246,19 @@ def clamp_pos_same_delta(*, before_prev: NDArray, tip_angle_new: float, tip_raw:
     disp_raw = before_raw - center
     r_raw = np.linalg.norm(disp_raw)
 
-    if (r_raw <= R_lim + eps and mod == "outer") or (r_raw >= R_lim - eps and mod == "inner"):
+    if (r_raw <= R_clamp and mod == "outer") or (r_raw >= R_clamp and mod == "inner"):
         return tip_raw, before_raw, False  # no clamp
 
     step = np.linalg.norm(before_raw - before_prev)
 
-    pts = _circle_circle_intersections_np(center, R_lim, before_prev, step, eps=eps)
+    pts = _circle_circle_intersections_np(center, R_clamp, before_prev, step, eps=eps)
 
     if len(pts) == 0:
         # fallback: radial clamp in before-space
         if r_raw < eps:
-            before_new = center + array([R_lim, 0.0])
+            before_new = center + array([R_clamp, 0.0])
         else:
-            before_new = center + disp_raw * (R_lim / r_raw)
+            before_new = center + disp_raw * (R_clamp / r_raw)
     else:
         # # before 7May
         # before_new = min(pts, key=lambda p: np.sum((p - before_raw)**2))
@@ -314,27 +323,48 @@ def clamp_pos_same_delta(*, before_prev: NDArray, tip_angle_new: float, tip_raw:
 
             cand_delta = [tc - tip_update_prev for tc in tip_candidates]
 
-            valid = np.ones(len(pts), dtype=bool)
-
-            # If raw dy says "go up", never accept a candidate
-            # whose corrected dy goes down, unless numerical tolerance makes it zero.
-            if abs(raw_update_tip[1]) > eps:
-                sy = np.sign(raw_update_tip[1])
-                valid &= np.array([np.sign(cd[1]) == sy or abs(cd[1]) < eps for cd in cand_delta])
-
-            # Optional: also preserve x direction if meaningful.
-            if np.any(valid) and abs(raw_update_tip[0]) > eps:
-                sx = np.sign(raw_update_tip[0])
-                valid_x = valid & np.array([np.sign(cd[0]) == sx or abs(cd[0]) < eps for cd in cand_delta])
-                if np.any(valid_x):
-                    valid = valid_x
-
-            if np.any(valid):
-                inds = np.where(valid)[0]
-                best_idx = min(inds, key=lambda k: np.sum((tip_candidates[k] - tip_raw) ** 2))  # May 10
-                before_new = pts[int(best_idx)]
+            if use_tangent_selection and mod == "outer":
+                r_prev = before_prev - center
+                r_prev_norm = np.linalg.norm(r_prev)
+                if r_prev_norm > eps:
+                    tangent_ccw = array([-r_prev[1], r_prev[0]]) / r_prev_norm
+                    raw_tangent = float(np.dot(raw_update_tip, tangent_ccw))
+                    if abs(raw_tangent) > eps:
+                        desired_sign = np.sign(raw_tangent)
+                        scores = array([desired_sign * float(np.dot(cd, tangent_ccw)) for cd in cand_delta])
+                        valid = scores > -eps
+                        if np.any(valid):
+                            inds = np.where(valid)[0]
+                            best_idx = int(inds[np.argmax(scores[inds])])
+                            before_new = pts[best_idx]
+                        else:
+                            before_new = min(pts, key=lambda p: np.sum((p - before_raw) ** 2))
+                    else:
+                        before_new = min(pts, key=lambda p: np.sum((p - before_raw) ** 2))
+                else:
+                    before_new = min(pts, key=lambda p: np.sum((p - before_raw) ** 2))
             else:
-                before_new = min(pts, key=lambda p: np.sum((p - before_raw) ** 2))
+                valid = np.ones(len(pts), dtype=bool)
+
+                # If raw dy says "go up", never accept a candidate
+                # whose corrected dy goes down, unless numerical tolerance makes it zero.
+                if abs(raw_update_tip[1]) > eps:
+                    sy = np.sign(raw_update_tip[1])
+                    valid &= np.array([np.sign(cd[1]) == sy or abs(cd[1]) < eps for cd in cand_delta])
+
+                # Optional: also preserve x direction if meaningful.
+                if np.any(valid) and abs(raw_update_tip[0]) > eps:
+                    sx = np.sign(raw_update_tip[0])
+                    valid_x = valid & np.array([np.sign(cd[0]) == sx or abs(cd[0]) < eps for cd in cand_delta])
+                    if np.any(valid_x):
+                        valid = valid_x
+
+                if np.any(valid):
+                    inds = np.where(valid)[0]
+                    best_idx = min(inds, key=lambda k: np.sum((tip_candidates[k] - tip_raw) ** 2))  # May 10
+                    before_new = pts[int(best_idx)]
+                else:
+                    before_new = min(pts, key=lambda p: np.sum((p - before_raw) ** 2))
         else:
             before_new = min(pts, key=lambda p: np.sum((p - before_raw) ** 2))
 
