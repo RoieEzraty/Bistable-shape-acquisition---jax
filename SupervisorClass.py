@@ -552,7 +552,7 @@ class SupervisorClass:
                                                       tip_angle=float(self.tip_angle_update_in_t[t]),
                                                       supress_prints=self.supress_prints)
             clamp_margin = 0.1 * Strctr.L * (Strctr.hinges-1)
-            use_tangent_clamp = True
+            use_tangent_clamp = False
             before_prev = helpers_builders._get_before_tip(prev_tip_update_pos, float(prev_tip_update_angle),
                                                            Strctr.L, xp=np)
 

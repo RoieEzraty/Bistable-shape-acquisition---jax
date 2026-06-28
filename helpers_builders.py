@@ -621,11 +621,15 @@ def effective_radius(R_free: float, L: float, total_angle: float, tip_angle: flo
     """
     # Global wrap uses the base angle; local wrap uses the tip angle relative
     # to it, allowing opposite tip rotation to untangle the endpoint.
-    def half_turn_shrink(angle: float) -> float:
-        return L * max(0.0, abs(angle) / np.pi - 1.0)
+    # 2L for revolution around base, 1L around tip
+    def half_turn_shrink(angle: float, mod: str = 'tip') -> float:
+        if mod == 'tip':
+            return L * max(0.0, abs(angle) / np.pi - 1.0)
+        elif mod == 'global':
+            return 2 * L * max(0.0, abs(angle) / np.pi - 1.0)
 
-    shrink_global = half_turn_shrink(total_angle)
-    shrink_local = half_turn_shrink(tip_angle - total_angle)
+    shrink_global = half_turn_shrink(total_angle, mod='global')
+    shrink_local = half_turn_shrink(tip_angle - total_angle, mod='tip')
     shrink = shrink_local + shrink_global
 
     if not supress_prints:
