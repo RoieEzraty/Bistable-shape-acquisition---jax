@@ -44,6 +44,7 @@ class ParallelJob(TypedDict):
     save_pngs: bool
     save_csvs: bool
     pos_delta_mode: str
+    use_tangent_clamp: bool
 
 
 class ParallelJobResult(TypedDict):
@@ -60,16 +61,23 @@ class ParallelJobResult(TypedDict):
     csv_path: Optional[str]
     log_path: str
     pos_delta_mode: str
+    use_tangent_clamp: bool
 
 
 def _train_one_pair(init_buckle: np.ndarray, desired_buckle: np.ndarray,
                     invert_updates: bool = False,
-                    pos_delta_mode: Optional[str] = None) -> tuple[StructureClass, VariablesClass, SupervisorClass,
-                                                                   StateClass, StateClass, StateClass, EquilibriumClass,
-                                                                   EquilibriumClass, int]:
+                    pos_delta_mode: Optional[str] = None,
+                    use_tangent_clamp: Optional[bool] = None) -> tuple[StructureClass, VariablesClass, SupervisorClass,
+                                                                       StateClass, StateClass, StateClass, EquilibriumClass,
+                                                                       EquilibriumClass, int]:
     cfg = CFG
+    train_cfg = cfg.Train
     if pos_delta_mode is not None:
-        cfg = replace(CFG, Train=replace(CFG.Train, pos_delta_mode=pos_delta_mode))
+        train_cfg = replace(train_cfg, pos_delta_mode=pos_delta_mode)
+    if use_tangent_clamp is not None:
+        train_cfg = replace(train_cfg, use_tangent_clamp=use_tangent_clamp)
+    if train_cfg is not cfg.Train:
+        cfg = replace(cfg, Train=train_cfg)
 
     Strctr: "StructureClass" = StructureClass(cfg, update_scheme=cfg.Train.update_scheme)
     Variabs: "VariablesClass" = VariablesClass(Strctr, cfg)
@@ -97,6 +105,7 @@ def run_one_job(job: ParallelJob) -> ParallelJobResult:
         save_gifs          - True = save HTML animation of update trajectory in training time.
         save_pngs          - True = save sizes during training time t as graphs in PNG.
         save_csvs          - True = export training trajectory and state history to CSV.
+        use_tangent_clamp  - True = preserve tangential update direction during outer free-tip clamp.
 
     Returns
     -------
@@ -123,6 +132,7 @@ def run_one_job(job: ParallelJob) -> ParallelJobResult:
     save_pngs = bool(job["save_pngs"])
     save_csvs = bool(job["save_csvs"])
     pos_delta_mode = str(job.get("pos_delta_mode", CFG.Train.pos_delta_mode))
+    use_tangent_clamp = bool(job.get("use_tangent_clamp", CFG.Train.use_tangent_clamp))
 
     run_dir.mkdir(parents=True, exist_ok=True)
 
@@ -149,6 +159,7 @@ def run_one_job(job: ParallelJob) -> ParallelJobResult:
             "csv_path": None,
             "log_path": str(log_path),
             "pos_delta_mode": pos_delta_mode,
+            "use_tangent_clamp": use_tangent_clamp,
         }
 
     init_buckle = np.asarray(init_buckle_tup, dtype=np.int32)
@@ -166,7 +177,10 @@ def run_one_job(job: ParallelJob) -> ParallelJobResult:
         with open(log_path, "w", encoding="utf-8") as log_f, redirect_stdout(log_f), redirect_stderr(log_f):
             job_t0 = time()
             print(f"local start time={_local_log_time()}")
-            print(f"job k={k}, l={l}, init={init_buckle_str}, desired={desired_buckle_str}, pos_delta_mode={pos_delta_mode}")
+            print(
+                f"job k={k}, l={l}, init={init_buckle_str}, desired={desired_buckle_str}, "
+                f"pos_delta_mode={pos_delta_mode}, use_tangent_clamp={use_tangent_clamp}"
+            )
 
             with warnings.catch_warnings():
                 warnings.filterwarnings("ignore", message="A JAX array is being set as static!.*", category=UserWarning)
@@ -178,7 +192,8 @@ def run_one_job(job: ParallelJob) -> ParallelJobResult:
                 Strctr, Variabs, Sprvsr, State_meas, State_des, State_update, Eq_meas, Eq_des, t = _train_one_pair(init_buckle=init_buckle,
                                                                                                                    desired_buckle=desired_buckle,
                                                                                                                    invert_updates=False,
-                                                                                                                   pos_delta_mode=pos_delta_mode)
+                                                                                                                   pos_delta_mode=pos_delta_mode,
+                                                                                                                   use_tangent_clamp=use_tangent_clamp)
 
             F_meas_in_t = np.array([State_meas.Fx_in_t, State_meas.Fy_in_t])
             F_des_in_t = np.array([State_des.Fx_in_t, State_des.Fy_in_t])
@@ -228,6 +243,7 @@ def run_one_job(job: ParallelJob) -> ParallelJobResult:
             "csv_path": None if csv_path is None else str(csv_path),
             "log_path": str(log_path),
             "pos_delta_mode": pos_delta_mode,
+            "use_tangent_clamp": use_tangent_clamp,
         }
 
     except Exception:
@@ -246,4 +262,5 @@ def run_one_job(job: ParallelJob) -> ParallelJobResult:
             "csv_path": None,
             "log_path": str(log_path),
             "pos_delta_mode": pos_delta_mode,
+            "use_tangent_clamp": use_tangent_clamp,
         }

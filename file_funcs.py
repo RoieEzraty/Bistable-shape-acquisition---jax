@@ -6,7 +6,6 @@ import re
 import numpy as np
 import json
 import pandas as pd
-import matplotlib.pyplot as plt
 import jax.numpy as jnp
 from pathlib import Path
 from scipy.signal import savgol_filter
@@ -519,6 +518,92 @@ def export_training_npz(path_npz: str, **arrays):
 # ---------------------------------------------------------------
 def loss_from_filename(file: Path):
     return float(re.search(r"final_loss_(.*?)_init_", file.stem).group(1))
+
+
+def build_loss_columns(folder: str | Path, old: bool = False, omit_inverted: bool = False,
+                       log_norm: bool = True, save_path: Optional[str | Path] = None) -> Tuple[NDArray[np.float64],
+                                                                                               NDArray[np.float64], NDArray]:
+    """
+    Read training CSVs in a folder and plot initial/final MSE loss as two color columns.
+
+    Parameters
+    ----------
+    folder        : str | Path
+        Folder containing ``final_loss_*.csv`` training exports.
+    old           : bool, default=False
+        Use old filename convention where desired buckle appears as ``desiredXXXX``.
+    omit_inverted : bool, default=False
+        Omit files containing ``"_inverted"`` in the filename.
+    log_norm      : bool, default=True
+        If True, use logarithmic color scaling for positive losses.
+    save_path     : str | Path | None
+        Optional path for saving the figure.
+
+    Returns
+    -------
+    loss_columns : ndarray, shape (N, 2)
+        ``loss_columns[:, 0]`` is initial ``loss_MSE`` and
+        ``loss_columns[:, 1]`` is final ``loss_MSE``.
+    Hamming_columns : ndarray, shape (N, 2)
+        Initial and final Hamming distance. Missing CSV columns are returned as ``nan``.
+    buckle_pairs : ndarray, shape (N, 2)
+        String buckle labels ``[initial_buckle, desired_buckle]`` for every row.
+    """
+    folder = Path(folder)
+    files = sorted(folder.glob("final_loss_*.csv"))
+    if omit_inverted:
+        files = [file for file in files if "_inverted" not in file.stem]
+    if not files:
+        raise FileNotFoundError(f"No files matching 'final_loss_*.csv' in {folder}")
+
+    records: list[tuple[int, int, list[float], list[float], list[str]]] = []
+
+    for file in files:
+        name = file.stem
+        init_match = re.search(r"init_([01]+)", name)
+        desired_match = re.search(r"desired([01]+)", name) if old else re.search(r"desired_([01]+)", name)
+        if init_match is None or desired_match is None:
+            continue
+
+        df = pd.read_csv(file)
+        if df.empty:
+            continue
+
+        if "loss_MSE" in df.columns:
+            loss_MSE = df["loss_MSE"].to_numpy(dtype=float)
+        else:
+            loss_cols = [c for c in df.columns if re.fullmatch(r"loss_\d+", c)]
+            loss_cols = sorted(loss_cols, key=lambda c: int(c.split("_")[1]))
+            if len(loss_cols) == 0:
+                continue
+            loss_MSE = np.mean(df[loss_cols].to_numpy(dtype=float)**2, axis=1)
+
+        if "Hamming_distance" in df.columns:
+            Hamming = df["Hamming_distance"].to_numpy(dtype=float)
+        else:
+            Hamming = np.full(loss_MSE.shape, np.nan, dtype=float)
+
+        init_bits = init_match.group(1)
+        desired_bits = desired_match.group(1)
+        init_idx = 1 if loss_MSE.size > 1 else 0
+        records.append((int(init_bits, 2), int(desired_bits, 2),
+                        [float(loss_MSE[init_idx]), float(loss_MSE[-1])],
+                        [float(Hamming[init_idx]), float(Hamming[-1])],
+                        [init_bits, desired_bits]))
+
+    if not records:
+        raise ValueError(f"No readable training loss files found in {folder}")
+
+    records = sorted(records, key=lambda record: (record[0], record[1]))
+    losses = [record[2] for record in records]
+    Hammings = [record[3] for record in records]
+    buckle_pairs = [record[4] for record in records]
+
+    loss_columns = np.asarray(losses, dtype=float)
+    Hamming_columns = np.asarray(Hammings, dtype=float)
+    buckle_pairs_arr = np.asarray(buckle_pairs, dtype=str)
+
+    return loss_columns, Hamming_columns, buckle_pairs_arr
 
 
 def build_success_matrix(folder: Path, old: bool = False, N: int = 16, near_miss: bool = False,

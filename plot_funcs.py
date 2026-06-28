@@ -7,7 +7,7 @@ from IPython.display import HTML
 from matplotlib import patches
 from matplotlib.ticker import MaxNLocator
 from matplotlib.animation import FuncAnimation, PillowWriter  # for GIF export
-from matplotlib.colors import BoundaryNorm
+from matplotlib.colors import BoundaryNorm, LogNorm
 from matplotlib.lines import Line2D
 from scipy.signal import savgol_filter
 from matplotlib.patches import Ellipse, FancyArrowPatch
@@ -627,6 +627,97 @@ def animate_arm_w_arcs(traj_pos, L, Fx: Optional[NDArray] = None, Fy: Optional[N
 # ----------------------------
 # Post Processing
 # ----------------------------
+def plot_loss_columns(loss_columns: NDArray, Hamming_columns: Optional[NDArray] = None,
+                      buckle_pairs: Optional[NDArray] = None, log_norm: bool = True,
+                      save_path: Optional[str] = None, ax=None, ax2=None) -> None:
+    """
+    Plot initial/final MSE loss columns, optionally beside initial/final Hamming distance columns.
+
+    Parameters
+    ----------
+    loss_columns    : ndarray, shape (N, 2)
+        Initial and final MSE loss for each run.
+    Hamming_columns : ndarray, shape (N, 2), optional
+        Initial and final Hamming distance for each run.
+    buckle_pairs    : ndarray, shape (N, 2), optional
+        String labels ``[initial_buckle, desired_buckle]`` for every row.
+    log_norm        : bool, default=True
+        If True, use logarithmic color scaling for positive MSE losses.
+    save_path       : str | None
+        Optional path for saving the figure.
+    ax, ax2         : matplotlib axes, optional
+        Existing axes. ``ax2`` is used for Hamming distance.
+    """
+    loss_columns = np.asarray(loss_columns, dtype=float)
+    if loss_columns.ndim != 2 or loss_columns.shape[1] != 2:
+        raise ValueError("loss_columns must have shape (N, 2)")
+
+    has_hamming = Hamming_columns is not None
+    if has_hamming:
+        Hamming_columns = np.asarray(Hamming_columns, dtype=float)
+        if Hamming_columns.shape != loss_columns.shape:
+            raise ValueError("Hamming_columns must have the same shape as loss_columns")
+
+    _, _, custom_cmap = colors.color_scheme()
+
+    created_fig = ax is None
+    if created_fig:
+        row_height = 0.18
+        fig_height = max(3.0, min(14.0, row_height * loss_columns.shape[0]))
+        if has_hamming:
+            fig, (ax, ax2) = plt.subplots(1, 2, figsize=(6.5, fig_height), sharey=True,
+                                          gridspec_kw={"width_ratios": [1.0, 1.0]})
+        else:
+            fig, ax = plt.subplots(figsize=(3.8, fig_height))
+    else:
+        fig = ax.figure
+        if has_hamming and ax2 is None:
+            ax2 = fig.add_subplot(1, 2, 2, sharey=ax)
+
+    loss_plot_values = loss_columns.copy()
+    norm = None
+    if log_norm:
+        positive = loss_plot_values[loss_plot_values > 0]
+        if positive.size:
+            floor = positive.min() * 0.5
+            loss_plot_values[loss_plot_values <= 0] = floor
+            norm = LogNorm(vmin=floor, vmax=loss_plot_values.max())
+
+    im = ax.imshow(loss_plot_values, aspect="auto", cmap=custom_cmap, norm=norm)
+    ax.set_xticks([0, 1])
+    ax.set_xticklabels(["Initial", "Final"])
+    ax.set_title("MSE loss")
+
+    if buckle_pairs is not None:
+        buckle_pairs = np.asarray(buckle_pairs, dtype=str)
+        ax.set_yticks(np.arange(buckle_pairs.shape[0]))
+        ax.set_yticklabels([f"{init}->{desired}" for init, desired in buckle_pairs])
+        ax.set_ylabel("initial -> desired buckle")
+
+    cbar = fig.colorbar(im, ax=ax)
+    cbar.set_label("loss_MSE")
+
+    if has_hamming:
+        finite_hamming = Hamming_columns[np.isfinite(Hamming_columns)]
+        hamming_vmax = max(1.0, finite_hamming.max()) if finite_hamming.size else 1.0
+        im2 = ax2.imshow(Hamming_columns, aspect="auto", cmap=custom_cmap, vmin=0, vmax=hamming_vmax)
+        ax2.set_xticks([0, 1])
+        ax2.set_xticklabels(["Initial", "Final"])
+        ax2.set_title("Hamming distance")
+        ax2.tick_params(axis="y", labelleft=False)
+
+        cbar2 = fig.colorbar(im2, ax=ax2)
+        cbar2.set_label("Hamming distance")
+
+    fig.suptitle("Initial and final training metrics")
+    fig.tight_layout()
+
+    if save_path is not None:
+        fig.savefig(save_path, dpi=300, bbox_inches="tight")
+    if created_fig:
+        plt.show()
+
+
 def plot_success_matrix(M: NDArray, N: int = 16, M_flag: Optional[NDArray] = None, M_flip: Optional[NDArray] = None) -> None:
     """
     Roie - document!

@@ -155,7 +155,7 @@ class EquilibriumConfig:
 # -----------------------------
 @dataclass(frozen=True)
 class TrainingConfig:
-    T: int = 120  # total training set time (not time to reach equilibrium during every step)
+    T: int = 240  # total training set time (not time to reach equilibrium during every step)
 
     # desired_buckle_type: str = 'random'
     # desired_buckle_type: str = 'opposite'
@@ -195,6 +195,7 @@ class TrainingConfig:
     # update_scheme: str = 'loss_x_trend'  # delta tip by trend of loss x, delta angle by addition of losses
     update_scheme: str = 'pos'  # difference in measured and desired tip position and angle
     pos_delta_mode: str = 'signed'  # 'signed' = Mar23 sign factors, 'direct' = May3 direct position loss
+    use_tangent_clamp: bool = True  # If True, preserve tangential update direction when clamping the free tip.
     # update_scheme: str = 'lossx_concavity'  # tip_angle changes due to concavity of loss x along trajectory.
     #                                         # tip pos due to loss_y sign
     # update_scheme: str = 'radial_one_to_one'  # evolve tip angle and large radius due to instantaneous loss
@@ -208,7 +209,7 @@ class TrainingConfig:
     normalize_step: bool = False
 
     if (update_scheme == 'radial_BEASTAL' or update_scheme == 'pos') and not normalize_step:
-        alpha: float = 0.15  # learning rate
+        alpha: float = 0.25  # learning rate
     elif normalize_step:
         alpha = 0.25
     else:
@@ -218,8 +219,8 @@ class TrainingConfig:
         else:
             alpha = 0.35
 
-    if update_scheme == 'pos':
-        tradeoff_pos_angle: float = 1/4 * HINGES
+    if update_scheme == 'pos' and HINGES > 2:
+        tradeoff_pos_angle: float = 1/2 + 1/8 * HINGES
     else:
         tradeoff_pos_angle = 1
 

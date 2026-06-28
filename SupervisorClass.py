@@ -91,6 +91,7 @@ class SupervisorClass:
     alpha: float = eqx.field(static=True)
     update_scheme: str = eqx.field(static=True)
     pos_delta_mode: str = eqx.field(static=True)
+    use_tangent_clamp: bool = eqx.field(static=True)
     control_tip: bool = eqx.field(static=True)
     control_first_edge: bool = eqx.field(static=True)
     normalize_step: bool = eqx.field(static=True)
@@ -134,6 +135,7 @@ class SupervisorClass:
         self.pos_delta_mode = str(getattr(CFG.Train, "pos_delta_mode", "signed"))
         if self.pos_delta_mode not in {"signed", "direct"}:
             raise ValueError(f"Unknown pos_delta_mode='{self.pos_delta_mode}'")
+        self.use_tangent_clamp = bool(getattr(CFG.Train, "use_tangent_clamp", True))
         self.control_tip = bool(CFG.Train.control_tip)
         self.control_first_edge = bool(CFG.Train.control_first_edge)  # if true, fix nodes (0, 1), else fix only (0)
 
@@ -552,7 +554,6 @@ class SupervisorClass:
                                                       tip_angle=float(self.tip_angle_update_in_t[t]),
                                                       supress_prints=self.supress_prints)
             clamp_margin = 0.1 * Strctr.L * (Strctr.hinges-1)
-            use_tangent_clamp = False
             before_prev = helpers_builders._get_before_tip(prev_tip_update_pos, float(prev_tip_update_angle),
                                                            Strctr.L, xp=np)
 
@@ -584,7 +585,7 @@ class SupervisorClass:
                                                                               R_lim=R_eff, L=Strctr.L, mod="outer",
                                                                               tip_update_prev=prev_tip_update_pos,
                                                                               raw_update_tip=delta_tip, clamp_margin=clamp_margin,
-                                                                              use_tangent_selection=use_tangent_clamp)
+                                                                              use_tangent_selection=self.use_tangent_clamp)
 
             if clamped_outer:
                 corrected_delta = tip_new - prev_tip_update_pos
