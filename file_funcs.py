@@ -381,7 +381,7 @@ def export_predetermined(Sprvsr: "SupervisorClass", State: "StateClass", filenam
     df.to_csv(out_path, index=False)
 
 
-def export_training_csv(path_csv: str, Strctr: "StructureClass", Sprvsr: "SupervisorClass", T: Optional[int] = None,
+def export_training_csv(path_csv: str, Sprvsr: "SupervisorClass", T: Optional[int] = None,
                         State_meas: Optional["StateClass"] = None, State_update: Optional["StateClass"] = None) -> None:
     """
     Export training outputs to a CSV file.
@@ -389,7 +389,6 @@ def export_training_csv(path_csv: str, Strctr: "StructureClass", Sprvsr: "Superv
     Parameters
     ----------
     path_csv : str, output CSV file path.
-    Strctr : StructureClass, for (`hinges`) and (`shims`).
     Sprvsr : SupervisorClass, for Supervisor training data and unit conversion factors
     T : Optional[int], number of training steps to export. If None, full training `Sprvsr.T` is used.
     State_meas : Optional[StateClass], for `Fx_in_t`, `Fy_in_t`. If provided, they are exported as `Fx_meas`, `Fy_meas`.
@@ -411,6 +410,8 @@ def export_training_csv(path_csv: str, Strctr: "StructureClass", Sprvsr: "Superv
     angle_update_in_t = Sprvsr.tip_angle_update_in_t * Sprvsr.convert_angle
     des_Fx = Sprvsr.desired_Fx_in_t * Sprvsr.convert_F
     des_Fy = Sprvsr.desired_Fy_in_t * Sprvsr.convert_F
+    desired_pos_in_t = Sprvsr.desired_pos_in_t * Sprvsr.convert_pos
+    training_mode = "pos" if getattr(Sprvsr, "update_scheme", None) == "pos" else "force"
 
     meas_Fx = meas_Fy = None
     update_Fx = update_Fy = None
@@ -428,16 +429,11 @@ def export_training_csv(path_csv: str, Strctr: "StructureClass", Sprvsr: "Superv
         T = int(Sprvsr.T)
 
     # ------ headers ------
-    header = ["t"]
+    header = ["t", "upd_x_tip", "upd_y_tip", "upd_tip_angle"]
 
-    # full internal state arrays
-    if State_meas is not None:
-        header += ["final_pos_meas"]
+    # final update geometry only; measured geometry is kept out of this compact export.
     if State_update is not None:
         header += ["final_pos_update"]
-
-    # keep update command if you still want it
-    header += ["upd_x_tip", "upd_y_tip", "upd_tip_angle"]
 
     # losses
     loss_size = Sprvsr.loss_in_t.shape[1]
@@ -445,19 +441,29 @@ def export_training_csv(path_csv: str, Strctr: "StructureClass", Sprvsr: "Superv
     header += ["loss_MSE"]
     header += ["Hamming_distance"]
 
-    if State_meas is not None:  # measured forces
-        header += ["Fx_meas", "Fy_meas"]
-    header += ["Fx_des", "Fy_des"]  # desired forces
-    header += ["Fx_update", "Fy_update"]  # tip update forces
+    if training_mode == "pos":
+        if State_meas is not None:
+            header += ["final_pos_meas"]
+        header += ["final_pos_des"]
 
-    # whole buckle arrays
-    if State_meas is not None:
-        header += ["buckle_arr_meas"]
+    if training_mode == "force":
+        if State_meas is not None:
+            header += ["Fx_meas", "Fy_meas"]
+        header += ["Fx_des", "Fy_des"]
+    else:
+        if State_meas is not None:
+            header += ["x_meas_tip", "y_meas_tip", "meas_tip_angle"]
+        header += ["x_des_tip", "y_des_tip", "des_tip_angle"]
+
+    if State_update is not None:
+        header += ["Fx_update", "Fy_update"]
+
+    # update buckle arrays only
     if State_update is not None:
         header += ["buckle_arr_update"]
 
     # chain intersects with itself
-    if State_update.intersection_times is not None:
+    if State_update is not None and State_update.intersection_times is not None:
         header += ["intersection_times"]
 
     # ------ write ------
@@ -466,39 +472,57 @@ def export_training_csv(path_csv: str, Strctr: "StructureClass", Sprvsr: "Superv
         w.writerow(header)
 
         for t in range(T):
-            row = [t]
-
-            # full measured state positions
-            if State_meas is not None:
-                pos_meas = State_meas.pos_arr_in_t[:, :, t] * Sprvsr.convert_pos
-                row += [arr_to_json(pos_meas)]
+            row = [
+                t,
+                float(tip_pos_update_in_t[t, 0]),
+                float(tip_pos_update_in_t[t, 1]),
+                float(angle_update_in_t[t]),
+            ]
 
             # full updated state positions
             if State_update is not None:
                 pos_update = State_update.pos_arr_in_t[:, :, t] * Sprvsr.convert_pos
                 row += [arr_to_json(pos_update)]
 
-            # update command, kept as scalars
-            row += [float(tip_pos_update_in_t[t, 0]), float(tip_pos_update_in_t[t, 1]), float(angle_update_in_t[t])]
-
             # losses
             row += [float(x) for x in Sprvsr.loss_in_t[t, :]]
             row += [float(Sprvsr.loss_MSE_in_t[t])]
             row += [int(Sprvsr.Hamming_distance_in_t[t])]
 
-            if State_meas is not None:  # measured forces
-                row += [float(meas_Fx[t]), float(meas_Fy[t])]
-            row += [float(des_Fx[t]), float(des_Fy[t])]  # desired forces
-            row += [float(update_Fx[t]), float(update_Fy[t])]  # update forces
+            if training_mode == "pos":
+                if State_meas is not None:
+                    pos_meas_full = State_meas.pos_arr_in_t[:, :, t] * Sprvsr.convert_pos
+                    row += [arr_to_json(pos_meas_full)]
+                row += [arr_to_json(desired_pos_in_t[:, :, t])]
 
-            # full buckle arrays
-            if State_meas is not None:
-                row += [arr_to_json(State_meas.buckle_in_t[:, :, t])]
+            if training_mode == "force":
+                if State_meas is not None:
+                    row += [float(meas_Fx[t]), float(meas_Fy[t])]
+                row += [float(des_Fx[t]), float(des_Fy[t])]
+            else:
+                if State_meas is not None:
+                    pos_meas = State_meas.pos_arr_in_t[:, :, t]
+                    row += [
+                        float(pos_meas[-1, 0] * Sprvsr.convert_pos),
+                        float(pos_meas[-1, 1] * Sprvsr.convert_pos),
+                        float(helpers_builders._get_tip_angle(pos_meas) * Sprvsr.convert_angle),
+                    ]
+                pos_des = Sprvsr.desired_pos_in_t[:, :, t]
+                row += [
+                    float(desired_pos_in_t[-1, 0, t]),
+                    float(desired_pos_in_t[-1, 1, t]),
+                    float(helpers_builders._get_tip_angle(pos_des) * Sprvsr.convert_angle),
+                ]
+
+            if State_update is not None:
+                row += [float(update_Fx[t]), float(update_Fy[t])]
+
+            # update buckle arrays only
             if State_update is not None:
                 row += [arr_to_json(State_update.buckle_in_t[:, :, t])]
 
             # chain intersects with itself
-            if State_update.intersection_times is not None:
+            if State_update is not None and State_update.intersection_times is not None:
                 row += [int(State_update.intersection_times[t]) if t < len(State_update.intersection_times) else int(0)]
 
             w.writerow(row)

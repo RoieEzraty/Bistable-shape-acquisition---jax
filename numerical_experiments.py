@@ -133,7 +133,7 @@ def train(Strctr: StructureClass, Variabs: VariablesClass, CFG: ExperimentConfig
 
         # ------ loss ------
         if Sprvsr.dataset_sampling == 'free_tip':
-            Sprvsr.calc_loss(Variabs, t, pos=final_pos, pos_des=final_pos_des)
+            Sprvsr.calc_loss(Variabs, t, pos=final_pos, pos_des=final_pos_des, Strctr=Strctr)
         else:
             Sprvsr.calc_loss(Variabs, t, Fx=State_meas.Fx, Fy=State_meas.Fy)
 

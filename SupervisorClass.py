@@ -203,7 +203,7 @@ class SupervisorClass:
         self.symmetrical_state = False
 
         # wrap angle while accounting for shortening of tip
-        if Strctr.hinges < 6:
+        if Strctr.hinges < 5:
             self.wrap = True
         else:
             self.wrap = False
@@ -390,6 +390,7 @@ class SupervisorClass:
     # ---------------------------------------------------------------
     def calc_loss(self, Variabs: "VariablesClass", t: int, Fx: Optional[float] = None, Fy: Optional[float] = None,
                   pos: Optional[NDArray] = None, pos_des: Optional[NDArray] = None,
+                  Strctr: Optional["StructureClass"] = None,
                   thresh_for_symmetrical=10**(-3)) -> None:
         """Compute loss vector (Fx,Fy) at step t and log it.
 
@@ -400,6 +401,7 @@ class SupervisorClass:
         t       : {0:self.T} current time step
         Fx      : float force in global x direction [mN]
         Fy      : float force in global y direction [mN]
+        Strctr  : StructureClass, optional. Used for position-loss tip angle via accumulated hinge angles.
 
         Returns:
         --------
@@ -411,7 +413,7 @@ class SupervisorClass:
             fn = dispatch.get("position", None)
         else:
             fn = dispatch.get("force", None)
-        self.loss = fn(Variabs, t, Fx, Fy, pos, pos_des)
+        self.loss = fn(Variabs, t, Fx, Fy, pos, pos_des, Strctr)
 
         # normalize loss
         # self.loss = self.loss / Variabs.norm_force  # [dimless]
@@ -764,17 +766,24 @@ class SupervisorClass:
                 "position": self._loss_tip_pos,
                 }
 
-    def _loss_force(self, Variabs, t, Fx=None, Fy=None, pos=None, pos_des=None):
+    def _loss_force(self, Variabs, t, Fx=None, Fy=None, pos=None, pos_des=None, Strctr=None):
         loss = array([self.desired_Fx_in_t[t] - Fx,
                       self.desired_Fy_in_t[t] - Fy], dtype=np.float32)
         return loss / Variabs.norm_force
 
-    def _loss_tip_pos(self, Variabs, t, Fx=None, Fy=None, pos=None, pos_des=None):
-        theta_meas = helpers_builders._get_tip_angle(pos)
-        theta_des = helpers_builders._get_tip_angle(pos_des)
+    def _loss_tip_pos(self, Variabs, t, Fx=None, Fy=None, pos=None, pos_des=None, Strctr=None):
+        theta_meas = self._tip_angle_from_hinges(pos, Strctr)
+        theta_des = self._tip_angle_from_hinges(pos_des, Strctr)
         loss_pos = (pos_des[-1] - pos[-1]) / Variabs.norm_pos
         loss_angle = (theta_des - theta_meas) / Variabs.norm_angle
         return np.append(loss_pos, loss_angle)
+
+    @staticmethod
+    def _tip_angle_from_hinges(pos_arr: NDArray, Strctr: Optional["StructureClass"] = None) -> float:
+        """Return accumulated tip orientation from hinge angles when structure is available."""
+        if Strctr is None:
+            return float(helpers_builders._get_tip_angle(pos_arr))
+        return float(np.sum(Strctr.all_hinge_angles(pos_arr)))
 
     def _get_delta_dispatch(self):
         """
