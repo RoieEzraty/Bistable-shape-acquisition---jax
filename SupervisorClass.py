@@ -129,6 +129,8 @@ class SupervisorClass:
 
     def __init__(self, Strctr, CFG, supress_prints: bool = True) -> None:
         self.T = int(CFG.Train.T)  # total training-set size (& algorithm time, dont confuse with time to equilib state)
+        if CFG.Train.dataset_sampling == 'tip_grid_sweep':
+            self.T = int(CFG.Train.tip_grid_y_num) * int(CFG.Train.tip_grid_theta_num)
         self.alpha = float(CFG.Train.alpha)
         self.tradeoff_pos_angle = float(CFG.Train.tradeoff_pos_angle)
         self.update_scheme = str(CFG.Train.update_scheme)
@@ -350,6 +352,42 @@ class SupervisorClass:
             self.tip_pos_in_t[:] = np.tile(tip_pos, (self.T // len(tip_pos) + 1, 1))[:self.T]
             tip_angles_block = np.repeat(tip_angle, tip_pos.shape[0])
             self.tip_angle_in_t[:] = np.tile(tip_angles_block, self.T // len(tip_angles_block) + 1)[:self.T]
+        elif sampling == 'tip_grid_sweep':
+            x_s = CFG.Train.tip_grid_x_s
+            if x_s is None:
+                x_s = float(Strctr.edges * Strctr.L)
+            x_l = CFG.Train.tip_grid_x_l
+            if x_l is None:
+                x_l = x_s
+
+            y_vals = np.linspace(CFG.Train.tip_grid_y_min, CFG.Train.tip_grid_y_max,
+                                 CFG.Train.tip_grid_y_num, dtype=np.float32)
+            y_phase = np.linspace(0.0, 1.0, CFG.Train.tip_grid_y_num, dtype=np.float32)
+            x_weight = 1.0 - np.abs(2.0 * y_phase - 1.0)
+            if np.max(x_weight) > 0.0:
+                x_weight = x_weight / np.max(x_weight)
+            x_vals = x_s + (x_l - x_s) * x_weight
+            theta_vals = np.linspace(CFG.Train.tip_grid_theta_min, CFG.Train.tip_grid_theta_max,
+                                     CFG.Train.tip_grid_theta_num, dtype=np.float32)
+
+            tip_positions = []
+            tip_angles = []
+            for y_idx, (x_tip, y_tip) in enumerate(zip(x_vals, y_vals)):
+                theta_row = theta_vals
+                if CFG.Train.tip_grid_snake and y_idx % 2 == 1:
+                    theta_row = theta_vals[::-1]
+                for theta in theta_row:
+                    tip_positions.append([float(x_tip), float(y_tip)])
+                    tip_angles.append(float(theta))
+
+            self.tip_pos_in_t[:] = np.asarray(tip_positions, dtype=np.float32)
+            self.tip_angle_in_t[:] = np.asarray(tip_angles, dtype=np.float32)
+            self.tip_pos_update_in_t[:] = self.tip_pos_in_t
+            self.tip_angle_update_in_t[:] = self.tip_angle_in_t
+            self.total_angle_update_in_t[:] = np.asarray(
+                [helpers_builders._get_total_angle(pos, 0.0, Strctr.L) for pos in self.tip_pos_update_in_t],
+                dtype=np.float32,
+            )
         else:
             raise ValueError(f"Incompatible sampling='{sampling}'")
 

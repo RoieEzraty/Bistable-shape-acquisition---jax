@@ -177,12 +177,13 @@ class TrainingConfig:
 
     # dataset_sampling: str = 'uniform'  # random uniform vals for x, y, angle
     # dataset_sampling: str = 'predetermined'  # import measured F along predetermined trajectory every training step t
-    dataset_sampling: str = 'free_tip'  # free tip pos and angle (zero forces at sensor) during measurement
+    # dataset_sampling: str = 'free_tip'  # free tip pos and angle (zero forces at sensor) during measurement
     # dataset_sampling: str = 'specified'  # constant
     # dataset_sampling: str = 'tile'  # constant
     # dataset_sampling = 'almost_flat'  # flat piece w a bit of constant noise, single measurement
     # dataset_sampling = 'flat'  # flat piece, single measurement
     # dataset_sampling = 'stress strain'
+    dataset_sampling: str = 'tip_grid_sweep'  # update-only y/theta grid, for monitoring buckling
 
     predet_traj_file: str = r"Predetermined trajectory\June15\example_traj.csv"
 
@@ -234,6 +235,19 @@ class TrainingConfig:
     rand_key_dataset: int = 7  # for random sampling of dataset, if dataset_sampling is True
     rand_key_tip: int = 8  # for random sampling of update tip positions, once forces explode
 
+    # Update-only grid sweep for monitoring buckling. Positions are in [m], angles in [rad].
+    # x follows x_s -> x_l -> x_s as y goes from y_min to y_max.
+    tip_grid_x_s: float | None = -(HINGES * 0.0472)/4  # None uses the flat-chain tip x = Strctr.edges * Strctr.L
+    tip_grid_x_l: float | None = (HINGES * 0.0472)*3/4
+    tip_grid_y_min: float = -(HINGES * 0.0472)/2
+    tip_grid_y_max: float = (HINGES * 0.0472)/2
+    tip_grid_y_num: int = 5
+    tip_grid_theta_min: float = -np.pi/2
+    tip_grid_theta_max: float = np.pi/2
+    tip_grid_theta_num: int = 5
+    tip_grid_snake: bool = True  # reverse theta direction every other y row for a continuous sweep
+
+    # unit conversions
     convert_pos = 1000  # convert [m] to [mm]
     convert_angle = 180/np.pi  # convert rad to deg
     convert_F = 1  # already in [mN]

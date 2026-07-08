@@ -176,6 +176,93 @@ def train(Strctr: StructureClass, Variabs: VariablesClass, CFG: ExperimentConfig
 
 
 # ---------------------------------------------------------------
+# Update-only tip grid sweep for buckling monitoring
+# ---------------------------------------------------------------
+def tip_grid_buckle_sweep(Strctr: StructureClass, Variabs: VariablesClass, Sprvsr: SupervisorClass,
+                          CFG: ExperimentConfig, init_buckle: NDArray, *,
+                          warm_start: bool = True, plot_every: int = 0
+                          ) -> Tuple[StateClass, NDArray[np.float32], NDArray[np.int32],
+                                     NDArray[np.float32], NDArray[np.float32]]:
+    """
+    Sweep imposed update-tip commands over a y/theta grid and monitor buckling.
+
+    This is an update-only protocol: every grid point is one time step `t`, with
+    no measurement, desired state, loss, or learned update phase.
+
+    Parameters
+    ----------
+    Strctr : StructureClass
+        Chain geometry/topology.
+    Variabs : VariablesClass
+        Material and stiffness parameters.
+    Sprvsr : SupervisorClass
+        Supervisor whose `tip_pos_update_in_t` and `tip_angle_update_in_t` contain the sweep.
+    CFG : ExperimentConfig
+        Experiment configuration used by the equilibrium solver.
+    init_buckle : NDArray
+        Initial buckle state for the sweep.
+    warm_start : bool, default=True
+        If True, initialize each equilibrium solve from the previous grid point equilibrium.
+        If False, reset each point from the flat-chain position.
+    plot_every : int, default=0
+        Plot every `plot_every` steps. Zero disables plotting.
+
+    Returns
+    -------
+    State : StateClass
+        Final state, with histories filled over the sweep time axis.
+    pos_frames : ndarray, shape (T, nodes, 2)
+        Equilibrium positions for each grid point.
+    buckle_frames : ndarray, shape (T, hinges, shims)
+        Buckle state after applying the buckling rule at each grid point.
+    theta_frames : ndarray, shape (T, hinges)
+        Hinge angles at each grid point.
+    force_frames : ndarray, shape (T, 2)
+        Tip reaction forces `[Fx, Fy]` at each grid point.
+    """
+    if getattr(Sprvsr, "dataset_sampling", None) != "tip_grid_sweep":
+        raise ValueError("tip_grid_buckle_sweep() requires Sprvsr.dataset_sampling == 'tip_grid_sweep'.")
+
+    T_steps = Sprvsr.tip_pos_update_in_t.shape[0]
+    State = StateClass(Strctr, Sprvsr, buckle_arr=init_buckle)
+
+    pos_frames: NDArray[np.float32] = np.zeros((T_steps, Strctr.nodes, 2), dtype=np.float32)
+    buckle_frames: NDArray[np.int32] = np.zeros((T_steps, Strctr.hinges, Strctr.shims), dtype=np.int32)
+    theta_frames: NDArray[np.float32] = np.zeros((T_steps, Strctr.hinges), dtype=np.float32)
+    force_frames: NDArray[np.float32] = np.zeros((T_steps, 2), dtype=np.float32)
+
+    t0 = time.time()
+    init_pos: Optional[np.ndarray] = State.pos_arr
+
+    for t, (tip_pos, tip_angle) in enumerate(zip(Sprvsr.tip_pos_update_in_t, Sprvsr.tip_angle_update_in_t)):
+        print(f"grid sweep t={t}, tip_pos={tip_pos}, tip_angle={tip_angle:.4f}")
+
+        Eq = EquilibriumClass(Strctr, CFG, buckle_arr=State.buckle_arr, pos_arr=State.pos_arr)
+        final_pos, pos_in_t, _, F_in_t = Eq.calculate_state(Variabs, Strctr, Sprvsr,
+                                                            init_pos=init_pos,
+                                                            control_tip=True,
+                                                            tip_pos=tip_pos,
+                                                            tip_angle=float(tip_angle))
+
+        State._save_data(t, Strctr, final_pos, State.buckle_arr, F_in_t)
+        State.buckle(Variabs, Strctr, t, State_measured=State)
+
+        pos_frames[t, :, :] = State.pos_arr
+        buckle_frames[t, :, :] = State.buckle_arr
+        theta_frames[t, :] = State.theta_arr
+        force_frames[t, :] = np.asarray([State.Fx, State.Fy], dtype=np.float32)
+
+        if plot_every > 0 and (t % plot_every == 0):
+            plot_funcs.plot_arm(State.pos_arr, State.buckle_arr, Strctr.L, modality="update")
+            plt.show()
+
+        init_pos = final_pos if warm_start else helpers_builders._initiate_pos(Strctr.edges+1, Strctr.L)
+
+    print(f"Grid sweep runtime: {time.time() - t0:.2f} seconds")
+    return State, pos_frames, buckle_frames, theta_frames, force_frames
+
+
+# ---------------------------------------------------------------
 # Single tip movement, incremental equilibration
 # ---------------------------------------------------------------
 def compress_to_tip_pos(Strctr: "StructureClass", Variabs: "VariablesClass", Sprvsr: "SupervisorClass", CFG: ExperimentConfig,
