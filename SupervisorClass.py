@@ -139,6 +139,8 @@ class SupervisorClass:
         self.control_tip = bool(CFG.Train.control_tip)
         self.control_first_edge = bool(CFG.Train.control_first_edge)  # if true, fix nodes (0, 1), else fix only (0)
 
+        self.stop_if_symmetrical = bool(CFG.Train.stop_if_symmetrical)  # stop training if chain in state symmetrical to desired
+
         # for equilibrium
         self.imposed_mask_w_tip = self._build_imposed_mask(Strctr, control_tip=True)
         self.imposed_mask_free = self._build_imposed_mask(Strctr, control_tip=False)
@@ -421,7 +423,7 @@ class SupervisorClass:
         # put in loss vec
         self.loss_in_t[t, :self.loss.shape[0]] = self.loss
 
-        if (pos is not None) and (pos_des is not None):
+        if (pos is not None) and (pos_des is not None) and self.stop_if_symmetrical:
             is_symmetrical = helpers_builders.symmetrical_chain_state(pos, pos_des, thresh_for_symmetrical)
         else:
             is_symmetrical = False

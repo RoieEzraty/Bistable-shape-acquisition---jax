@@ -229,6 +229,8 @@ class TrainingConfig:
     control_tip: bool = False  # imposed tip position in measurement and update. If False, tip is free
     control_first_edge: bool = True  # if True, fix nodes (0, 1) to zero. if Flase, just the first
 
+    stop_if_symmetrical: bool = False
+
     rand_key_dataset: int = 7  # for random sampling of dataset, if dataset_sampling is True
     rand_key_tip: int = 8  # for random sampling of update tip positions, once forces explode
 

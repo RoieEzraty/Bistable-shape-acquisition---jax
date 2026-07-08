@@ -1025,7 +1025,8 @@ def already_done_in_dir(job, prev_dir: Path, H: int):
     des = correct_buckle_string(np.array(job["desired_buckle_tup"]).reshape(H, 1))
 
     pattern = f"*init_{init}_desired_{des}*"
-    return any(p.is_file() and not p.name.startswith("log_") for p in Path(prev_dir).glob(pattern))
+    # return any(p.is_file() and not (p.name.startswith("log_") or p.name.startswith("gif_")) for p in Path(prev_dir).glob(pattern))
+    return any(p.is_file() and p.suffix == ".csv" for p in Path(prev_dir).glob(pattern))
 
 
 # -----------------------------
