@@ -132,8 +132,8 @@ class SupervisorClass:
         self.alpha = float(CFG.Train.alpha)
         self.tradeoff_pos_angle = float(CFG.Train.tradeoff_pos_angle)
         self.update_scheme = str(CFG.Train.update_scheme)
-        self.pos_delta_mode = str(getattr(CFG.Train, "pos_delta_mode", "direct"))
-        if self.pos_delta_mode not in {"signed", "direct"}:
+        self.pos_delta_mode = str(getattr(CFG.Train, "pos_delta_mode", "signed double"))
+        if self.pos_delta_mode not in {"signed", "signed double", "direct"}:
             raise ValueError(f"Unknown pos_delta_mode='{self.pos_delta_mode}'")
         self.use_tangent_clamp = bool(getattr(CFG.Train, "use_tangent_clamp", True))
         self.control_tip = bool(CFG.Train.control_tip)

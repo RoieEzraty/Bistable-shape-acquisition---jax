@@ -156,7 +156,7 @@ class EquilibriumConfig:
 # -----------------------------
 @dataclass(frozen=True)
 class TrainingConfig:
-    T: int = 240  # total training set time (not time to reach equilibrium during every step)
+    T: int = 20  # total training set time (not time to reach equilibrium during every step)
 
     # desired_buckle_type: str = 'random'
     # desired_buckle_type: str = 'opposite'
@@ -195,7 +195,7 @@ class TrainingConfig:
     # update_scheme: str = 'loss_diff'  # difference of x and y loss components
     # update_scheme: str = 'loss_x_trend'  # delta tip by trend of loss x, delta angle by addition of losses
     update_scheme: str = 'pos'  # difference in measured and desired tip position and angle
-    pos_delta_mode: str = 'direct'  # 'signed' = Mar23 sign factors, 'direct' = May3 direct position loss
+    pos_delta_mode: str = 'signed double'  # 'signed double' = Mar23 sign factors, 'direct' = May3 direct position loss, 'singed' = July8
     use_tangent_clamp: bool = True  # If True, preserve tangential update direction when clamping the free tip.
     # update_scheme: str = 'lossx_concavity'  # tip_angle changes due to concavity of loss x along trajectory.
     #                                         # tip pos due to loss_y sign
