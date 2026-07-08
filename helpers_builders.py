@@ -1368,11 +1368,14 @@ def state_positions(n_bits: int, dx: float = 0.175, dy: float = 0.22,
 # ---------------------------------------------------------------
 def buckle_to_index(arr: NDArray) -> NDArray:
     """
-    Convert [-1,1,1,-1] → integer index 0..15
+    Convert [-1,1,1,-1] → integer index 0..2**n-1
     (-1 -> 0 , +1 -> 1)
     """
-    bits = [(1 if x == 1 else 0) for x in arr]
-    return bits[0]*8 + bits[1]*4 + bits[2]*2 + bits[3]
+    bits = [(1 if x == 1 else 0) for x in arr]  # [-1, 1, -1] --> [0, 1, 0]
+    ind = 0  # initiate
+    for i in range(len(bits)):  # add up the bits to get the integer index
+        ind += bits[i] * (2 ** (len(bits) - 1 - i))
+    return ind
 
 
 def index_to_buckle(i: int, n_bits: int = 4) -> str:
