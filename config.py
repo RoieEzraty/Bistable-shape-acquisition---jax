@@ -12,9 +12,9 @@ import numpy as np
 # MATERIAL = "Leon_metal"
 MATERIAL = "Roie_metal"
 
-HINGES: int = 4  # Hinges
+# HINGES: int = 4  # Hinges
 # HINGES: int = 8  # Hinges
-# HINGES: int = 5  # Hinges
+HINGES: int = 5  # Hinges
 
 
 # -----------------------------
@@ -166,24 +166,24 @@ class TrainingConfig:
     if desired_buckle_type == 'random':
         desired_buckle_rand_key: int = 169  # key for seed of random sampling of buckle pattern
     elif desired_buckle_type == 'specified':
-        desired_buckle_pattern: tuple = (1, 1, 1, 1)  # desired buckle, 1=up
-        # desired_buckle_pattern: tuple = (-1, -1, -1, -1)  # desired buckle, 1=up
+        # desired_buckle_pattern: tuple = (1, 1, 1, 1)  # desired buckle, 1=up
+        desired_buckle_pattern: tuple = (1, -1, 1, 1, -1)  # desired buckle, 1=up
         # desired_buckle_pattern: tuple = (1, -1, -1, -1, -1, 1, 1, 1)  # desired buckle, 1=up
 
-    init_buckle_pattern: tuple = (1, -1, 1, 1)  # initial buckle, 1=up
-    # init_buckle_pattern: tuple = (-1, -1, -1, 1)  # initial buckle, 1=up
+    # init_buckle_pattern: tuple = (1, -1, 1, 1)  # initial buckle, 1=up
+    init_buckle_pattern: tuple = (-1, 1, -1, 1, 1)  # initial buckle, 1=up
     # init_buckle_pattern: tuple = (-1, -1, 1, 1, 1, 1, -1, -1)  # initial buckle, 1=up
     # init_buckle_pattern: tuple = (1)  # initial buckle, 1=up
 
     # dataset_sampling: str = 'uniform'  # random uniform vals for x, y, angle
     # dataset_sampling: str = 'predetermined'  # import measured F along predetermined trajectory every training step t
-    # dataset_sampling: str = 'free_tip'  # free tip pos and angle (zero forces at sensor) during measurement
+    dataset_sampling: str = 'free_tip'  # free tip pos and angle (zero forces at sensor) during measurement
     # dataset_sampling: str = 'specified'  # constant
     # dataset_sampling: str = 'tile'  # constant
     # dataset_sampling = 'almost_flat'  # flat piece w a bit of constant noise, single measurement
     # dataset_sampling = 'flat'  # flat piece, single measurement
     # dataset_sampling = 'stress strain'
-    dataset_sampling: str = 'tip_grid_sweep'  # update-only y/theta grid, for monitoring buckling
+    # dataset_sampling: str = 'tip_grid_sweep'  # update-only y/theta grid, for monitoring buckling
 
     predet_traj_file: str = r"Predetermined trajectory\June15\example_traj.csv"
 

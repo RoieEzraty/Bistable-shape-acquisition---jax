@@ -177,8 +177,7 @@ def _initiate_buckle(hinges: int, shims: int, buckle_pattern: tuple = (), numpif
 # ---------------------------------------------------------------
 def clamp_pos_same_delta(*, before_prev: NDArray, tip_angle_new: float, tip_raw: NDArray, second_node: NDArray,
                          R_lim: float, L: float, mod="outer", tip_update_prev: Optional[NDArray] = None,
-                         raw_update_tip: Optional[NDArray] = None, eps=1e-12,
-                         clamp_margin: float = 0.0, use_tangent_selection: bool = False):
+                         raw_update_tip: Optional[NDArray] = None, eps=1e-12):
     """
     Enforce ||node before tip - second_node|| <= R_lim
     while preserving ||new node before tip - before_prev|| = ||before_raw - before_prev|| (when possible).
@@ -206,10 +205,7 @@ def clamp_pos_same_delta(*, before_prev: NDArray, tip_angle_new: float, tip_raw:
     R_lim         - float. Maximal allowed distance from second_node to node-before-tip. Calculated in effective_radius()
     L             - float. Link length between the tip node and the node-before-tip.
     mod           - str. "outer" = clamp tip to inside of large radius, "inner" = vice verse
-    eps           - float, optional, Small tolerance for numerical stability only.
-    clamp_margin  - float, optional, Distance inside the outer radius / outside the inner radius to clamp to.
-    use_tangent_selection - bool, optional. If True, prefer the candidate that preserves clockwise/counter-clockwise
-                 motion along the constraint circle. Defaults to False to preserve older behavior.
+    eps           - float, optional, Small tolerance for numerical stability and comparisons.
 
     Returns
     -------
@@ -221,17 +217,12 @@ def clamp_pos_same_delta(*, before_prev: NDArray, tip_angle_new: float, tip_raw:
     tip_raw = np.asarray(tip_raw, float).reshape(2,)
     second_node = np.asarray(second_node, float).reshape(2,)
     R_lim = float(R_lim)
-    clamp_margin = max(0.0, float(clamp_margin))
 
     # circle-circle intersection: constraint circle & step circle
     if mod == "outer":
         center = second_node
-        R_clamp = max(0.0, R_lim - clamp_margin)
     elif mod == "inner":
         center = second_node/2
-        R_clamp = R_lim + clamp_margin
-    else:
-        raise ValueError(f"Unknown clamp mode '{mod}'")
 
     # raw before-tip implied by tip_raw and tip_angle_new
     u = array([np.cos(tip_angle_new), np.sin(tip_angle_new)], float)
@@ -246,19 +237,19 @@ def clamp_pos_same_delta(*, before_prev: NDArray, tip_angle_new: float, tip_raw:
     disp_raw = before_raw - center
     r_raw = np.linalg.norm(disp_raw)
 
-    if (r_raw <= R_clamp and mod == "outer") or (r_raw >= R_clamp and mod == "inner"):
+    if (r_raw <= R_lim + eps and mod == "outer") or (r_raw >= R_lim - eps and mod == "inner"):
         return tip_raw, before_raw, False  # no clamp
 
     step = np.linalg.norm(before_raw - before_prev)
 
-    pts = _circle_circle_intersections_np(center, R_clamp, before_prev, step, eps=eps)
+    pts = _circle_circle_intersections_np(center, R_lim, before_prev, step, eps=eps)
 
     if len(pts) == 0:
         # fallback: radial clamp in before-space
         if r_raw < eps:
-            before_new = center + array([R_clamp, 0.0])
+            before_new = center + array([R_lim, 0.0])
         else:
-            before_new = center + disp_raw * (R_clamp / r_raw)
+            before_new = center + disp_raw * (R_lim / r_raw)
     else:
         # # before 7May
         # before_new = min(pts, key=lambda p: np.sum((p - before_raw)**2))
@@ -323,48 +314,27 @@ def clamp_pos_same_delta(*, before_prev: NDArray, tip_angle_new: float, tip_raw:
 
             cand_delta = [tc - tip_update_prev for tc in tip_candidates]
 
-            if use_tangent_selection and mod == "outer":
-                r_prev = before_prev - center
-                r_prev_norm = np.linalg.norm(r_prev)
-                if r_prev_norm > eps:
-                    tangent_ccw = array([-r_prev[1], r_prev[0]]) / r_prev_norm
-                    raw_tangent = float(np.dot(raw_update_tip, tangent_ccw))
-                    if abs(raw_tangent) > eps:
-                        desired_sign = np.sign(raw_tangent)
-                        scores = array([desired_sign * float(np.dot(cd, tangent_ccw)) for cd in cand_delta])
-                        valid = scores > -eps
-                        if np.any(valid):
-                            inds = np.where(valid)[0]
-                            best_idx = int(inds[np.argmax(scores[inds])])
-                            before_new = pts[best_idx]
-                        else:
-                            before_new = min(pts, key=lambda p: np.sum((p - before_raw) ** 2))
-                    else:
-                        before_new = min(pts, key=lambda p: np.sum((p - before_raw) ** 2))
-                else:
-                    before_new = min(pts, key=lambda p: np.sum((p - before_raw) ** 2))
+            valid = np.ones(len(pts), dtype=bool)
+
+            # If raw dy says "go up", never accept a candidate
+            # whose corrected dy goes down, unless numerical tolerance makes it zero.
+            if abs(raw_update_tip[1]) > eps:
+                sy = np.sign(raw_update_tip[1])
+                valid &= np.array([np.sign(cd[1]) == sy or abs(cd[1]) < eps for cd in cand_delta])
+
+            # Optional: also preserve x direction if meaningful.
+            if np.any(valid) and abs(raw_update_tip[0]) > eps:
+                sx = np.sign(raw_update_tip[0])
+                valid_x = valid & np.array([np.sign(cd[0]) == sx or abs(cd[0]) < eps for cd in cand_delta])
+                if np.any(valid_x):
+                    valid = valid_x
+
+            if np.any(valid):
+                inds = np.where(valid)[0]
+                best_idx = min(inds, key=lambda k: np.sum((tip_candidates[k] - tip_raw) ** 2))  # May 10
+                before_new = pts[int(best_idx)]
             else:
-                valid = np.ones(len(pts), dtype=bool)
-
-                # If raw dy says "go up", never accept a candidate
-                # whose corrected dy goes down, unless numerical tolerance makes it zero.
-                if abs(raw_update_tip[1]) > eps:
-                    sy = np.sign(raw_update_tip[1])
-                    valid &= np.array([np.sign(cd[1]) == sy or abs(cd[1]) < eps for cd in cand_delta])
-
-                # Optional: also preserve x direction if meaningful.
-                if np.any(valid) and abs(raw_update_tip[0]) > eps:
-                    sx = np.sign(raw_update_tip[0])
-                    valid_x = valid & np.array([np.sign(cd[0]) == sx or abs(cd[0]) < eps for cd in cand_delta])
-                    if np.any(valid_x):
-                        valid = valid_x
-
-                if np.any(valid):
-                    inds = np.where(valid)[0]
-                    best_idx = min(inds, key=lambda k: np.sum((tip_candidates[k] - tip_raw) ** 2))  # May 10
-                    before_new = pts[int(best_idx)]
-                else:
-                    before_new = min(pts, key=lambda p: np.sum((p - before_raw) ** 2))
+                before_new = min(pts, key=lambda p: np.sum((p - before_raw) ** 2))
         else:
             before_new = min(pts, key=lambda p: np.sum((p - before_raw) ** 2))
 
@@ -597,39 +567,67 @@ def _correct_big_stretch(tip_pos: NDArray[np.float64], tip_angle: float, total_a
     return tip_new
 
 
-def effective_radius(R_free: float, L: float, total_angle: float, tip_angle: float, supress_prints: bool = True) -> float:
+def effective_radius(R: float, L: float, total_angle: float, tip_angle: float, supress_prints: bool = True) -> float:
     """
     Compute effective maximal reachable radius of the chain, accounting for angular wrapping (coil shrinkage).
 
     Notes
     -----
     - `total_angle` must be **unwrapped**, i.e. it may exceed ±2π, ±4π, etc.
-    - Shrinkage starts only after a pi revolution; each additional pi contributes linearly up to L.
-    - Tip shrinkage uses abs(tip_angle - total_angle), so opposite tip rotation can untangle the global wrap.
+    - For every full revolution (2*pi) in `delta`, the effective radius
+      shrinks by 2L, corresponding to a full loop consuming two edge lengths.
+    - Remaining partial revolution contributes additional shrinkage = L * (1 - cos(rem / 2))
+
     Parameters
     ----------
-    R_free      - float, Nominal free radius before accounting for coiling, calcaulted at init of SupervisorClass.
+    R           - float, Nominal free radius before accounting for coiling, calcaulted at init of SupervisorClass.
     L           - float, Edge length of the chain.
     total_angle - float, Unwrapped accumulated chain angle (radians).
     tip_angle   - float,  Current tip orientation (radians).
+    margin      - float, optional,  Additional safety margin subtracted from R.
     supress_prints - bool, optional, If False, prints shrink contributions.
-    wrap        - bool, optional, If False, return the nominal free radius.
 
     Returns
     -------
     R_eff - float,  Effective maximal reachable radius after accounting for coil-induced shrinkage.
     """
-    # Global wrap uses the base angle; local wrap uses the tip angle relative
-    # to it, allowing opposite tip rotation to untangle the endpoint.
-    # 2L for revolution around base, 1L around tip
-    def half_turn_shrink(angle: float, mod: str = 'tip') -> float:
-        if mod == 'tip':
-            return L * max(0.0, abs(angle) / np.pi - 1.0)
-        elif mod == 'global':
-            return 2 * L * max(0.0, abs(angle) / np.pi - 1.0)
+    # # ------ tip angle ------
+    # delta = float(np.abs(total_angle - tip_angle))  # radians, unwrapped
+    # n_rev = int(np.floor(delta / (2.0 * np.pi)))
+    # rem = delta - n_rev * (2.0 * np.pi)  # in [0, 2pi)
 
-    shrink_global = half_turn_shrink(total_angle, mod='global')
-    shrink_local = half_turn_shrink(tip_angle - total_angle, mod='tip')
+    # shrink_full_tip = (2.0 * L) * n_rev
+    # shrink_partial_tip = L * (1.0 - np.cos(rem / 2.0))  # in [0, 2L)
+    # # shrink_partial = L * (1.0 - np.cos(rem))  # in [0, 2L)
+    # if not supress_prints:
+    #     print('shrink due to full tip revolutions [mm]', shrink_full_tip)
+    #     print('shrink due to partial tip revolution [mm]', shrink_partial_tip)
+
+    # # ------ total angle ------
+    # # n_halfturns = int(np.floor((np.abs(total_angle) + np.pi) / (2.0 * np.pi)))
+    # # shrink_full_total_angle = (1.0 * L) * n_halfturns
+    # wrap_frac = np.abs(total_angle) / (2.0 * np.pi)
+
+    # shrink_full_total_angle = L * wrap_frac
+    # if not supress_prints:
+    #     print('shrink due to total angle revolutions around base [mm]', shrink_full_total_angle)
+
+    # shrink = shrink_full_tip + shrink_partial_tip + shrink_full_total_angle
+
+    # Local mismatch between radial direction and last-edge direction.
+    # Use wrapped difference, not unwrapped difference, otherwise one extra 2pi
+    # in total_angle looks like another full tip revolution.
+    gamma = abs(wrap_pi(tip_angle - total_angle))
+    shrink_local = L * (1.0 - np.cos(gamma / 2.0))   # <= L for gamma in [0, pi]
+
+    # Global winding penalty only after an actual near-full coil.
+    coil_start = 1*np.pi
+    excess_winding = max(0.0, abs(total_angle) - coil_start)
+    shrink_global = 1.0 * L * excess_winding / (2.0*np.pi)
+
+    # # Key change: do not add them.
+    # shrink = max(shrink_local, shrink_global)
+    # add them
     shrink = shrink_local + shrink_global
 
     if not supress_prints:
@@ -637,7 +635,7 @@ def effective_radius(R_free: float, L: float, total_angle: float, tip_angle: flo
         print("shrink global winding", shrink_global)
         print("chosen shrink", shrink)
 
-    return max(0.0, R_free - shrink)
+    return max(0.0, R - shrink)
 
 
 def swept_last_edge_crosses_first_edge(tip_prev: np.ndarray, angle_prev: float, tip_new: np.ndarray, angle_new: float,

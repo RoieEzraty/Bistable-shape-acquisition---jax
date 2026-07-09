@@ -595,7 +595,6 @@ class SupervisorClass:
             R_eff = helpers_builders.effective_radius(self.R_free, Strctr.L, total_angle=total_angle,
                                                       tip_angle=float(self.tip_angle_update_in_t[t]),
                                                       supress_prints=self.supress_prints)
-            clamp_margin = 0.1 * Strctr.L * (Strctr.hinges-1)
             before_prev = helpers_builders._get_before_tip(prev_tip_update_pos, float(prev_tip_update_angle),
                                                            Strctr.L, xp=np)
 
@@ -613,8 +612,7 @@ class SupervisorClass:
                                                                               tip_angle_new=float(self.tip_angle_update_in_t[t]),
                                                                               tip_raw=self.tip_pos_update_in_t[t, :],
                                                                               second_node=array([Strctr.L, 0.0], dtype=float),
-                                                                              R_lim=self.R_min, L=Strctr.L, mod="inner",
-                                                                              clamp_margin=clamp_margin)
+                                                                              R_lim=self.R_min, L=Strctr.L, mod="inner")
 
             # clamp outside outer radius
             # tip_new = helpers_builders._correct_big_stretch(tip_new, self.tip_angle_update_in_t[t], total_angle,
@@ -626,32 +624,17 @@ class SupervisorClass:
                                                                               second_node=array([Strctr.L, 0.0], dtype=float),
                                                                               R_lim=R_eff, L=Strctr.L, mod="outer",
                                                                               tip_update_prev=prev_tip_update_pos,
-                                                                              raw_update_tip=delta_tip, clamp_margin=clamp_margin,
-                                                                              use_tangent_selection=self.use_tangent_clamp)
+                                                                              raw_update_tip=delta_tip)
 
             if clamped_outer:
                 corrected_delta = tip_new - prev_tip_update_pos
-                # New 2026June25
-                eps = max(1e-12, 1e-6 * Strctr.L)
-                clamp_reversed_x = (abs(delta_tip[0]) > eps
-                                    and np.sign(corrected_delta[0]) != np.sign(delta_tip[0]))
-                clamp_fabricated_x = (abs(delta_tip[0]) <= eps
-                                      and abs(corrected_delta[0]) > abs(corrected_delta[1]) + eps)
-                clamp_erased_y = abs(delta_tip[1]) > eps and abs(corrected_delta[1]) < 0.1 * abs(delta_tip[1])
-                two_step_bounce = (t > 2
-                                   and np.linalg.norm(tip_new - self.tip_pos_update_in_t[t - 2, :]) < eps)
-                if (clamp_erased_y and (clamp_reversed_x or clamp_fabricated_x)) or two_step_bounce:
-                    tip_new = prev_tip_update_pos.copy()
-                    corrected_delta = tip_new - prev_tip_update_pos
-                print(f"[{_local_log_time()}] outer clamp:",
+                print("outer clamp:",
                       "t=", t,
                       "raw_delta=", delta_tip,
                       "corrected_delta=", corrected_delta,
                       "raw_dy=", delta_tip[1],
                       "corrected_dy=", corrected_delta[1],
-                      "prev_y=", prev_tip_update_pos[1],
-                      "R_eff=", R_eff,
-                      "clamp_margin=", clamp_margin)
+                      "prev_y=", prev_tip_update_pos[1])
 
             self.tip_pos_update_in_t[t, :] = tip_new
 
@@ -945,7 +928,7 @@ class SupervisorClass:
         if self.pos_delta_mode == "signed":
             delta_tip_x = - self.alpha * (-self.loss[0]) * (-sgny_update) * Variabs.norm_pos  # July8
             delta_tip_y = - self.alpha * (-self.loss[1]) * (+sgnx_update) * Variabs.norm_pos  # July8
-        elif self.pos_delta_mode == "signed_double":
+        elif self.pos_delta_mode == "signed double":
             delta_tip_x = - self.alpha * (-self.loss[0]) * (-sgny_update) * (-sgny_meas) * Variabs.norm_pos  # Mar23
             delta_tip_y = - self.alpha * (-self.loss[1]) * (+sgnx_update) * (+sgnx_meas) * Variabs.norm_pos  # Mar23
         elif self.pos_delta_mode == "direct":
