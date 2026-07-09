@@ -12,9 +12,9 @@ import numpy as np
 # MATERIAL = "Leon_metal"
 MATERIAL = "Roie_metal"
 
-# HINGES: int = 4  # Hinges
+HINGES: int = 4  # Hinges
 # HINGES: int = 8  # Hinges
-HINGES: int = 5  # Hinges
+# HINGES: int = 5  # Hinges
 
 
 # -----------------------------
@@ -166,11 +166,11 @@ class TrainingConfig:
     if desired_buckle_type == 'random':
         desired_buckle_rand_key: int = 169  # key for seed of random sampling of buckle pattern
     elif desired_buckle_type == 'specified':
-        desired_buckle_pattern: tuple = (1, 1, 1, 1, 1)  # desired buckle, 1=up
+        desired_buckle_pattern: tuple = (1, 1, 1, 1)  # desired buckle, 1=up
         # desired_buckle_pattern: tuple = (-1, -1, -1, -1)  # desired buckle, 1=up
         # desired_buckle_pattern: tuple = (1, -1, -1, -1, -1, 1, 1, 1)  # desired buckle, 1=up
 
-    init_buckle_pattern: tuple = (1, -1, 1, 1, 1)  # initial buckle, 1=up
+    init_buckle_pattern: tuple = (1, -1, 1, 1)  # initial buckle, 1=up
     # init_buckle_pattern: tuple = (-1, -1, -1, 1)  # initial buckle, 1=up
     # init_buckle_pattern: tuple = (-1, -1, 1, 1, 1, 1, -1, -1)  # initial buckle, 1=up
     # init_buckle_pattern: tuple = (1)  # initial buckle, 1=up
@@ -237,10 +237,10 @@ class TrainingConfig:
 
     # Update-only grid sweep for monitoring buckling. Positions are in [m], angles in [rad].
     # x follows x_s -> x_l -> x_s as y goes from y_min to y_max.
-    tip_grid_x_s: float | None = -(HINGES * 0.0472)/4  # None uses the flat-chain tip x = Strctr.edges * Strctr.L
+    tip_grid_x_s: float | None = 0.0472/2  # None uses the flat-chain tip x = Strctr.edges * Strctr.L
     tip_grid_x_l: float | None = (HINGES * 0.0472)*3/4
-    tip_grid_y_min: float = -(HINGES * 0.0472)/2
-    tip_grid_y_max: float = (HINGES * 0.0472)/2
+    tip_grid_y_min: float = -(HINGES * 0.0472)/2.5
+    tip_grid_y_max: float = (HINGES * 0.0472)/2.5
     tip_grid_y_num: int = 5
     tip_grid_theta_min: float = -np.pi/2
     tip_grid_theta_max: float = np.pi/2

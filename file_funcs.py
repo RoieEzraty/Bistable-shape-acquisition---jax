@@ -1033,8 +1033,9 @@ def already_done_in_dir(job, prev_dir: Path, H: int):
 # File helpers
 # -----------------------------
 def correct_buckle_string(buckle_arr: NDArray):
-    buckle = copy.copy(buckle_arr)
-    buckle[buckle_arr == -1] = 0
+    buckle = helpers_builders.jax2numpy(buckle_arr, dtype=int)
+    buckle = copy.copy(buckle)
+    buckle[buckle == -1] = 0
     buckle_str = ''.join(buckle.reshape(-1).astype(str))
     return buckle_str
 
