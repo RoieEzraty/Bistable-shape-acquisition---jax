@@ -41,6 +41,7 @@ class ParallelJob(TypedDict):
     desired_buckle_tup: tuple[int, ...]
     run_dir: Union[str, Path]
     save_gifs: bool
+    save_frames: bool
     save_pngs: bool
     save_csvs: bool
     pos_delta_mode: str
@@ -57,6 +58,7 @@ class ParallelJobResult(TypedDict):
     desired_buckle_tup: tuple[int, ...]
     loss: float
     gif_path: Optional[str]
+    frame_dir: Optional[str]
     png_path: Optional[str]
     csv_path: Optional[str]
     log_path: str
@@ -103,6 +105,7 @@ def run_one_job(job: ParallelJob) -> ParallelJobResult:
         desired_buckle_tup - Desired buckle pattern as a length-4 tuple of ``-1``/``+1`` values.
         run_dir            - Directory of log file & optional output files to write (created if not existing)
         save_gifs          - True = save HTML animation of update trajectory in training time.
+        save_frames        - True = save JPEG frames under ``{init}to{desired}/frames``.
         save_pngs          - True = save sizes during training time t as graphs in PNG.
         save_csvs          - True = export training trajectory and state history to CSV.
         use_tangent_clamp  - True = preserve tangential update direction during outer free-tip clamp.
@@ -115,7 +118,7 @@ def run_one_job(job: ParallelJob) -> ParallelJobResult:
         k, l - The input job indices, copied into the result.
         init_buckle_tup, desired_buckle_tup - The input buckle patterns, copied into the result.
         loss - Final scalar MSE-like loss from ``Sprvsr.loss_MSE`` on success. ``np.nan`` if run failed.
-        gif_path, png_path, csv_path - Paths to generated output files, None if not requested or if run failed.
+        gif_path, frame_dir, png_path, csv_path - Paths to generated output files, None if not requested or if run failed.
         log_path - Path to per-job log file. On failure, traceback is appended to this file.
 
     Notes
@@ -129,6 +132,7 @@ def run_one_job(job: ParallelJob) -> ParallelJobResult:
     desired_buckle_tup = tuple(job["desired_buckle_tup"])
     run_dir = Path(job["run_dir"])
     save_gifs = bool(job["save_gifs"])
+    save_frames = bool(job.get("save_frames", True))
     save_pngs = bool(job["save_pngs"])
     save_csvs = bool(job["save_csvs"])
     pos_delta_mode = str(job.get("pos_delta_mode", CFG.Train.pos_delta_mode))
@@ -155,6 +159,7 @@ def run_one_job(job: ParallelJob) -> ParallelJobResult:
             "desired_buckle_tup": desired_buckle_tup,
             "loss": np.nan,
             "gif_path": None,
+            "frame_dir": None,
             "png_path": None,
             "csv_path": None,
             "log_path": str(log_path),
@@ -199,17 +204,37 @@ def run_one_job(job: ParallelJob) -> ParallelJobResult:
             F_des_in_t = np.array([State_des.Fx_in_t, State_des.Fy_in_t])
 
             gif_path = None
+            frame_dir = None
             png_path = None
             csv_path = None
 
-            if save_gifs:
+            if save_gifs or save_frames:
                 pos_in_t_update = np.moveaxis(State_update.pos_arr_in_t, 2, 0)
                 buckle_in_t = np.moveaxis(State_meas.buckle_in_t, 2, 0)
-                final_frame = min(t + 3, pos_in_t_update.shape[0])
+                final_frame = min(t + 1, pos_in_t_update.shape[0])
+
+            if save_frames:
+                frame_dir = str(run_dir / f"{init_buckle_str}to{desired_buckle_str}" / "frames")
+                frame_paths = plot_funcs.save_tip_update_jpg_frames(pos_in_t_update[1:final_frame, :, :], Strctr.L,
+                                                                    frames_dir=frame_dir,
+                                                                    Fx=State_update.Fx_in_t[1:final_frame],
+                                                                    Fy=State_update.Fy_in_t[1:final_frame],
+                                                                    frames=max(1, final_frame - 1),
+                                                                    buckle_traj=buckle_in_t[1:final_frame, :, :])
+                plot_funcs.make_jpg_slider_html(
+                    frames_dir=frame_dir,
+                    html_path=Path(frame_dir) / f"{init_buckle_str}to{desired_buckle_str}_anim.html",
+                    n_frames=len(frame_paths),
+                )
+                plt.close("all")
+
+            if save_gifs:
                 # gif_path = str(run_dir / f"gif_init_{init_buckle_str}_desired_{desired_buckle_str}.gif")
                 gif_path = str(run_dir / f"gif_init_{init_buckle_str}_desired_{desired_buckle_str}.html")
-                plot_funcs.animate_arm_w_arcs(pos_in_t_update[1:final_frame, :, :], Strctr.L, Fx=State_update.Fx_in_t,
-                                              Fy=State_update.Fy_in_t, frames=max(1, final_frame - 1), interval_ms=400,
+                plot_funcs.animate_arm_w_arcs(pos_in_t_update[1:final_frame, :, :], Strctr.L,
+                                              Fx=State_update.Fx_in_t[1:final_frame],
+                                              Fy=State_update.Fy_in_t[1:final_frame],
+                                              frames=max(1, final_frame - 1), interval_ms=400,
                                               save_path=str(gif_path), fps=2,
                                               buckle_traj=buckle_in_t[1:final_frame, :, :])
                 plt.close("all")
@@ -239,6 +264,7 @@ def run_one_job(job: ParallelJob) -> ParallelJobResult:
             "desired_buckle_tup": desired_buckle_tup,
             "loss": float(Sprvsr.loss_MSE),
             "gif_path": None if gif_path is None else str(gif_path),
+            "frame_dir": None if frame_dir is None else str(frame_dir),
             "png_path": None if png_path is None else str(png_path),
             "csv_path": None if csv_path is None else str(csv_path),
             "log_path": str(log_path),
@@ -258,6 +284,7 @@ def run_one_job(job: ParallelJob) -> ParallelJobResult:
             "desired_buckle_tup": desired_buckle_tup,
             "loss": np.nan,
             "gif_path": None,
+            "frame_dir": None,
             "png_path": None,
             "csv_path": None,
             "log_path": str(log_path),

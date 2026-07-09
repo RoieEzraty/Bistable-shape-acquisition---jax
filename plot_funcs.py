@@ -12,6 +12,7 @@ from matplotlib.lines import Line2D
 from scipy.signal import savgol_filter
 from matplotlib.patches import Ellipse, FancyArrowPatch
 from collections import Counter
+from pathlib import Path
 
 from typing import Tuple, List, Union
 from numpy.typing import NDArray
@@ -622,6 +623,227 @@ def animate_arm_w_arcs(traj_pos, L, Fx: Optional[NDArray] = None, Fy: Optional[N
 
     plt.close(fig)
     return fig, anim
+
+
+def make_jpg_slider_html(
+    frames_dir,
+    html_path="animation_slider.html",
+    frame_pattern="frame_{:04d}.jpg",
+    n_frames=None,
+    title="Training animation",
+):
+    frames_dir = Path(frames_dir)
+    html_path = Path(html_path)
+
+    if n_frames is None:
+        frames = sorted(frames_dir.glob("*.jpg"))
+        n_frames = len(frames)
+
+    rel_frames_dir = frames_dir.relative_to(html_path.parent) if frames_dir.is_relative_to(html_path.parent) else frames_dir
+
+    frame_list = [
+        str(rel_frames_dir / frame_pattern.format(t)).replace("\\", "/")
+        for t in range(n_frames)
+    ]
+
+    html = f"""
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>{title}</title>
+<style>
+    body {{
+        font-family: Arial, sans-serif;
+        margin: 20px;
+    }}
+    img {{
+        max-width: 100%;
+        border: 1px solid #ccc;
+    }}
+    .controls {{
+        margin-top: 15px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }}
+    input[type=range] {{
+        width: 500px;
+    }}
+    #tlabel {{
+        font-size: 18px;
+        font-weight: bold;
+    }}
+</style>
+</head>
+<body>
+
+<h2>{title}</h2>
+
+<img id="frame" src="{frame_list[0]}">
+
+<div class="controls">
+    <span>t =</span>
+    <span id="tlabel">0</span>
+    <input id="slider" type="range" min="0" max="{n_frames - 1}" value="0" step="1">
+</div>
+
+<script>
+const frames = {frame_list};
+
+const img = document.getElementById("frame");
+const slider = document.getElementById("slider");
+const tlabel = document.getElementById("tlabel");
+
+slider.addEventListener("input", function() {{
+    const t = Number(slider.value);
+    img.src = frames[t];
+    tlabel.textContent = t;
+}});
+</script>
+
+</body>
+</html>
+"""
+
+    html_path.write_text(html, encoding="utf-8")
+    return html_path
+
+
+def save_tip_update_jpg_frames(traj_pos, L, frames_dir: Union[str, Path], Fx: Optional[NDArray] = None,
+                               Fy: Optional[NDArray] = None, frames: Optional[int] = None,
+                               buckle_traj: Optional[NDArray] = None, dpi: int = 150,
+                               jpeg_quality: int = 85, clear_existing: bool = True) -> list[Path]:
+    """
+    Save compressed JPEG frames for a tip-update trajectory.
+
+    Parameters
+    ----------
+    traj_pos
+        Array-like, shape ``(T, nodes, 2)``, arm positions over time.
+    L
+        Reference link length used for axis scaling.
+    frames_dir
+        Directory where ``frame_XXXX.jpg`` files are written. Created if needed.
+    Fx, Fy
+        Optional force histories aligned with ``traj_pos``.
+    frames
+        Approximate number of saved frames after temporal downsampling. If ``None``,
+        save every input frame.
+    buckle_traj
+        Optional buckle history with shape ``(T, H, S)`` or static buckle state ``(H, S)``.
+    dpi
+        Output image resolution.
+    jpeg_quality
+        JPEG compression quality, from 1 to 95.
+    clear_existing
+        If True, remove existing ``frame_*.jpg`` files from ``frames_dir`` before saving.
+
+    Returns
+    -------
+    list[Path]
+        Paths to the saved JPEG files.
+    """
+    colors_lst, red, _ = colors.color_scheme()
+    plt.rcParams["axes.prop_cycle"] = plt.cycler("color", colors_lst)
+
+    pos = np.asarray(traj_pos, dtype=float)
+    if pos.ndim != 3 or pos.shape[2] != 2:
+        raise ValueError("traj_pos must have shape (T, nodes, 2)")
+
+    T_all = pos.shape[0]
+    if T_all == 0:
+        raise ValueError("traj_pos must contain at least one frame")
+
+    if frames is None:
+        stride = 1
+    else:
+        stride = max(1, int(T_all / max(1, int(frames))))
+
+    pos = pos[::stride]
+    T, N, _ = pos.shape
+    edges = N - 1
+
+    Fx_plot = None if Fx is None else np.asarray(Fx, dtype=float)[::stride]
+    Fy_plot = None if Fy is None else np.asarray(Fy, dtype=float)[::stride]
+
+    buckle_plot = None
+    if buckle_traj is not None:
+        buckle_plot = np.asarray(buckle_traj)
+        if buckle_plot.shape[0] != T_all:
+            buckle_plot = np.tile(buckle_plot, T_all).T.reshape(T_all, N - 2, 1)
+        buckle_plot = buckle_plot[::stride]
+
+    frames_path = Path(frames_dir)
+    frames_path.mkdir(parents=True, exist_ok=True)
+    if clear_existing:
+        for old_frame in frames_path.glob("frame_*.jpg"):
+            old_frame.unlink()
+
+    fig, (ax_chain, ax_force) = plt.subplots(1, 2, figsize=(10, 4.5),
+                                             gridspec_kw={"width_ratios": [1.1, 1.0]})
+    ax_chain.set_aspect("equal", adjustable="box")
+    ax_chain.set_xlim([-(edges - 0.5) * L, (edges + 0.5) * L])
+    ax_chain.set_ylim([-(edges - 0.5) * L, (edges - 0.5) * L])
+    ax_chain.set_xlabel("x")
+    ax_chain.set_ylabel("y")
+
+    (chain_line,) = ax_chain.plot([], [], linewidth=4, color=red)
+    chain_scat = ax_chain.scatter([], [], s=60, zorder=3, color=red)
+    tip_text = ax_chain.text(0, 0, "", va="bottom", ha="left", fontsize=14)
+
+    t_plot = np.arange(T)
+    (line_fx,) = ax_force.plot([], [], linestyle="-", marker="o", markersize=6, label=r"$F_x$")
+    (line_fy,) = ax_force.plot([], [], linestyle="-", marker="o", markersize=6, label=r"$F_y$")
+    ax_force.set_ylim([-600, 600])
+    ax_force.set_xlim([-1, T + 1])
+    ax_force.legend()
+
+    arc_patches: list[patches.Patch] = []
+    saved_paths: list[Path] = []
+    pad = max(4, len(str(T)))
+    pil_kwargs = {"quality": int(np.clip(jpeg_quality, 1, 95)), "optimize": True}
+
+    for ti in range(T):
+        pts = pos[ti]
+        xs, ys = pts[:, 0], pts[:, 1]
+        chain_line.set_data(xs, ys)
+        chain_scat.set_offsets(pts)
+        tip_text.set_position((xs[-1], ys[-1]))
+        tip_text.set_text(f"Tip ({xs[-1]:.2f}, {ys[-1]:.2f})")
+        ax_chain.set_title(f"t= {ti + 1}/{T}")
+
+        for patch in arc_patches:
+            patch.remove()
+        arc_patches.clear()
+
+        if buckle_plot is not None:
+            buckle = np.asarray(buckle_plot[ti])
+            diffs = pts[2:, :] - pts[:-2, :]
+            diffs_3d = np.concatenate((diffs, np.zeros((diffs.shape[0], 1))), axis=1)
+            buckle_3d = np.concatenate((np.zeros((buckle.shape[0], 2)), buckle.reshape(-1, 1)), axis=1)
+            directions = np.cross(diffs_3d, buckle_3d)[:, :2]
+            for p, v in zip(pts[1:-1], directions):
+                norm_v = np.linalg.norm(v)
+                if norm_v < 1e-12:
+                    continue
+                arrow = patches.FancyArrowPatch(p, p + v / norm_v * 0.004 * N, arrowstyle="-|>",
+                                                mutation_scale=25, linewidth=2, capstyle="round",
+                                                joinstyle="round", color="k")
+                ax_chain.add_patch(arrow)
+                arc_patches.append(arrow)
+
+        if Fx_plot is not None and Fy_plot is not None:
+            tt = t_plot[:ti + 1]
+            line_fx.set_data(tt, Fx_plot[:ti + 1])
+            line_fy.set_data(tt, Fy_plot[:ti + 1])
+
+        frame_path = frames_path / f"frame_{ti:0{pad}d}.jpg"
+        fig.savefig(frame_path, dpi=dpi, bbox_inches="tight", format="jpg", pil_kwargs=pil_kwargs)
+        saved_paths.append(frame_path)
+
+    plt.close(fig)
+    return saved_paths
 
 
 # ----------------------------

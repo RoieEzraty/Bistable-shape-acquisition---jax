@@ -48,7 +48,8 @@ def train(Strctr: StructureClass, Variabs: VariablesClass, CFG: ExperimentConfig
     pos_in_t_meas   : ndarray, shape (T, nodes, 2) Measurement modality equilibrium node positions over training steps.
     pos_in_t_update : ndarray, shape (T, nodes, 2) Update modality equilibrium node positions over training steps.
     """
-    # extra empty time steps for gif plotting
+    # Extra duplicate frames for gif plotting after early success, only when there
+    # is still room in the fixed-size time buffers.
     breath_for_gif = 3
 
     # ------ Initiate Supervisor sizes ------
@@ -88,7 +89,7 @@ def train(Strctr: StructureClass, Variabs: VariablesClass, CFG: ExperimentConfig
     buckle_bool = False
     meas_count = 0  # for tile
 
-    for t in range(1, Sprvsr.T - breath_for_gif):
+    for t in range(1, Sprvsr.T):
 
         ## MEASUREMENT
 
@@ -167,9 +168,10 @@ def train(Strctr: StructureClass, Variabs: VariablesClass, CFG: ExperimentConfig
             if Sprvsr.symmetrical_state:
                 print('chain in state symmetrical to desired, flip it')
             print('successful training')
-            # add fictitious times just for gif plot
-            for i in range(breath_for_gif):
-                State_update._save_data(t+breath_for_gif+1, Strctr, final_pos_update, State_update.buckle_arr, F_in_t)
+            # Add fictitious times just for gif plot, without writing past the
+            # allocated training buffers.
+            for extra_t in range(t + 1, min(Sprvsr.T, t + 1 + breath_for_gif)):
+                State_update._save_data(extra_t, Strctr, final_pos_update, State_update.buckle_arr, F_in_t)
             break
 
     return Sprvsr, State_meas, State_des, State_update, Eq_meas, Eq_des, t
