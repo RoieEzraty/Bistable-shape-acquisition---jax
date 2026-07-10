@@ -182,14 +182,15 @@ def train(Strctr: StructureClass, Variabs: VariablesClass, CFG: ExperimentConfig
 # ---------------------------------------------------------------
 def tip_grid_buckle_sweep(Strctr: StructureClass, Variabs: VariablesClass, Sprvsr: SupervisorClass,
                           CFG: ExperimentConfig, init_buckle: NDArray, *,
-                          warm_start: bool = True, plot_every: int = 0
+                          warm_start: bool = True, plot_every: int = 0, verbose=False
                           ) -> Tuple[StateClass, NDArray[np.float32], NDArray[np.int32],
                                      NDArray[np.float32], NDArray[np.float32]]:
     """
     Sweep imposed update-tip commands over a y/theta grid and monitor buckling.
 
-    This is an update-only protocol: every grid point is one time step `t`, with
-    no measurement, desired state, loss, or learned update phase.
+    This is an update-only protocol: the first step is the flat tip pose, then
+    every grid point is one time step `t`, with no measurement, desired state,
+    loss, or learned update phase.
 
     Parameters
     ----------
@@ -226,7 +227,8 @@ def tip_grid_buckle_sweep(Strctr: StructureClass, Variabs: VariablesClass, Sprvs
         raise ValueError("tip_grid_buckle_sweep() requires Sprvsr.dataset_sampling == 'tip_grid_sweep'.")
 
     T_steps = Sprvsr.tip_pos_update_in_t.shape[0]
-    State = StateClass(Strctr, Sprvsr, buckle_arr=init_buckle)
+    init_buckle_arr = helpers_builders.jax2numpy(init_buckle, dtype=int).reshape(Strctr.hinges, Strctr.shims)
+    State = StateClass(Strctr, Sprvsr, buckle_arr=init_buckle_arr)
 
     pos_frames: NDArray[np.float32] = np.zeros((T_steps, Strctr.nodes, 2), dtype=np.float32)
     buckle_frames: NDArray[np.int32] = np.zeros((T_steps, Strctr.hinges, Strctr.shims), dtype=np.int32)
@@ -237,7 +239,8 @@ def tip_grid_buckle_sweep(Strctr: StructureClass, Variabs: VariablesClass, Sprvs
     init_pos: Optional[np.ndarray] = State.pos_arr
 
     for t, (tip_pos, tip_angle) in enumerate(zip(Sprvsr.tip_pos_update_in_t, Sprvsr.tip_angle_update_in_t)):
-        print(f"grid sweep t={t}, tip_pos={tip_pos}, tip_angle={tip_angle:.4f}")
+        if verbose:
+            print(f"grid sweep t={t}, tip_pos={tip_pos}, tip_angle={tip_angle:.4f}")
 
         Eq = EquilibriumClass(Strctr, CFG, buckle_arr=State.buckle_arr, pos_arr=State.pos_arr)
         final_pos, pos_in_t, _, F_in_t = Eq.calculate_state(Variabs, Strctr, Sprvsr,

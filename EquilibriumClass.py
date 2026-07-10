@@ -108,7 +108,7 @@ class EquilibriumClass(eqx.Module):
         if buckle_arr is None:
             self.buckle_arr = jnp.ones((Strctr.hinges, Strctr.shims), dtype=jnp.int32)
         else:
-            self.buckle_arr = buckle_arr
+            self.buckle_arr = jnp.asarray(buckle_arr, dtype=jnp.int32)
             assert self.buckle_arr.shape == (Strctr.hinges, Strctr.shims)
 
         if pos_arr is None:

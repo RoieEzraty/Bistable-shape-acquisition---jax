@@ -156,7 +156,7 @@ class EquilibriumConfig:
 # -----------------------------
 @dataclass(frozen=True)
 class TrainingConfig:
-    T: int = 4  # total training set time (not time to reach equilibrium during every step)
+    T: int = 240  # total training set time (not time to reach equilibrium during every step)
 
     # desired_buckle_type: str = 'random'
     # desired_buckle_type: str = 'opposite'
@@ -241,10 +241,10 @@ class TrainingConfig:
     tip_grid_x_l: float | None = (HINGES * 0.0472)*3/4
     tip_grid_y_min: float = -(HINGES * 0.0472)/2.5
     tip_grid_y_max: float = (HINGES * 0.0472)/2.5
-    tip_grid_y_num: int = 5
+    tip_grid_y_num: int = 11
     tip_grid_theta_min: float = -np.pi/2
     tip_grid_theta_max: float = np.pi/2
-    tip_grid_theta_num: int = 5
+    tip_grid_theta_num: int = 11
     tip_grid_snake: bool = True  # reverse theta direction every other y row for a continuous sweep
 
     # unit conversions

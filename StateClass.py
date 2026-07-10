@@ -106,9 +106,11 @@ class StateClass:
 
         # ------ buckle pattern ------
         if buckle_arr is not None:
-            self.buckle_arr = buckle_arr                                                    
+            self.buckle_arr = helpers_builders.jax2numpy(buckle_arr, dtype=int).reshape(Strctr.hinges, Strctr.shims)
         else:
-            self.buckle_arr = helpers_builders._initiate_buckle(Strctr.hinges, Strctr.shims)  # (H, S) buckle state of shims
+            self.buckle_arr = helpers_builders.jax2numpy(
+                helpers_builders._initiate_buckle(Strctr.hinges, Strctr.shims), dtype=int
+            )  # (H, S) buckle state of shims
         self.buckle_in_t = zeros((Strctr.hinges, Strctr.shims, Sprvsr.T))                  # (H, S, T)
 
         # ------ forces and torques ------

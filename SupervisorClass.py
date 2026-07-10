@@ -130,7 +130,7 @@ class SupervisorClass:
     def __init__(self, Strctr, CFG, supress_prints: bool = True) -> None:
         self.T = int(CFG.Train.T)  # total training-set size (& algorithm time, dont confuse with time to equilib state)
         if CFG.Train.dataset_sampling == 'tip_grid_sweep':
-            self.T = int(CFG.Train.tip_grid_y_num) * int(CFG.Train.tip_grid_theta_num)
+            self.T = 1 + int(CFG.Train.tip_grid_y_num) * int(CFG.Train.tip_grid_theta_num)
         self.alpha = float(CFG.Train.alpha)
         self.tradeoff_pos_angle = float(CFG.Train.tradeoff_pos_angle)
         self.update_scheme = str(CFG.Train.update_scheme)
@@ -370,8 +370,8 @@ class SupervisorClass:
             theta_vals = np.linspace(CFG.Train.tip_grid_theta_min, CFG.Train.tip_grid_theta_max,
                                      CFG.Train.tip_grid_theta_num, dtype=np.float32)
 
-            tip_positions = []
-            tip_angles = []
+            tip_positions = [[float(Strctr.L * (Strctr.hinges + 1)), 0.0]]
+            tip_angles = [0.0]
             for y_idx, (x_tip, y_tip) in enumerate(zip(x_vals, y_vals)):
                 theta_row = theta_vals
                 if CFG.Train.tip_grid_snake and y_idx % 2 == 1:
