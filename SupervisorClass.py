@@ -595,6 +595,7 @@ class SupervisorClass:
             R_eff = helpers_builders.effective_radius(self.R_free, Strctr.L, total_angle=total_angle,
                                                       tip_angle=float(self.tip_angle_update_in_t[t]),
                                                       supress_prints=self.supress_prints)
+            clamp_margin = 0.0 if Strctr.hinges <= 4 else 0.1 * Strctr.L * (Strctr.hinges - 1)
             before_prev = helpers_builders._get_before_tip(prev_tip_update_pos, float(prev_tip_update_angle),
                                                            Strctr.L, xp=np)
 
@@ -612,7 +613,8 @@ class SupervisorClass:
                                                                               tip_angle_new=float(self.tip_angle_update_in_t[t]),
                                                                               tip_raw=self.tip_pos_update_in_t[t, :],
                                                                               second_node=array([Strctr.L, 0.0], dtype=float),
-                                                                              R_lim=self.R_min, L=Strctr.L, mod="inner")
+                                                                              R_lim=self.R_min, L=Strctr.L, mod="inner",
+                                                                              clamp_margin=clamp_margin)
 
             # clamp outside outer radius
             # tip_new = helpers_builders._correct_big_stretch(tip_new, self.tip_angle_update_in_t[t], total_angle,
@@ -624,7 +626,7 @@ class SupervisorClass:
                                                                               second_node=array([Strctr.L, 0.0], dtype=float),
                                                                               R_lim=R_eff, L=Strctr.L, mod="outer",
                                                                               tip_update_prev=prev_tip_update_pos,
-                                                                              raw_update_tip=delta_tip)
+                                                                              raw_update_tip=delta_tip, clamp_margin=clamp_margin)
 
             if clamped_outer:
                 corrected_delta = tip_new - prev_tip_update_pos
