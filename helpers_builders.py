@@ -1248,7 +1248,7 @@ def hamming_distance_int(a: int, b: int) -> int:
 
 def build_transition_counts(folder: Path, only_init_and_final_buckles: bool = False, omit_inverted: bool = False):
     """
-    Go over all final_loss_*.csv files and extract directed buckle transitions.
+    Go over all training/sweep CSV files and extract directed buckle transitions.
 
     Parameters
     ----------
@@ -1269,9 +1269,10 @@ def build_transition_counts(folder: Path, only_init_and_final_buckles: bool = Fa
     per_file_loss = {}
     edge_zero_loss_count = Counter()  # all zeros initially
 
-    files = sorted(folder.glob("final_loss_*.csv"))
+    file_patterns = ("final_loss_*.csv", "tip_grid_buckle_sweep_*.csv", "tip_buckle*.csv")
+    files = sorted({file for pattern in file_patterns for file in folder.glob(pattern)})
     if not files:
-        raise FileNotFoundError(f"No files matching 'final_loss_*.csv' in {folder}")
+        raise FileNotFoundError(f"No files matching {file_patterns} in {folder}")
     if omit_inverted:  # neglect all files ending with "_inverted.csv"
         files = [f for f in files if not f.name.endswith("_inverted.csv")]
 
@@ -1291,7 +1292,10 @@ def build_transition_counts(folder: Path, only_init_and_final_buckles: bool = Fa
                 state = buckle_to_index(row.to_numpy())
                 states.append(state)
 
-        loss = file_funcs.loss_from_filename(file)
+        try:
+            loss = file_funcs.loss_from_filename(file)
+        except AttributeError:
+            loss = np.nan
         if only_init_and_final_buckles:
             per_file_loss[file.name] = loss
 
@@ -1306,7 +1310,7 @@ def build_transition_counts(folder: Path, only_init_and_final_buckles: bool = Fa
                 edge = (a, b)
                 edges_this_file.append(edge)
                 transitions[edge] += 1
-                if loss <= 1e-6 and only_init_and_final_buckles:
+                if not np.isnan(loss) and loss <= 1e-6 and only_init_and_final_buckles:
                     edge_zero_loss_count[edge] += 1
                 # else:
                 #     edge_zero_loss_count[edge] = 0

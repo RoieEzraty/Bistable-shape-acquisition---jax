@@ -166,12 +166,12 @@ class TrainingConfig:
     if desired_buckle_type == 'random':
         desired_buckle_rand_key: int = 169  # key for seed of random sampling of buckle pattern
     elif desired_buckle_type == 'specified':
-        # desired_buckle_pattern: tuple = (1, 1, 1, 1)  # desired buckle, 1=up
-        desired_buckle_pattern: tuple = (1, -1, 1, 1, -1)  # desired buckle, 1=up
+        # desired_buckle_pattern: tuple = (-1, 1, 1, -1)  # desired buckle, 1=up
+        desired_buckle_pattern: tuple = (-1, 1, 1, 1, -1)  # desired buckle, 1=up
         # desired_buckle_pattern: tuple = (1, -1, -1, -1, -1, 1, 1, 1)  # desired buckle, 1=up
 
-    # init_buckle_pattern: tuple = (1, -1, 1, 1)  # initial buckle, 1=up
-    init_buckle_pattern: tuple = (-1, 1, -1, 1, 1)  # initial buckle, 1=up
+    # init_buckle_pattern: tuple = (1, 1, 1, 1)  # initial buckle, 1=up
+    init_buckle_pattern: tuple = (1, 1, 1, 1, 1)  # initial buckle, 1=up
     # init_buckle_pattern: tuple = (-1, -1, 1, 1, 1, 1, -1, -1)  # initial buckle, 1=up
     # init_buckle_pattern: tuple = (1)  # initial buckle, 1=up
 
