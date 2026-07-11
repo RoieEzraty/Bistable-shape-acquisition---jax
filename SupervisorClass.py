@@ -595,7 +595,11 @@ class SupervisorClass:
             R_eff = helpers_builders.effective_radius(self.R_free, Strctr.L, total_angle=total_angle,
                                                       tip_angle=float(self.tip_angle_update_in_t[t]),
                                                       supress_prints=self.supress_prints)
-            clamp_margin = 0.0 if Strctr.hinges <= 4 else 0.1 * Strctr.L * (Strctr.hinges - 1)
+            clamp_margin = 0.0
+            if Strctr.hinges > 4:
+                clamp_margin = 0.1 * Strctr.L * (Strctr.hinges - 1)
+                # if abs(total_angle) > np.pi:
+                #     clamp_margin += 0.25 * Strctr.L
             before_prev = helpers_builders._get_before_tip(prev_tip_update_pos, float(prev_tip_update_angle),
                                                            Strctr.L, xp=np)
 

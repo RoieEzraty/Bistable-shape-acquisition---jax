@@ -544,6 +544,55 @@ def loss_from_filename(file: Path):
     return float(re.search(r"final_loss_(.*?)_init_", file.stem).group(1))
 
 
+def average_successful_train_time(folder: str | Path, thresh: float = 1e-6,
+                                  omit_inverted: bool = False) -> float:
+    """
+    Average the final training time over successful training CSVs in a folder.
+
+    Parameters
+    ----------
+    folder : str | Path
+        Folder containing ``final_loss_*.csv`` training exports.
+    thresh : float, default=1e-6
+        Maximum final loss for a run to count as successful.
+    omit_inverted : bool, default=False
+        Omit files containing ``"_inverted"`` in the filename.
+
+    Returns
+    -------
+    float
+        Mean final ``t`` value across successful runs.
+
+    Notes
+    -----
+    This averages the algorithm training-step time stored in the CSV ``t`` column,
+    not wall-clock runtime. Per-run wall-clock time is written to the log files.
+    """
+    folder = Path(folder)
+    files = sorted(folder.glob("final_loss_*.csv"))
+    if omit_inverted:
+        files = [file for file in files if "_inverted" not in file.stem]
+    if not files:
+        raise FileNotFoundError(f"No files matching 'final_loss_*.csv' in {folder}")
+
+    train_times: list[float] = []
+
+    for file in files:
+        if loss_from_filename(file) >= thresh:
+            continue
+
+        df = pd.read_csv(file, usecols=["t"])
+        if df.empty:
+            continue
+
+        train_times.append(float(df["t"].iloc[-1]))
+
+    if not train_times:
+        raise ValueError(f"No successful training CSVs found in {folder} with final loss < {thresh}")
+
+    return float(np.mean(train_times))
+
+
 def build_loss_columns(folder: str | Path, old: bool = False, omit_inverted: bool = False,
                        log_norm: bool = True, save_path: Optional[str | Path] = None) -> Tuple[NDArray[np.float64],
                                                                                                NDArray[np.float64], NDArray]:

@@ -205,8 +205,8 @@ def tip_grid_buckle_sweep(Strctr: StructureClass, Variabs: VariablesClass, Sprvs
     init_buckle : NDArray
         Initial buckle state for the sweep.
     warm_start : bool, default=True
-        If True, initialize each equilibrium solve from the previous grid point equilibrium.
-        If False, reset each point from the flat-chain position.
+        Deprecated compatibility argument. The grid sweep now resets every step
+        from the flat-chain position and `init_buckle`.
     plot_every : int, default=0
         Plot every `plot_every` steps. Zero disables plotting.
 
@@ -229,6 +229,7 @@ def tip_grid_buckle_sweep(Strctr: StructureClass, Variabs: VariablesClass, Sprvs
     T_steps = Sprvsr.tip_pos_update_in_t.shape[0]
     init_buckle_arr = helpers_builders.jax2numpy(init_buckle, dtype=int).reshape(Strctr.hinges, Strctr.shims)
     State = StateClass(Strctr, Sprvsr, buckle_arr=init_buckle_arr)
+    flat_pos = helpers_builders.jax2numpy(helpers_builders._initiate_pos(Strctr.edges+1, Strctr.L))
 
     pos_frames: NDArray[np.float32] = np.zeros((T_steps, Strctr.nodes, 2), dtype=np.float32)
     buckle_frames: NDArray[np.int32] = np.zeros((T_steps, Strctr.hinges, Strctr.shims), dtype=np.int32)
@@ -236,20 +237,22 @@ def tip_grid_buckle_sweep(Strctr: StructureClass, Variabs: VariablesClass, Sprvs
     force_frames: NDArray[np.float32] = np.zeros((T_steps, 2), dtype=np.float32)
 
     t0 = time.time()
-    init_pos: Optional[np.ndarray] = State.pos_arr
-
     for t, (tip_pos, tip_angle) in enumerate(zip(Sprvsr.tip_pos_update_in_t, Sprvsr.tip_angle_update_in_t)):
         if verbose:
             print(f"grid sweep t={t}, tip_pos={tip_pos}, tip_angle={tip_angle:.4f}")
 
-        Eq = EquilibriumClass(Strctr, CFG, buckle_arr=State.buckle_arr, pos_arr=State.pos_arr)
+        step_buckle = init_buckle_arr.copy()
+        State.pos_arr = flat_pos.copy()
+        State.buckle_arr = step_buckle.copy()
+
+        Eq = EquilibriumClass(Strctr, CFG, buckle_arr=step_buckle, pos_arr=flat_pos)
         final_pos, pos_in_t, _, F_in_t = Eq.calculate_state(Variabs, Strctr, Sprvsr,
-                                                            init_pos=init_pos,
+                                                            init_pos=flat_pos,
                                                             control_tip=True,
                                                             tip_pos=tip_pos,
                                                             tip_angle=float(tip_angle))
 
-        State._save_data(t, Strctr, final_pos, State.buckle_arr, F_in_t)
+        State._save_data(t, Strctr, final_pos, step_buckle, F_in_t)
         State.buckle(Variabs, Strctr, t, State_measured=State)
 
         pos_frames[t, :, :] = State.pos_arr
@@ -260,8 +263,6 @@ def tip_grid_buckle_sweep(Strctr: StructureClass, Variabs: VariablesClass, Sprvs
         if plot_every > 0 and (t % plot_every == 0):
             plot_funcs.plot_arm(State.pos_arr, State.buckle_arr, Strctr.L, modality="update")
             plt.show()
-
-        init_pos = final_pos if warm_start else helpers_builders._initiate_pos(Strctr.edges+1, Strctr.L)
 
     print(f"Grid sweep runtime: {time.time() - t0:.2f} seconds")
     return State, pos_frames, buckle_frames, theta_frames, force_frames

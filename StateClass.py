@@ -155,9 +155,11 @@ class StateClass:
 
         # ------- buckle state -------
         if buckle_arr is not None:
-            self.buckle_arr = helpers_builders.jax2numpy(buckle_arr)
+            self.buckle_arr = helpers_builders.jax2numpy(buckle_arr, dtype=int).reshape(Strctr.hinges, Strctr.shims)
         else:
-            self.buckle_arr = helpers_builders.jax2numpy(helpers_builders._initiate_buckle(Strctr.hinges, Strctr.shims))
+            self.buckle_arr = helpers_builders.jax2numpy(
+                helpers_builders._initiate_buckle(Strctr.hinges, Strctr.shims), dtype=int
+            )
         self.buckle_in_t[:, :, t] = self.buckle_arr
 
         # ------- Force normal on wall -------
