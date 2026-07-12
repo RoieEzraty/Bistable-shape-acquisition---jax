@@ -1135,7 +1135,26 @@ def plot_success_matrix_with_pathways(M_corr: np.ndarray, N: int, title: str = "
 
 
 def plot_transition_diagram(transitions: Counter, *, transitions_between_runs: bool = True,
-                            only_reached_nodes: bool = False, edge_zero_loss_count=None, missing_edges=None):
+                            only_reached_nodes: bool = False, edge_zero_loss_count=None, missing_edges=None,
+                            layout: str = "layers"):
+    """
+    Plot a directed buckle-transition diagram.
+
+    Parameters
+    ----------
+    transitions : Counter
+        Directed transition counts keyed by ``(src, dst)`` integer state pairs.
+    transitions_between_runs : bool
+        If True, color zero-loss initial-to-final transitions as successes.
+    only_reached_nodes : bool
+        If True, show only nodes touched by observed transitions.
+    edge_zero_loss_count : Counter, optional
+        Counts of zero-loss files per transition.
+    missing_edges : iterable, optional
+        Directed transitions to draw as dashed missing edges.
+    layout : str
+        ``"layers"``/``"hamming"`` arranges states by Hamming weight; ``"ring"`` arranges states on a ring.
+    """
     colors_lst, _, _ = colors.color_scheme()
     occured_clr = colors_lst[0]
     success_clr = colors_lst[1]
@@ -1144,18 +1163,36 @@ def plot_transition_diagram(transitions: Counter, *, transitions_between_runs: b
     node_face = "white"
     text_color = "black"
 
-    H = max(max(i, j) for (i, j) in transitions.keys()).bit_length()
+    all_edges = list(transitions.keys()) + list(missing_edges or [])
+    if not all_edges:
+        raise ValueError("No transitions or missing_edges were provided, so the number of states cannot be inferred.")
 
-    pos = helpers_builders.state_positions(H)
+    H = max(max(i, j) for (i, j) in all_edges).bit_length()
+    H = max(H, 1)
 
-    fig, ax = plt.subplots(figsize=(12, 8))
+    pos = helpers_builders.state_positions(H, layout=layout)
+
+    if layout == "ring":
+        fig, ax = plt.subplots(figsize=(10, 10))
+        node_width = 0.11
+        node_height = 0.08
+        node_fontsize = 14 if H >= 5 else 18
+        missing_alpha = 0.2
+        missing_lw = 0.8
+    else:
+        fig, ax = plt.subplots(figsize=(12, 8))
+        node_width = 0.1
+        node_height = 0.08
+        node_fontsize = 18
+        missing_alpha = 0.75
+        missing_lw = 1.5
 
     # ---- nodes ----
     if only_reached_nodes:
         used_nodes = set()
         for a, b in transitions:
-            used_nodes.add(helpers_builders.index_to_buckle(a))
-            used_nodes.add(helpers_builders.index_to_buckle(b))
+            used_nodes.add(helpers_builders.index_to_buckle(a, H))
+            used_nodes.add(helpers_builders.index_to_buckle(b, H))
     else:
         used_nodes = set(helpers_builders.all_binary_states(H))
 
@@ -1163,9 +1200,9 @@ def plot_transition_diagram(transitions: Counter, *, transitions_between_runs: b
         if s not in used_nodes:
             continue
         x, y = pos[s]
-        node = Ellipse((x, y), width=0.1, height=0.08, facecolor=node_face, edgecolor=node_perim, lw=2.5)
+        node = Ellipse((x, y), width=node_width, height=node_height, facecolor=node_face, edgecolor=node_perim, lw=2.5)
         ax.add_patch(node)
-        ax.text(x, y, s, ha="center", va="center", fontsize=18, color=text_color)
+        ax.text(x, y, s, ha="center", va="center", fontsize=node_fontsize, color=text_color)
 
     # ---- edges ----
     if transitions:
@@ -1177,8 +1214,8 @@ def plot_transition_diagram(transitions: Counter, *, transitions_between_runs: b
         edge_zero_loss_count = Counter()
 
     for (src, dst), count in transitions.items():
-        source = helpers_builders.index_to_buckle(src)
-        dist = helpers_builders.index_to_buckle(dst)
+        source = helpers_builders.index_to_buckle(src, H)
+        dist = helpers_builders.index_to_buckle(dst, H)
         x1, y1 = pos[source]
         x2, y2 = pos[dist]
 
@@ -1200,16 +1237,16 @@ def plot_transition_diagram(transitions: Counter, *, transitions_between_runs: b
         observed_edges = set(transitions.keys())
 
         for (src, dst) in missing_edges:
-            source = helpers_builders.index_to_buckle(src)
-            dist = helpers_builders.index_to_buckle(dst)
+            source = helpers_builders.index_to_buckle(src, H)
+            dist = helpers_builders.index_to_buckle(dst, H)
             x1, y1 = pos[source]
             x2, y2 = pos[dist]
 
             rev_exists = (dst, src) in observed_edges or (dst, src) in missing_edges
             rad = 0.12 if rev_exists and src < dst else (-0.12 if rev_exists else 0.0)
 
-            arrow = FancyArrowPatch((x1, y1), (x2, y2), arrowstyle="-|>", mutation_scale=14, lw=1.5, linestyle="--",
-                                    color=missing_clr, alpha=0.75, shrinkA=22, shrinkB=22,
+            arrow = FancyArrowPatch((x1, y1), (x2, y2), arrowstyle="-|>", mutation_scale=14, lw=missing_lw,
+                                    linestyle="--", color=missing_clr, alpha=missing_alpha, shrinkA=22, shrinkB=22,
                                     connectionstyle=f"arc3,rad={rad}", zorder=0)
             ax.add_patch(arrow)
 
@@ -1226,6 +1263,21 @@ def plot_transition_diagram(transitions: Counter, *, transitions_between_runs: b
 
     ax.legend(handles=legend_handles, loc="upper right", frameon=False, fontsize=14)
 
+    if used_nodes:
+        visible_xy = np.array([pos[s] for s in used_nodes], dtype=float)
+    else:
+        visible_xy = np.array(list(pos.values()), dtype=float)
+
+    x_min, y_min = visible_xy.min(axis=0)
+    x_max, y_max = visible_xy.max(axis=0)
+    x_center = 0.5 * (x_min + x_max)
+    y_center = 0.5 * (y_min + y_max)
+    span = max(x_max - x_min, y_max - y_min, node_width, node_height)
+    margin = 0.25 * span if layout == "ring" else 0.12 * span
+    half_span = 0.5 * span + margin
+
+    ax.set_xlim(x_center - half_span, x_center + half_span)
+    ax.set_ylim(y_center - half_span, y_center + half_span)
     ax.set_aspect("equal")
     ax.axis("off")
     plt.tight_layout()

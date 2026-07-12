@@ -960,7 +960,32 @@ def is_symmetrical_reached(file: Path) -> bool:
 # ---------------------------------------------------------------
 # Transition diagram
 # ---------------------------------------------------------------
-def buckle_transitions(folder: str | Path, only_init_and_final_buckles: bool = False, omit_inverted: bool = False):
+def _infer_buckle_n_bits(folder: Path, omit_inverted: bool = False) -> int:
+    """
+    Infer the number of buckle bits from the first transition CSV in a folder.
+    """
+    file_patterns = ("final_loss_*.csv", "tip_grid_buckle_sweep_*.csv", "tip_buckle*.csv")
+    files = sorted({file for pattern in file_patterns for file in folder.glob(pattern)})
+    if omit_inverted:
+        files = [f for f in files if not f.name.endswith("_inverted.csv")]
+    if not files:
+        raise FileNotFoundError(f"No files matching {file_patterns} in {folder}")
+
+    df = pd.read_csv(files[0], nrows=1)
+    if "buckle_arr_update" in df:
+        return int(helpers_builders.buckle_cell_to_array(df["buckle_arr_update"].iloc[0], keep_2d=False).size)
+    return len(helpers_builders.infer_buckle_columns(df))
+
+
+def _as_bool(value: bool | str) -> bool:
+    """Accept booleans and notebook-friendly string booleans."""
+    if isinstance(value, str):
+        return value.strip().lower() in {"true", "1", "yes", "y"}
+    return bool(value)
+
+
+def buckle_transitions(folder: str | Path, only_init_and_final_buckles: bool = False, omit_inverted: bool = False,
+                       transition_mode: str = "hamming", reciprocity: bool | str = False):
     """
     Go over all final_loss_*.csv files and extract directed buckle transitions.
 
@@ -970,6 +995,8 @@ def buckle_transitions(folder: str | Path, only_init_and_final_buckles: bool = F
     only_init_and_final_buckles : bool, True = transition is only from initial to final (not necessarily the desired)
                                   desired transition colored Cyan, undesired colored purple
     omit_inverted               : bool, True = do not account for  "_inverted.csv" output files
+    transition_mode             : str, "hamming" checks missing one-bit transitions; "ring" checks all-to-all transitions
+    reciprocity                 : bool, True = add each transition count to its bitwise sign-opposite transition
 
     Returns
     -------
@@ -980,21 +1007,35 @@ def buckle_transitions(folder: str | Path, only_init_and_final_buckles: bool = F
     missing_edges        : ???
     """
     folder = Path(folder)
+    if transition_mode not in {"hamming", "ring", "all_to_all"}:
+        raise ValueError("transition_mode must be 'hamming', 'ring', or 'all_to_all'")
+
     transitions, per_file_transitions, per_file_loss, edge_zero_loss_count = helpers_builders.build_transition_counts(folder,
                                                                                                                       only_init_and_final_buckles=only_init_and_final_buckles,
                                                                                                                       omit_inverted=omit_inverted)
 
+    n_bits = _infer_buckle_n_bits(folder, omit_inverted=omit_inverted)
+    reciprocity = _as_bool(reciprocity)
+    if reciprocity:
+        transitions = helpers_builders.add_reciprocal_transition_counts(transitions, n_bits)
+        edge_zero_loss_count = helpers_builders.add_reciprocal_transition_counts(edge_zero_loss_count, n_bits)
+
     observed_edges = set(transitions.keys())
-    missing_edges = [edge for edge in helpers_builders.all_possible_transitions(4) if
-                     edge not in observed_edges and helpers_builders.hamming_distance_int(*edge) == 1]
+    if transition_mode in {"ring", "all_to_all"}:
+        missing_edges = [edge for edge in helpers_builders.all_possible_transitions(n_bits) if edge not in observed_edges]
+    else:
+        missing_edges = [edge for edge in helpers_builders.all_possible_transitions(n_bits) if
+                         edge not in observed_edges and helpers_builders.hamming_distance_int(*edge) == 1]
 
     print(f"Found {len(per_file_transitions)} files")
     print(f"Found {sum(transitions.values())} total transitions")
     print(f"Found {len(transitions)} unique directed transitions\n")
+    if reciprocity:
+        print("Reciprocity enabled: transition counts include bitwise sign-opposite partners\n")
 
     print("Top transitions:")
     for (a, b), c in transitions.most_common(20):
-        print(f"{helpers_builders.index_to_buckle(a)} -> {helpers_builders.index_to_buckle(b)}: {c}")
+        print(f"{helpers_builders.index_to_buckle(a, n_bits)} -> {helpers_builders.index_to_buckle(b, n_bits)}: {c}")
 
     return transitions, per_file_transitions, per_file_loss, edge_zero_loss_count, missing_edges
 

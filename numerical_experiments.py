@@ -357,7 +357,7 @@ def tip_grid_buckle_sweep(Strctr: StructureClass, Variabs: VariablesClass, Sprvs
 # ---------------------------------------------------------------
 def compress_to_tip_pos(Strctr: "StructureClass", Variabs: "VariablesClass", Sprvsr: "SupervisorClass", CFG: ExperimentConfig,
                         buckle: NDArray, tip_pos_i: NDArray, tip_angle_i: float, tip_pos_f: NDArray, tip_angle_f: float,
-                        Eq_iterations: int) -> Tuple["StateClass", list[NDArray], list[NDArray]]:
+                        Eq_iterations: int, init_pos: Optional[NDArray] = None) -> Tuple["StateClass", list[NDArray], list[NDArray]]:
     """
     Incrementally compress origami to final tip position and angle, ensuring stable convergence, in Eq_iterations steps.
 
@@ -375,6 +375,7 @@ def compress_to_tip_pos(Strctr: "StructureClass", Variabs: "VariablesClass", Spr
     tip_pos_f     - array-like of shape (2,), Target final position of the structure’s tip node.
     tip_angle_f   - float, Target final tip orientation (radians).    
     Eq_iterations - int, how many equilibration steps along tip movement
+    init_pos      - optional ndarray, starting node positions for a warm start.
 
     Returns
     -------
@@ -396,6 +397,8 @@ def compress_to_tip_pos(Strctr: "StructureClass", Variabs: "VariablesClass", Spr
     pos_in_t = []
     force_in_t = []
     State = StateClass(Strctr, Sprvsr, buckle_arr=buckle)
+    if init_pos is not None:
+        State.pos_arr = np.asarray(init_pos, dtype=np.float32)
 
     # interpolation fractions for the transition steps: (1/Eq_iterations, ..., 1)
     alphas = (np.arange(1, Eq_iterations + 1, dtype=float) / float(Eq_iterations))
@@ -408,11 +411,18 @@ def compress_to_tip_pos(Strctr: "StructureClass", Variabs: "VariablesClass", Spr
     # append one extra "hold" step at the *final* command
     tip_pos_seq.append(tip_pos_f_arr)
     tip_ang_seq.append(float(tip_angle_f))
+    history_len = len(tip_pos_seq)
+    if State.pos_arr_in_t.shape[2] < history_len:
+        State.pos_arr_in_t = np.zeros((Strctr.nodes, 2, history_len), dtype=np.float32)
+        State.theta_arr_in_t = np.zeros((Strctr.hinges, history_len), dtype=np.float32)
+        State.buckle_in_t = np.zeros((Strctr.hinges, Strctr.shims, history_len), dtype=np.int32)
+        State.Fx_in_t = np.zeros(history_len, dtype=np.float32)
+        State.Fy_in_t = np.zeros(history_len, dtype=np.float32)
 
-    pos_init = None  # None for first shot, then last equilibrium thereafter
+    pos_init = init_pos  # None for first shot, then last equilibrium thereafter
 
     for t, (tip_pos, tip_angle) in enumerate(zip(tip_pos_seq, tip_ang_seq)):
-        pos_in_t_i, force_in_t_i = one_shot(Strctr, Variabs, Sprvsr, State, CFG, buckle, tip_pos, tip_angle,
+        pos_in_t_i, force_in_t_i = one_shot(Strctr, Variabs, Sprvsr, State, CFG, State.buckle_arr, tip_pos, tip_angle,
                                             init_pos=pos_init, t=t)
         pos_in_t.append(pos_in_t_i)
         force_in_t.append(force_in_t_i)
@@ -422,6 +432,9 @@ def compress_to_tip_pos(Strctr: "StructureClass", Variabs: "VariablesClass", Spr
         pos_init = pos_in_t_i[-1]
 
     return State, pos_in_t, force_in_t
+
+
+compress_to_tip_position = compress_to_tip_pos
 
 
 # ---------------------------------------------------------------

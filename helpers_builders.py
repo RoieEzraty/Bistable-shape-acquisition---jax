@@ -1346,12 +1346,78 @@ def all_possible_transitions(n_bits: int):
     return [(i, j) for i in range(n_states) for j in range(n_states) if i != j]
 
 
+def reciprocal_transition(edge: tuple[int, int], n_bits: int) -> tuple[int, int]:
+    """
+    Return the sign-opposite partner of a directed buckle transition.
+
+    Example
+    -------
+    For 4 bits, ``1110 -> 1000`` maps to ``0001 -> 0111``.
+    The direction is preserved; only every buckle bit is flipped.
+    """
+    mask = (1 << n_bits) - 1
+    src, dst = edge
+    return src ^ mask, dst ^ mask
+
+
+def add_reciprocal_transition_counts(transitions: Counter, n_bits: int) -> Counter:
+    """
+    Add each transition count to its bitwise reciprocal transition.
+
+    Both reciprocal partners receive the same combined count, so if
+    ``a -> b`` occurred 3 times and ``~a -> ~b`` occurred 2 times,
+    both plotted edges receive count 5.
+    """
+    reciprocal_edges = {reciprocal_transition(edge, n_bits) for edge in transitions}
+    all_edges = set(transitions) | reciprocal_edges
+
+    reciprocal_transitions = Counter()
+    for edge in all_edges:
+        reciprocal_edge = reciprocal_transition(edge, n_bits)
+        reciprocal_transitions[edge] = transitions[edge] + transitions[reciprocal_edge]
+    return reciprocal_transitions
+
+
+def ring_state_positions(n_bits: int, radius: float | None = None) -> dict[str, tuple[float, float]]:
+    """
+    Arrange all binary buckle states evenly on a ring.
+
+    Parameters
+    ----------
+    n_bits : int
+        Number of buckle bits.
+    radius : float, optional
+        Ring radius. If None, a readable radius is chosen from the number of states.
+
+    Returns
+    -------
+    dict[str, tuple[float, float]]
+        Mapping from binary buckle labels to 2D plot positions.
+    """
+    states = all_binary_states(n_bits)
+    n_states = len(states)
+    if radius is None:
+        radius = max(0.45, 0.08 * n_states)
+
+    angles = np.linspace(np.pi / 2, np.pi / 2 - 2 * np.pi, n_states, endpoint=False)
+    return {
+        s: (float(radius * np.cos(angle)), float(radius * np.sin(angle)))
+        for s, angle in zip(states, angles)
+    }
+
+
 def state_positions(n_bits: int, dx: float = 0.175, dy: float = 0.22,
-                    x_margin: float = 0.065, y_margin: float = 0.05) -> dict[str, tuple[float, float]]:
+                    x_margin: float = 0.065, y_margin: float = 0.05,
+                    layout: str = "layers") -> dict[str, tuple[float, float]]:
     """
     Arrange states in layers by Hamming weight:
     0000 at top, 1111 at bottom.
     """
+    if layout == "ring":
+        return ring_state_positions(n_bits)
+    if layout not in {"layers", "hamming"}:
+        raise ValueError(f"Unknown state layout '{layout}'. Use 'layers', 'hamming', or 'ring'.")
+
     # for k in range(n_bits + 1):
     #     layer = [s for s in all_binary_states(n_bits) if s.count("1") == k]
     #     layer.sort()
