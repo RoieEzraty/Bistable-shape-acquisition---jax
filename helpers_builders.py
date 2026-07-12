@@ -1255,6 +1255,10 @@ def build_transition_counts(folder: Path, only_init_and_final_buckles: bool = Fa
     """
     Go over all training/sweep CSV files and extract directed buckle transitions.
 
+    Training files use consecutive transitions, ``state[t-1] -> state[t]``.
+    Sweep files are independent trials from the initial buckle, so they use
+    ``state[0] -> state[t]`` for every saved sweep step.
+
     Parameters
     ----------
     folder                      : path, all csv run files, from every init to every desired
@@ -1274,7 +1278,9 @@ def build_transition_counts(folder: Path, only_init_and_final_buckles: bool = Fa
     per_file_loss = {}
     edge_zero_loss_count = Counter()  # all zeros initially
 
-    file_patterns = ("final_loss_*.csv", "tip_grid_buckle_sweep_*.csv", "tip_buckle*.csv")
+    training_patterns = ("final_loss_*.csv",)
+    sweep_patterns = ("tip_grid_buckle_sweep_*.csv", "tip_buckle*.csv")
+    file_patterns = training_patterns + sweep_patterns
     files = sorted({file for pattern in file_patterns for file in folder.glob(pattern)})
     if not files:
         raise FileNotFoundError(f"No files matching {file_patterns} in {folder}")
@@ -1282,6 +1288,7 @@ def build_transition_counts(folder: Path, only_init_and_final_buckles: bool = Fa
         files = [f for f in files if not f.name.endswith("_inverted.csv")]
 
     for file in files:
+        is_sweep_file = any(file.match(pattern) for pattern in sweep_patterns)
         df = pd.read_csv(file)
 
         states = []
@@ -1296,6 +1303,9 @@ def build_transition_counts(folder: Path, only_init_and_final_buckles: bool = Fa
             for _, row in df[buckle_cols].iterrows():
                 state = buckle_to_index(row.to_numpy())
                 states.append(state)
+        if not states:
+            per_file_transitions[file.name] = []
+            continue
 
         try:
             loss = file_funcs.loss_from_filename(file)
@@ -1307,6 +1317,8 @@ def build_transition_counts(folder: Path, only_init_and_final_buckles: bool = Fa
         edges_this_file = []
         if only_init_and_final_buckles:
             zip_states = zip(states[:1], states[-1:])
+        elif is_sweep_file:
+            zip_states = zip([states[0]] * (len(states) - 1), states[1:])
         else:
             zip_states = zip(states[:-1], states[1:])
 

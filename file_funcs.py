@@ -544,8 +544,70 @@ def loss_from_filename(file: Path):
     return float(re.search(r"final_loss_(.*?)_init_", file.stem).group(1))
 
 
+def successful_train_times(folder: str | Path, thresh: float = 1e-6,
+                           omit_inverted: bool = False, omit_intersect: bool = False) -> pd.DataFrame:
+    """
+    Summarize final training times for successful training CSVs in a folder.
+
+    Parameters
+    ----------
+    folder : str | Path
+        Folder containing ``final_loss_*.csv`` training exports.
+    thresh : float, default=1e-6
+        Maximum final loss for a run to count as successful.
+    omit_inverted : bool, default=False
+        Omit files containing ``"_inverted"`` in the filename.
+    omit_intersect : bool, default=False
+        Omit files containing ``"_intersect"`` in the filename.
+
+    Returns
+    -------
+    pandas.DataFrame
+        One row per successful CSV, with final loss, final ``t`` value, row count,
+        and filename flags.
+
+    Notes
+    -----
+    This reports the algorithm training-step time stored in the CSV ``t`` column,
+    not wall-clock runtime. Per-run wall-clock time is written to the log files.
+    """
+    folder = Path(folder)
+    files = sorted(folder.glob("final_loss_*.csv"))
+    if omit_inverted:
+        files = [file for file in files if "_inverted" not in file.stem]
+    if omit_intersect:
+        files = [file for file in files if "_intersect" not in file.stem]
+    if not files:
+        raise FileNotFoundError(f"No files matching 'final_loss_*.csv' in {folder}")
+
+    rows: list[dict[str, Any]] = []
+
+    for file in files:
+        final_loss = loss_from_filename(file)
+        if final_loss >= thresh:
+            continue
+
+        df = pd.read_csv(file, usecols=["t"])
+        if df.empty:
+            continue
+
+        rows.append({
+            "file": file.name,
+            "final_loss": final_loss,
+            "train_time": float(df["t"].iloc[-1]),
+            "row_count": int(len(df)),
+            "inverted": "_inverted" in file.stem,
+            "intersect": "_intersect" in file.stem,
+        })
+
+    if not rows:
+        raise ValueError(f"No successful training CSVs found in {folder} with final loss < {thresh}")
+
+    return pd.DataFrame(rows).sort_values("train_time", ascending=False, ignore_index=True)
+
+
 def average_successful_train_time(folder: str | Path, thresh: float = 1e-6,
-                                  omit_inverted: bool = False) -> float:
+                                  omit_inverted: bool = False, omit_intersect: bool = False) -> float:
     """
     Average the final training time over successful training CSVs in a folder.
 
@@ -557,38 +619,17 @@ def average_successful_train_time(folder: str | Path, thresh: float = 1e-6,
         Maximum final loss for a run to count as successful.
     omit_inverted : bool, default=False
         Omit files containing ``"_inverted"`` in the filename.
+    omit_intersect : bool, default=False
+        Omit files containing ``"_intersect"`` in the filename.
 
     Returns
     -------
     float
         Mean final ``t`` value across successful runs.
-
-    Notes
-    -----
-    This averages the algorithm training-step time stored in the CSV ``t`` column,
-    not wall-clock runtime. Per-run wall-clock time is written to the log files.
     """
-    folder = Path(folder)
-    files = sorted(folder.glob("final_loss_*.csv"))
-    if omit_inverted:
-        files = [file for file in files if "_inverted" not in file.stem]
-    if not files:
-        raise FileNotFoundError(f"No files matching 'final_loss_*.csv' in {folder}")
-
-    train_times: list[float] = []
-
-    for file in files:
-        if loss_from_filename(file) >= thresh:
-            continue
-
-        df = pd.read_csv(file, usecols=["t"])
-        if df.empty:
-            continue
-
-        train_times.append(float(df["t"].iloc[-1]))
-
-    if not train_times:
-        raise ValueError(f"No successful training CSVs found in {folder} with final loss < {thresh}")
+    df = successful_train_times(folder=folder, thresh=thresh, omit_inverted=omit_inverted,
+                                omit_intersect=omit_intersect)
+    train_times = df["train_time"].to_numpy(dtype=float)
 
     return float(np.mean(train_times))
 

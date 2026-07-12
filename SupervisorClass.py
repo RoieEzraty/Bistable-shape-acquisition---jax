@@ -384,6 +384,8 @@ class SupervisorClass:
             self.tip_angle_in_t[:] = np.asarray(tip_angles, dtype=np.float32)
             self.tip_pos_update_in_t[:] = self.tip_pos_in_t
             self.tip_angle_update_in_t[:] = self.tip_angle_in_t
+            self.tip_grid_base_pos_in_t = self.tip_pos_update_in_t.copy()
+            self.tip_grid_base_angle_in_t = self.tip_angle_update_in_t.copy()
             self.total_angle_update_in_t[:] = np.asarray(
                 [helpers_builders._get_total_angle(pos, 0.0, Strctr.L) for pos in self.tip_pos_update_in_t],
                 dtype=np.float32,

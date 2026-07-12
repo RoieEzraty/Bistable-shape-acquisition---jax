@@ -7,7 +7,7 @@ from IPython.display import HTML
 from matplotlib import patches
 from matplotlib.ticker import MaxNLocator
 from matplotlib.animation import FuncAnimation, PillowWriter  # for GIF export
-from matplotlib.colors import BoundaryNorm, LogNorm
+from matplotlib.colors import BoundaryNorm, ListedColormap, LogNorm
 from matplotlib.lines import Line2D
 from scipy.signal import savgol_filter
 from matplotlib.patches import Ellipse, FancyArrowPatch
@@ -277,6 +277,88 @@ def loss_and_buckle_in_t(tip_pos_in_t, tip_angle_in_t, loss_in_t, buckle_in_t, F
 
     plt.show()
     plt.close(fig)
+
+
+def buckle_state_colormap(n_bits: int) -> tuple[ListedColormap, BoundaryNorm]:
+    """
+    Build a stable buckle-state colormap.
+
+    States are colored by their binary index, so the same buckle gets the same
+    color across different sweep runs. For a 4-hinge chain this gives 15 colors
+    sampled from the custom colormap and the 16th color as the custom red.
+    """
+    _, red, custom_cmap = colors.color_scheme()
+    n_states = 2 ** int(n_bits)
+
+    if n_states <= 1:
+        palette = [red]
+    else:
+        palette = [custom_cmap(x) for x in np.linspace(0.0, 1.0, n_states - 1)]
+        palette.append(red)
+
+    cmap = ListedColormap(palette, name=f"buckle_state_{n_bits}bit")
+    norm = BoundaryNorm(np.arange(-0.5, n_states + 0.5, 1.0), cmap.N)
+    return cmap, norm
+
+
+def plot_tip_grid_buckle_ids(buckle_grid_frames: NDArray, y_num: int, theta_num: int,
+                             theta_min: float, theta_max: float, y_min: float, y_max: float, *,
+                             grid_start: int = 1, snake: bool = True, y_scale: float = 1000.0,
+                             save_path: Optional[str | Path] = None, show: bool = True, ax=None
+                             ) -> tuple[plt.Figure, plt.Axes, NDArray[np.int32]]:
+    """
+    Plot the final buckle state reached at each y/theta grid point.
+
+    Buckle colors are assigned by global binary buckle index, not by order of
+    appearance in the current sweep, so colors remain stable across initial
+    condition loops.
+    """
+    frames = np.asarray(buckle_grid_frames, dtype=int)
+    n_bits = int(np.prod(frames.shape[1:]))
+
+    grid_frames = frames[grid_start:]
+    if grid_frames.shape[0] != y_num * theta_num:
+        raise ValueError(
+            f"Expected {y_num * theta_num} grid frames after grid_start={grid_start}, "
+            f"got {grid_frames.shape[0]}."
+        )
+
+    buckle_ids = np.array(
+        [helpers_builders.buckle_to_index(frame.reshape(-1)) for frame in grid_frames],
+        dtype=np.int32,
+    ).reshape(y_num, theta_num)
+
+    if snake:
+        buckle_ids[1::2, :] = buckle_ids[1::2, ::-1]
+
+    cmap, norm = buckle_state_colormap(n_bits)
+    extent = [theta_min, theta_max, y_min * y_scale, y_max * y_scale]
+
+    created_ax = ax is None
+    if created_ax:
+        fig, ax = plt.subplots(figsize=(7, 5))
+    else:
+        fig = ax.figure
+
+    ax.imshow(buckle_ids, origin="lower", aspect="auto", extent=extent, cmap=cmap, norm=norm)
+    ax.set_xlabel("tip angle [rad]")
+    ax.set_ylabel("tip y [mm]")
+    ax.set_title("Buckle state after update sweep")
+
+    observed_ids = sorted(int(idx) for idx in np.unique(buckle_ids))
+    handles = [
+        patches.Patch(facecolor=cmap(norm(idx)), label=helpers_builders.index_to_buckle(idx, n_bits=n_bits))
+        for idx in observed_ids
+    ]
+    if handles:
+        ax.legend(handles=handles, title="buckle", bbox_to_anchor=(1.02, 1), loc="upper left")
+
+    if save_path is not None:
+        fig.savefig(save_path, dpi=200, bbox_inches="tight")
+    if show and created_ax:
+        plt.show()
+
+    return fig, ax, buckle_ids
 
 
 # ------------------------------------------------

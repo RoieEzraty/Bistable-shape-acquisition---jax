@@ -182,7 +182,8 @@ def train(Strctr: StructureClass, Variabs: VariablesClass, CFG: ExperimentConfig
 # ---------------------------------------------------------------
 def tip_grid_buckle_sweep(Strctr: StructureClass, Variabs: VariablesClass, Sprvsr: SupervisorClass,
                           CFG: ExperimentConfig, init_buckle: NDArray, *,
-                          warm_start: bool = True, plot_every: int = 0, verbose=False
+                          warm_start: bool = True, plot_every: int = 0, verbose=False,
+                          max_refinement_depth: int = 16
                           ) -> Tuple[StateClass, NDArray[np.float32], NDArray[np.int32],
                                      NDArray[np.float32], NDArray[np.float32]]:
     """
@@ -209,6 +210,8 @@ def tip_grid_buckle_sweep(Strctr: StructureClass, Variabs: VariablesClass, Sprvs
         from the flat-chain position and `init_buckle`.
     plot_every : int, default=0
         Plot every `plot_every` steps. Zero disables plotting.
+    max_refinement_depth : int, default=16
+        Maximum number of bisections for a segment that causes multiple buckles.
 
     Returns
     -------
@@ -226,45 +229,126 @@ def tip_grid_buckle_sweep(Strctr: StructureClass, Variabs: VariablesClass, Sprvs
     if getattr(Sprvsr, "dataset_sampling", None) != "tip_grid_sweep":
         raise ValueError("tip_grid_buckle_sweep() requires Sprvsr.dataset_sampling == 'tip_grid_sweep'.")
 
-    T_steps = Sprvsr.tip_pos_update_in_t.shape[0]
+    target_tip_pos = np.asarray(
+        getattr(Sprvsr, "tip_grid_base_pos_in_t", Sprvsr.tip_pos_update_in_t),
+        dtype=np.float32,
+    )
+    target_tip_angle = np.asarray(
+        getattr(Sprvsr, "tip_grid_base_angle_in_t", Sprvsr.tip_angle_update_in_t),
+        dtype=np.float32,
+    )
     init_buckle_arr = helpers_builders.jax2numpy(init_buckle, dtype=int).reshape(Strctr.hinges, Strctr.shims)
-    State = StateClass(Strctr, Sprvsr, buckle_arr=init_buckle_arr)
     flat_pos = helpers_builders.jax2numpy(helpers_builders._initiate_pos(Strctr.edges+1, Strctr.L))
+    flat_tip_pos = np.asarray(target_tip_pos[0], dtype=np.float32)
+    flat_tip_angle = float(target_tip_angle[0])
 
-    pos_frames: NDArray[np.float32] = np.zeros((T_steps, Strctr.nodes, 2), dtype=np.float32)
-    buckle_frames: NDArray[np.int32] = np.zeros((T_steps, Strctr.hinges, Strctr.shims), dtype=np.int32)
-    theta_frames: NDArray[np.float32] = np.zeros((T_steps, Strctr.hinges), dtype=np.float32)
-    force_frames: NDArray[np.float32] = np.zeros((T_steps, 2), dtype=np.float32)
+    pos_frames_list: list[NDArray[np.float32]] = []
+    buckle_frames_list: list[NDArray[np.int32]] = []
+    theta_frames_list: list[NDArray[np.float32]] = []
+    force_frames_list: list[NDArray[np.float32]] = []
+    accepted_tip_pos: list[NDArray[np.float32]] = []
+    accepted_tip_angle: list[float] = []
+    target_final_indices: list[int] = []
 
     t0 = time.time()
-    for t, (tip_pos, tip_angle) in enumerate(zip(Sprvsr.tip_pos_update_in_t, Sprvsr.tip_angle_update_in_t)):
-        if verbose:
-            print(f"grid sweep t={t}, tip_pos={tip_pos}, tip_angle={tip_angle:.4f}")
 
-        step_buckle = init_buckle_arr.copy()
-        State.pos_arr = flat_pos.copy()
-        State.buckle_arr = step_buckle.copy()
+    def command_at_fraction(grid_tip_pos: NDArray, grid_tip_angle: float, frac: float) -> tuple[NDArray, float]:
+        tip_pos = flat_tip_pos + frac * (grid_tip_pos - flat_tip_pos)
+        tip_angle = flat_tip_angle + frac * (grid_tip_angle - flat_tip_angle)
+        return tip_pos.astype(np.float32), float(tip_angle)
 
-        Eq = EquilibriumClass(Strctr, CFG, buckle_arr=step_buckle, pos_arr=flat_pos)
-        final_pos, pos_in_t, _, F_in_t = Eq.calculate_state(Variabs, Strctr, Sprvsr,
-                                                            init_pos=flat_pos,
-                                                            control_tip=True,
-                                                            tip_pos=tip_pos,
-                                                            tip_angle=float(tip_angle))
+    for target_i, (grid_tip_pos, grid_tip_angle) in enumerate(zip(target_tip_pos, target_tip_angle)):
+        current_frac = 0.0
+        current_pos = flat_pos.copy()
+        current_buckle = init_buckle_arr.copy()
+        pending_targets: list[tuple[float, int]] = [(1.0, 0)]
 
-        State._save_data(t, Strctr, final_pos, step_buckle, F_in_t)
-        State.buckle(Variabs, Strctr, t, State_measured=State)
+        while pending_targets:
+            target_frac, depth = pending_targets.pop(0)
+            tip_pos, tip_angle = command_at_fraction(grid_tip_pos, float(grid_tip_angle), target_frac)
 
-        pos_frames[t, :, :] = State.pos_arr
-        buckle_frames[t, :, :] = State.buckle_arr
-        theta_frames[t, :] = State.theta_arr
-        force_frames[t, :] = np.asarray([State.Fx, State.Fy], dtype=np.float32)
+            if verbose:
+                print(f"grid target={target_i}, frac={target_frac:.6f}, tip_pos={tip_pos}, "
+                      f"tip_angle={tip_angle:.4f}")
 
-        if plot_every > 0 and (t % plot_every == 0):
-            plot_funcs.plot_arm(State.pos_arr, State.buckle_arr, Strctr.L, modality="update")
-            plt.show()
+            Eq = EquilibriumClass(Strctr, CFG, buckle_arr=current_buckle, pos_arr=current_pos)
+            final_pos, _, _, F_in_t = Eq.calculate_state(Variabs, Strctr, Sprvsr,
+                                                         init_pos=current_pos,
+                                                         control_tip=True,
+                                                         tip_pos=tip_pos,
+                                                         tip_angle=tip_angle)
+
+            scratch = StateClass(Strctr, Sprvsr, pos_arr=current_pos, buckle_arr=current_buckle)
+            scratch._save_data(0, Strctr, final_pos, current_buckle, F_in_t)
+            scratch.buckle(Variabs, Strctr, 0, State_measured=scratch)
+
+            n_flips = int(np.sum(scratch.buckle_arr != current_buckle))
+            if n_flips > 1 and depth < max_refinement_depth:
+                mid_frac = 0.5 * (current_frac + target_frac)
+                if np.isclose(mid_frac, current_frac) or np.isclose(mid_frac, target_frac):
+                    print(f"Warning: accepting unresolved multi-buckle step at target {target_i}, "
+                          f"frac={target_frac:.6f}, flips={n_flips}.")
+                else:
+                    pending_targets.insert(0, (target_frac, depth + 1))
+                    pending_targets.insert(0, (mid_frac, depth + 1))
+                    continue
+            elif n_flips > 1:
+                print(f"Warning: max refinement depth reached at target {target_i}, "
+                      f"frac={target_frac:.6f}, flips={n_flips}.")
+
+            pos_frames_list.append(scratch.pos_arr.astype(np.float32))
+            buckle_frames_list.append(scratch.buckle_arr.astype(np.int32))
+            theta_frames_list.append(scratch.theta_arr.astype(np.float32))
+            force_frames_list.append(np.asarray([scratch.Fx, scratch.Fy], dtype=np.float32))
+            accepted_tip_pos.append(tip_pos.astype(np.float32))
+            accepted_tip_angle.append(float(tip_angle))
+
+            if plot_every > 0 and ((len(pos_frames_list) - 1) % plot_every == 0):
+                plot_funcs.plot_arm(scratch.pos_arr, scratch.buckle_arr, Strctr.L, modality="update")
+                plt.show()
+
+            current_frac = target_frac
+            current_pos = scratch.pos_arr.copy()
+            current_buckle = scratch.buckle_arr.copy()
+
+        target_final_indices.append(len(pos_frames_list) - 1)
 
     print(f"Grid sweep runtime: {time.time() - t0:.2f} seconds")
+    pos_frames = np.asarray(pos_frames_list, dtype=np.float32)
+    buckle_frames = np.asarray(buckle_frames_list, dtype=np.int32)
+    theta_frames = np.asarray(theta_frames_list, dtype=np.float32)
+    force_frames = np.asarray(force_frames_list, dtype=np.float32)
+
+    Sprvsr.T = pos_frames.shape[0]
+    Sprvsr.tip_pos_update_in_t = np.asarray(accepted_tip_pos, dtype=np.float32)
+    Sprvsr.tip_angle_update_in_t = np.asarray(accepted_tip_angle, dtype=np.float32)
+    Sprvsr.tip_pos_in_t = Sprvsr.tip_pos_update_in_t.copy()
+    Sprvsr.tip_angle_in_t = Sprvsr.tip_angle_update_in_t.copy()
+    Sprvsr.total_angle_update_in_t = np.asarray(
+        [helpers_builders._get_total_angle(pos, 0.0, Strctr.L) for pos in Sprvsr.tip_pos_update_in_t],
+        dtype=np.float32,
+    )
+    Sprvsr.tip_grid_target_indices = np.asarray(target_final_indices, dtype=np.int32)
+    Sprvsr.desired_Fx_in_t = np.zeros(Sprvsr.T, dtype=np.float32)
+    Sprvsr.desired_Fy_in_t = np.zeros(Sprvsr.T, dtype=np.float32)
+    Sprvsr.desired_pos_in_t = np.zeros((Strctr.nodes, 2, Sprvsr.T), dtype=np.float32)
+    Sprvsr.loss_in_t = np.zeros((Sprvsr.T, Sprvsr.loss_in_t.shape[1]), dtype=np.float32)
+    Sprvsr.loss_MSE_in_t = np.zeros(Sprvsr.T, dtype=np.float32)
+    Sprvsr.Hamming_distance_in_t = np.zeros(Sprvsr.T, dtype=np.int32)
+
+    State = StateClass(Strctr, Sprvsr, buckle_arr=init_buckle_arr)
+    State.pos_arr_in_t = np.moveaxis(pos_frames, 0, 2)
+    State.buckle_in_t = np.moveaxis(buckle_frames, 0, 2)
+    State.theta_arr_in_t = theta_frames.T
+    State.Fx_in_t = force_frames[:, 0]
+    State.Fy_in_t = force_frames[:, 1]
+    State.pos_arr = pos_frames[-1]
+    State.buckle_arr = buckle_frames[-1]
+    State.theta_arr = theta_frames[-1]
+    State.Fx = float(force_frames[-1, 0])
+    State.Fy = float(force_frames[-1, 1])
+    State.edge_lengths = Strctr.all_edge_lengths(State.pos_arr)
+
     return State, pos_frames, buckle_frames, theta_frames, force_frames
 
 
