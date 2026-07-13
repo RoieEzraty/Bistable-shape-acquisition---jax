@@ -1284,6 +1284,48 @@ def plot_transition_diagram(transitions: Counter, *, transitions_between_runs: b
     plt.show()
 
 
+def plot_cumulative_transition_curve(coverage_df: pd.DataFrame, *,
+                                     x_col: str = "training_task",
+                                     y_col: str = "cumulative_unique_hamming_transitions",
+                                     save_path: str | Path | None = None,
+                                     ax=None):
+    """
+    Plot cumulative transition coverage as a function of training task.
+
+    This helper only draws the time/coverage curve. Building the cumulative
+    table and transition diagrams stays in the calling notebook/script.
+    """
+    colors_lst, _, _ = colors.color_scheme()
+    created_ax = ax is None
+    if created_ax:
+        fig, ax = plt.subplots(figsize=(7, 4))
+    else:
+        fig = ax.figure
+
+    ax.plot(
+        coverage_df[x_col],
+        coverage_df[y_col],
+        color=colors_lst[0],
+        marker="o",
+        markerfacecolor=colors_lst[0],
+        markeredgecolor=colors_lst[0],
+        markersize=5,
+        lw=2.5,
+    )
+    ax.set_xlabel("training task")
+    ax.set_ylabel("cumulative unique Hamming transitions")
+    ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+    ax.grid(False, alpha=0.25, linewidth=0.8)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    fig.tight_layout()
+    if save_path is not None:
+        fig.savefig(save_path, dpi=200, bbox_inches="tight")
+    if created_ax:
+        plt.show()
+    return fig, ax
+
+
 # # ==========
 # # NOT IN USE
 # # ==========
