@@ -792,6 +792,101 @@ slider.addEventListener("input", function() {{
     return html_path
 
 
+def make_png_slider_html(frames_dir: str | Path, html_path: str | Path = "transition_animation.html",
+                         glob_pattern: str = "*_init_*_desired_*.png",
+                         title: str = "Transition animation") -> Path:
+    """
+    Create an HTML slider animation from saved PNG transition frames.
+
+    Frames are sorted by the integer prefix before the first underscore, matching
+    names such as ``0_init_0000_desired_1111.png``.
+    """
+    frames_dir = Path(frames_dir)
+    html_path = Path(html_path)
+    frames = sorted(
+        frames_dir.glob(glob_pattern),
+        key=lambda path: int(path.stem.split("_", 1)[0]),
+    )
+    if not frames:
+        raise FileNotFoundError(f"No PNG frames matching {glob_pattern!r} in {frames_dir}")
+
+    try:
+        frame_list = [str(frame.relative_to(html_path.parent)).replace("\\", "/") for frame in frames]
+    except ValueError:
+        frame_list = [str(frame).replace("\\", "/") for frame in frames]
+
+    labels = [frame.stem for frame in frames]
+    n_frames = len(frames)
+
+    html = f"""
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>{title}</title>
+<style>
+    body {{
+        font-family: Arial, sans-serif;
+        margin: 20px;
+    }}
+    img {{
+        max-width: 100%;
+        border: 1px solid #ccc;
+    }}
+    .controls {{
+        margin-top: 15px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }}
+    input[type=range] {{
+        width: 500px;
+    }}
+    #tlabel {{
+        font-size: 18px;
+        font-weight: bold;
+    }}
+</style>
+</head>
+<body>
+
+<h2>{title}</h2>
+
+<img id="frame" src="{frame_list[0]}">
+
+<div class="controls">
+    <span>frame =</span>
+    <span id="tlabel">0</span>
+    <input id="slider" type="range" min="0" max="{n_frames - 1}" value="0" step="1">
+</div>
+
+<p id="caption">{labels[0]}</p>
+
+<script>
+const frames = {frame_list};
+const labels = {labels};
+
+const img = document.getElementById("frame");
+const slider = document.getElementById("slider");
+const tlabel = document.getElementById("tlabel");
+const caption = document.getElementById("caption");
+
+slider.addEventListener("input", function() {{
+    const t = Number(slider.value);
+    img.src = frames[t];
+    tlabel.textContent = t;
+    caption.textContent = labels[t];
+}});
+</script>
+
+</body>
+</html>
+"""
+
+    html_path.write_text(html, encoding="utf-8")
+    return html_path
+
+
 def save_tip_update_jpg_frames(traj_pos, L, frames_dir: Union[str, Path], Fx: Optional[NDArray] = None,
                                Fy: Optional[NDArray] = None, frames: Optional[int] = None,
                                buckle_traj: Optional[NDArray] = None, dpi: int = 150,
@@ -1136,7 +1231,8 @@ def plot_success_matrix_with_pathways(M_corr: np.ndarray, N: int, title: str = "
 
 def plot_transition_diagram(transitions: Counter, *, transitions_between_runs: bool = True,
                             only_reached_nodes: bool = False, edge_zero_loss_count=None, missing_edges=None,
-                            layout: str = "layers"):
+                            layout: str = "layers", initial_state: int | str | None = None,
+                            desired_state: int | str | None = None):
     """
     Plot a directed buckle-transition diagram.
 
@@ -1154,6 +1250,9 @@ def plot_transition_diagram(transitions: Counter, *, transitions_between_runs: b
         Directed transitions to draw as dashed missing edges.
     layout : str
         ``"layers"``/``"hamming"`` arranges states by Hamming weight; ``"ring"`` arranges states on a ring.
+    initial_state, desired_state : int | str, optional
+        Buckle states to highlight. Initial node perimeter uses ``colors_lst[0]``;
+        desired node perimeter uses ``colors_lst[1]``.
     """
     colors_lst, _, _ = colors.color_scheme()
     occured_clr = colors_lst[0]
@@ -1169,6 +1268,16 @@ def plot_transition_diagram(transitions: Counter, *, transitions_between_runs: b
 
     H = max(max(i, j) for (i, j) in all_edges).bit_length()
     H = max(H, 1)
+
+    def state_label(state) -> str | None:
+        if state is None:
+            return None
+        if isinstance(state, str):
+            return state
+        return helpers_builders.index_to_buckle(int(state), H)
+
+    initial_label = state_label(initial_state)
+    desired_label = state_label(desired_state)
 
     pos = helpers_builders.state_positions(H, layout=layout)
 
@@ -1200,7 +1309,15 @@ def plot_transition_diagram(transitions: Counter, *, transitions_between_runs: b
         if s not in used_nodes:
             continue
         x, y = pos[s]
-        node = Ellipse((x, y), width=node_width, height=node_height, facecolor=node_face, edgecolor=node_perim, lw=2.5)
+        edge_color = node_perim
+        node_lw = 2.5
+        if s == initial_label:
+            edge_color = colors_lst[0]
+            node_lw = 4.0
+        if s == desired_label:
+            edge_color = colors_lst[1]
+            node_lw = 4.0
+        node = Ellipse((x, y), width=node_width, height=node_height, facecolor=node_face, edgecolor=edge_color, lw=node_lw)
         ax.add_patch(node)
         ax.text(x, y, s, ha="center", va="center", fontsize=node_fontsize, color=text_color)
 
@@ -1314,6 +1431,8 @@ def plot_cumulative_transition_curve(coverage_df: pd.DataFrame, *,
     )
     ax.set_xlabel("training task")
     ax.set_ylabel("cumulative unique Hamming transitions")
+    ax.set_ylim(-2, 64)
+    ax.axhline(64, color=colors_lst[0], linestyle="--", linewidth=2, alpha=0.8)
     ax.xaxis.set_major_locator(MaxNLocator(integer=True))
     ax.grid(False, alpha=0.25, linewidth=0.8)
     ax.spines["top"].set_visible(False)
