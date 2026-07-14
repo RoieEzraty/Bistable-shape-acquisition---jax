@@ -195,6 +195,8 @@ class SupervisorClass:
         self.R_free = (Strctr.edges - 2*0.98)*Strctr.L  # maximal radius the chain could have, up to some margin
         self.R_min = Strctr.L  # minimal radius around [L/2, 0] that tip cannot cross
 
+        self.clamp_margin = float(CFG.Train.clamp_margin)
+
         # for output files
         self.convert_pos = CFG.Train.convert_pos
         self.convert_angle = CFG.Train.convert_angle
@@ -597,11 +599,7 @@ class SupervisorClass:
             R_eff = helpers_builders.effective_radius(self.R_free, Strctr.L, total_angle=total_angle,
                                                       tip_angle=float(self.tip_angle_update_in_t[t]),
                                                       supress_prints=self.supress_prints)
-            clamp_margin = 0.0
-            if Strctr.hinges > 4:
-                clamp_margin = 0.1 * Strctr.L * (Strctr.hinges - 1)
-                # if abs(total_angle) > np.pi:
-                #     clamp_margin += 0.25 * Strctr.L
+
             before_prev = helpers_builders._get_before_tip(prev_tip_update_pos, float(prev_tip_update_angle),
                                                            Strctr.L, xp=np)
 
@@ -620,7 +618,7 @@ class SupervisorClass:
                                                                               tip_raw=self.tip_pos_update_in_t[t, :],
                                                                               second_node=array([Strctr.L, 0.0], dtype=float),
                                                                               R_lim=self.R_min, L=Strctr.L, mod="inner",
-                                                                              clamp_margin=clamp_margin)
+                                                                              clamp_margin=self.clamp_margin)
 
             # clamp outside outer radius
             # tip_new = helpers_builders._correct_big_stretch(tip_new, self.tip_angle_update_in_t[t], total_angle,
@@ -632,7 +630,7 @@ class SupervisorClass:
                                                                               second_node=array([Strctr.L, 0.0], dtype=float),
                                                                               R_lim=R_eff, L=Strctr.L, mod="outer",
                                                                               tip_update_prev=prev_tip_update_pos,
-                                                                              raw_update_tip=delta_tip, clamp_margin=clamp_margin)
+                                                                              raw_update_tip=delta_tip, clamp_margin=self.clamp_margin)
 
             if clamped_outer:
                 corrected_delta = tip_new - prev_tip_update_pos

@@ -114,11 +114,8 @@ class StructureClass(eqx.Module):
         """
         self.hinges = int(CFG.Strctr.H)
         self.shims = int(CFG.Strctr.S)
-        if CFG.Variabs.k_type in {"Leon_metal_txt", "Leon_plastic_txt", "Roie_metal_csv"}:
-            # self.L = 0.045  # Leon's shims are ~45mm
-            self.L = 0.0472  # tape adds 1-2mm to edges shims are ~45mm
-        else:
-            self.L = 1.0
+
+        self.L = float(CFG.Strctr.L)  # [m] length of each edge
 
         self.edges_arr = self._build_edges()
         self.edges = int(self.edges_arr.shape[0])

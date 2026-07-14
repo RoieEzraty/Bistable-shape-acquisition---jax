@@ -134,12 +134,13 @@ def _buckle_hinge_first(buckle_in_t: NDArray, T: int) -> NDArray:
 
 def loss_and_buckle_in_t(tip_pos_in_t, tip_angle_in_t, loss_in_t, buckle_in_t, F_meas_in_t, F_des_in_t,
                          tip_pos_update_in_t, tip_angle_update_in_t, start=0, end=None,
-                         save_path: Optional[str] = None) -> None:
+                         save_path: Optional[str] = None, mod: Optional[str] = None,
+                         tip_pos_des_in_t=None, tip_angle_des_in_t=None) -> None:
     """
-    Plot (top->bottom):
-      1) measured forces (solid) vs desired forces (dotted) over training steps
-      2) SE loss over training steps
-      3) buckle states over training steps
+    Plot the tip pose, forces, loss, tip updates, and buckle states over training.
+
+    When ``mod="pos"``, label the top panel as the rest pose and omit the
+    force panel.
 
     Parameters
     ----------
@@ -149,16 +150,20 @@ def loss_and_buckle_in_t(tip_pos_in_t, tip_angle_in_t, loss_in_t, buckle_in_t, F
     F_des_in_t  - np.ndarray, shape (T, 2)
     start       - int, inclusive
     end         - int, exclusive (None -> full length)
+    mod         - str or None; ``"pos"`` selects the rest-position layout
+    tip_pos_des_in_t - optional ndarray, shape (T, 2), desired tip positions
+    tip_angle_des_in_t - optional ndarray, shape (T,), desired tip angles
     """
     # ------ colors ------
     colors_lst, _, _ = colors.color_scheme()
+    zero_color = colors_lst[4]
 
     # -------- time vector / slicing and buckles --------
     T = np.shape(loss_in_t)[0]
     if end is None or end > T:
         end = T
-    if start < 0:
-        start = 0
+    if start < 1:
+        start = 1
 
     t = np.arange(start, end)
 
@@ -166,109 +171,110 @@ def loss_and_buckle_in_t(tip_pos_in_t, tip_angle_in_t, loss_in_t, buckle_in_t, F
     H = buckle_in_t.shape[0]
 
     # -------- instantiate plot --------
-    fig, axes = plt.subplots(5, 1, figsize=(6, 9), sharex=True)
+    position_mode = mod == "pos"
+    n_panels = 4 if position_mode else 5
+    fig, axes = plt.subplots(n_panels, 1, figsize=(6, 1.8 * n_panels), sharex=True)
+
+    ax_pose = axes[0]
+    if position_mode:
+        ax_force = None
+        ax_loss, ax_update, ax_buckle = axes[1:]
+    else:
+        ax_force, ax_loss, ax_update, ax_buckle = axes[1:]
 
     # -------- subplot 0: positions --------
-    # axes[0].plot(t, tip_pos_in_t[start:end, 0], color=colors_lst[1], linestyle='-', label=r"$tip_x$ meas")
-    # axes[0].plot(t, tip_pos_in_t[start:end, 1], color=colors_lst[2], linestyle='-', label=r"$tip_y$ meas")
-    # axes[0].plot(t, tip_angle_in_t[start:end], color=colors_lst[3], label=r"$\theta$ meas")
-
-    # # dashed at 0
-    # axes[0].plot(t, np.zeros(end-start), color='k', linestyle='--')
-
-    # axes[0].set_ylabel("pos [mm]")
-    # axes[0].legend(ncol=2)
-    # axes[0].xaxis.set_major_locator(MaxNLocator(integer=True))
-
-    ax = axes[0]
-
     # ---- left axis: position ----
-    ax.plot(t, tip_pos_in_t[start:end, 1], color=colors_lst[2], linestyle='-', label=r"$tip_y$ meas")
-
-    ax.set_ylabel(r"$tip_y\left[mm\right]$")
-    ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+    position_labels = (r"$x^{rest}$", r"$y^{rest}$") if position_mode else (r"$tip_x$ meas", r"$tip_y$ meas")
+    angle_label = r"$\theta^{rest}$" if position_mode else r"$\theta$ meas"
+    ax_pose.plot(t, tip_pos_in_t[start:end, 0], color=colors_lst[1], label=position_labels[0])
+    ax_pose.plot(t, tip_pos_in_t[start:end, 1], color=colors_lst[2], label=position_labels[1])
+    if position_mode and tip_pos_des_in_t is not None:
+        ax_pose.plot(t, tip_pos_des_in_t[start:end, 0], color=colors_lst[1], linestyle=':',
+                     label=r"$x^{des}$")
+        ax_pose.plot(t, tip_pos_des_in_t[start:end, 1], color=colors_lst[2], linestyle=':',
+                     label=r"$y^{des}$")
+    ax_pose.set_ylabel(r"$tip\left[mm\right]$")
+    ax_pose.xaxis.set_major_locator(MaxNLocator(integer=True))
 
     # ---- right axis: angle ----
-    ax2 = ax.twinx()
-
-    ax2.plot(t, tip_angle_in_t[start:end],
-             color=colors_lst[3], label=r"$\theta$ meas")
-
-    ax2.set_ylabel(r"$\theta\left[rad\right]$")
+    ax_pose_angle = ax_pose.twinx()
+    ax_pose_angle.plot(t, tip_angle_in_t[start:end], color=colors_lst[3], label=angle_label)
+    if position_mode and tip_angle_des_in_t is not None:
+        ax_pose_angle.plot(t, tip_angle_des_in_t[start:end], color=colors_lst[3], linestyle=':',
+                           label=r"$\theta^{des}$")
+    ax_pose_angle.set_ylabel(r"$\theta\left[rad\right]$")
 
     # ---- combined legend ----
-    lines = ax.get_lines() + ax2.get_lines()
+    lines = ax_pose.get_lines() + ax_pose_angle.get_lines()
     labels = [l.get_label() for l in lines]
-    ax.legend(lines, labels, ncol=2)
+    ax_pose.legend(lines, labels, ncol=3)
 
     # dashed at 0
-    ax.plot(t, np.zeros(end-start), color='k', linestyle='--')
+    ax_pose.plot(t, np.zeros(end-start), color=zero_color, linestyle='--', alpha=0.6)
 
-    # -------- subplot 1: positions --------
-    # measured (solid)
-    axes[1].plot(t, F_meas_in_t[0, start+1:end+1], color=colors_lst[1], linestyle='-', label=r"$F_x$ meas")
-    axes[1].plot(t, F_meas_in_t[1, start+1:end+1], color=colors_lst[2], linestyle='-', label=r"$F_y$ meas")
+    # -------- subplot 1: forces --------
+    if ax_force is not None:
+        # measured (solid)
+        ax_force.plot(t, F_meas_in_t[0, start:end], color=colors_lst[1], linestyle='-', label=r"$F_x$ meas")
+        ax_force.plot(t, F_meas_in_t[1, start:end], color=colors_lst[2], linestyle='-', label=r"$F_y$ meas")
 
-    # desired (dotted)
-    axes[1].plot(t, F_des_in_t[0, start+1:end+1], color=colors_lst[1], linestyle=':', label=r"$F_x$ des")
-    axes[1].plot(t, F_des_in_t[1, start+1:end+1], color=colors_lst[2], linestyle=':', label=r"$F_y$ des")
+        # desired (dotted)
+        ax_force.plot(t, F_des_in_t[0, start:end], color=colors_lst[1], linestyle=':', label=r"$F_x$ des")
+        ax_force.plot(t, F_des_in_t[1, start:end], color=colors_lst[2], linestyle=':', label=r"$F_y$ des")
+        ax_force.plot(t, np.zeros(end-start), color=zero_color, linestyle='--', alpha=0.6)
 
-    # dashed at 0
-    axes[1].plot(t, np.zeros(end-start), color='k', linestyle='--')
+        ax_force.set_ylabel("Force [mN]")
+        ax_force.legend(ncol=2)
+        ax_force.xaxis.set_major_locator(MaxNLocator(integer=True))
+        ax_force.set_ylim([-200, 500] if H < 6 else [-160, 160])
 
-    axes[1].set_ylabel("Force [mN]")
-    axes[1].legend(ncol=2)
-    axes[1].xaxis.set_major_locator(MaxNLocator(integer=True))
-    if H < 6:
-        axes[1].set_ylim([-200, 500])
-    else:
-        axes[1].set_ylim([-160, 160])
-
-    # -------- subplot 1: loss --------
-    axes[2].plot(t, loss_in_t[start+1:end+1, 0], color=colors_lst[1])
-    axes[2].plot(t, loss_in_t[start+1:end+1, 1], color=colors_lst[2])
+    # -------- subplot 2: loss --------
+    loss_labels = [r'$L_x$', r'$L_y$', r'$L_\theta$']
+    for i in range(min(loss_in_t.shape[1], len(loss_labels))):
+        ax_loss.plot(t, loss_in_t[start:end, i], color=colors_lst[i + 1], label=loss_labels[i])
     loss_MSE_in_t = np.sqrt(np.sum(loss_in_t**2, axis=1))
-    axes[2].plot(t, loss_MSE_in_t[start+1:end+1])
+    ax_loss.plot(t, loss_MSE_in_t[start:end], color=colors_lst[0], label=r'$\|L\|$')
 
     # dashed at 0
-    axes[2].plot(t, np.zeros(end-start), color='k', linestyle='--')
+    ax_loss.plot(t, np.zeros(end-start), color=zero_color, linestyle='--', alpha=0.6)
 
-    axes[2].set_ylabel("Loss")
-    axes[2].legend([r'$L_x$', r'$L_y$', r'$\|L\|$'])
-    axes[2].xaxis.set_major_locator(MaxNLocator(integer=True))
-    axes[2].set_ylim([-2.0, 2.0])
+    ax_loss.set_ylabel("Loss")
+    ax_loss.legend()
+    ax_loss.xaxis.set_major_locator(MaxNLocator(integer=True))
+    ax_loss.set_ylim([-2.0, 4.0])
 
-    # ------ subplot 4: delta tip update ------
-    ax3 = axes[3]
-    ax3.plot(t[:], tip_pos_update_in_t[start+1:end+1, 0] - tip_pos_update_in_t[start:end, 0],
-             label=r"$\Delta tip_x^{\,!}\left[mm\right]$")
-    ax3.plot(t[:], tip_pos_update_in_t[start+1:end+1, 1] - tip_pos_update_in_t[start:end, 1],
-             label=r"$\Delta tip_y^{\,!}\left[mm\right]$")
-    ax3.set_ylabel(r"$\Delta tip^{\,!}\left[mm\right]$")
-    ax3.xaxis.set_major_locator(MaxNLocator(integer=True))
+    # ------ subplot 3: delta tip update ------
+    t_delta = t[1:]
+    ax_update.plot(t_delta, np.diff(tip_pos_update_in_t[start:end, 0]), color=colors_lst[1],
+                   label=r"$\Delta tip_x^{\,!}\left[mm\right]$")
+    ax_update.plot(t_delta, np.diff(tip_pos_update_in_t[start:end, 1]), color=colors_lst[2],
+                   label=r"$\Delta tip_y^{\,!}\left[mm\right]$")
+    ax_update.set_ylabel(r"$\Delta tip^{\,!}\left[mm\right]$")
+    ax_update.xaxis.set_major_locator(MaxNLocator(integer=True))
 
     # ---- right axis: angle ----
-    ax3_2 = ax3.twinx()
-    ax3_2.plot(t[:], tip_angle_update_in_t[start+1:end+1] - tip_angle_update_in_t[start:end],
-               color=colors_lst[3], label=r"$\Delta\theta^{\,!}\left[rad\right]$")
-    ax3_2.set_ylabel(r"$\Delta\theta^{\,!}\left[rad\right]$")
+    ax_update_angle = ax_update.twinx()
+    ax_update_angle.plot(t_delta, np.diff(tip_angle_update_in_t[start:end]),
+                         color=colors_lst[3], label=r"$\Delta\theta^{\,!}\left[rad\right]$")
+    ax_update_angle.set_ylabel(r"$\Delta\theta^{\,!}\left[rad\right]$")
 
-    lines = ax3.get_lines() + ax3_2.get_lines()
+    lines = ax_update.get_lines() + ax_update_angle.get_lines()
     labels = [l.get_label() for l in lines]
-    ax3.legend(lines, labels, ncol=2)
+    ax_update.legend(lines, labels, ncol=2)
 
     # dashed at 0
-    axes[3].plot(t, np.zeros(end-start), color='k', linestyle='--')
+    ax_update.plot(t, np.zeros(end-start), color=zero_color, linestyle='--', alpha=0.6)
 
-    # -------- subplot 2: buckle states --------
+    # -------- subplot 4: buckle states --------
     for i in range(H):
-        axes[4].plot(t, buckle_in_t[i, 0, start:end], label=f"hinge {i+1}")
+        ax_buckle.plot(t, buckle_in_t[i, 0, start:end], color=colors_lst[i % len(colors_lst)],
+                       label=f"hinge {i+1}")
 
-    axes[4].set_ylabel("buckle")
-    axes[4].set_xlabel("t")
+    ax_buckle.set_ylabel("buckle")
+    ax_buckle.set_xlabel("t")
     if H < 6:
-        axes[4].legend()
-    axes[4].xaxis.set_major_locator(MaxNLocator(integer=True))
+        ax_buckle.legend()
+    ax_buckle.xaxis.set_major_locator(MaxNLocator(integer=True))
 
     plt.tight_layout()
 

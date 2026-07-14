@@ -16,6 +16,7 @@ HINGES: int = 5  # Hinges
 # HINGES: int = 8  # Hinges
 # HINGES: int = 4  # Hinges
 
+L: float = 0.0472  # [m] length of each edge
 
 # -----------------------------
 # Structure and initial params
@@ -32,6 +33,8 @@ class StructureConfig:
     # Nout: int = 2  # Fx, Fy
     Nin: int = 2  # total and tip angles
     Nout: int = 2  # Fx Fy transformed into total and tip angle forces
+
+    L: float = L  # [m] length of each edge
 
 
 # -----------------------------
@@ -185,11 +188,11 @@ class TrainingConfig:
     # dataset_sampling = 'stress strain'
     # dataset_sampling: str = 'tip_grid_sweep'  # update-only y/theta grid, for monitoring buckling
 
-    predet_traj_file: str = r"Predetermined trajectory\June15\example_traj.csv"
+    predet_traj_file: str = r"Predetermined trajectory\July14\example_traj_H5_Mar22Like.csv"
 
     # dataset_file: str = r"Predetermined trajectory\Mar23\buckle={}.csv"
     # dataset_file: str = r"Predetermined trajectory\May27\short_arc\May24Chain_1stEnd\buckle={}.csv"  # 2026June7
-    dataset_file: str = r"Predetermined trajectory\June15\1stEnd\buckle={}.csv"  # 2026June7
+    dataset_file: str = r"Predetermined trajectory\July14\buckle={}.csv"  # 2026June7
 
     # # tip values to buckle shims - 'BEASTAL' for the BEASTAL scheme, else 'one_to_one'
     # update_scheme: str = 'one_to_one'  # direct normalized loss, equal to num of outputs
@@ -220,6 +223,10 @@ class TrainingConfig:
             alpha = 0.15  # learning rate # Apr30
         else:
             alpha = 0.35
+
+    clamp_margin = 0.0
+    if HINGES > 5:
+        clamp_margin = 0.1 * L * (HINGES - 1)
 
     if update_scheme == 'pos' and HINGES > 2:
         tradeoff_pos_angle: float = 1/2 + 1/8 * HINGES

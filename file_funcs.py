@@ -171,9 +171,9 @@ def load_full_pos_in_t(path: str | Path, stretch_factor: Optional[float] = None)
     return np.stack(P_lst, axis=0), np.stack(B_lst, axis=0)
 
 
-def load_training(path: str, stretch_factor: Optional[float] = None) -> Tuple[NDArray[np.float64], NDArray[np.float64],
-                                                                              NDArray[np.float64], NDArray[np.float64],
-                                                                              NDArray[np.float64], NDArray[np.float64]]:
+def load_training(path: str, stretch_factor: Optional[float] = None, *,
+                  include_desired_pose: bool = False,
+                  norm_angle: float = np.pi) -> tuple[NDArray[np.float64], ...]:
     """
     Load tip positions and forces from a CSV file using csv.DictReader, and convert it into either:
     - a list of dictionaries (`mod="dict"`)
@@ -184,6 +184,12 @@ def load_training(path: str, stretch_factor: Optional[float] = None) -> Tuple[ND
     path           : str, Path to the CSV file.
     stretch_factor : Optional[float], Optional scaling applied to x and y positions,
                                       for rescaling experimental trajectories.
+    include_desired_pose : bool, optional
+        If True, also return desired tip positions and angles. For legacy
+        position-training files without desired-pose columns, reconstruct them
+        from the stored normalized loss.
+    norm_angle : float, optional
+        Angle normalization used to reconstruct legacy desired angles.
 
     Returns
     -------
@@ -192,6 +198,10 @@ def load_training(path: str, stretch_factor: Optional[float] = None) -> Tuple[ND
     B        - ndarray, shape (T, H, S), measured buckle arrays
     P_update - ndarray, shape (T, 2), updated tip positions
     A_update - ndarray, shape (T,), updated tip angles in radians
+    tip_des  - ndarray, shape (T, 2), desired tip positions; returned only when
+               ``include_desired_pose=True``
+    angle_des - ndarray, shape (T,), desired tip angles in radians; returned only
+                when ``include_desired_pose=True``
 
     Notes
     -----
@@ -202,6 +212,7 @@ def load_training(path: str, stretch_factor: Optional[float] = None) -> Tuple[ND
     L, B = [], []
     P_meas, P_update = [], []
     tip_update, angle_update = [], []
+    tip_des, angle_des = [], []
 
     with open(path, newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
@@ -221,7 +232,8 @@ def load_training(path: str, stretch_factor: Optional[float] = None) -> Tuple[ND
             L.append(loss_row)
 
             # ------ Buckle ------
-            Buckle, _ = helpers_builders._get_first_in_file(r, ["buckle_arr_meas"], name="buckle_arr_meas",
+            Buckle, _ = helpers_builders._get_first_in_file(r, ["buckle_arr_meas", "buckle_arr_update"],
+                                                            name="buckle_arr",
                                                             type="NDArray")
             if Buckle.ndim == 1:
                 Buckle = Buckle.reshape(-1, 1)
@@ -243,6 +255,29 @@ def load_training(path: str, stretch_factor: Optional[float] = None) -> Tuple[ND
 
             tip_update.append([X_update, Y_update])
             angle_update.append(Angle_update)
+
+            # ------ Desired tip pose ------
+            if include_desired_pose:
+                X_des, _ = helpers_builders._get_first_in_file(
+                    r, ["x_des_tip"], name="x_des_tip", allow_missing=True
+                )
+                Y_des, _ = helpers_builders._get_first_in_file(
+                    r, ["y_des_tip"], name="y_des_tip", allow_missing=True
+                )
+                Angle_des, angle_des_key = helpers_builders._get_first_in_file(
+                    r, ["des_tip_angle"], name="des_tip_angle", allow_missing=True
+                )
+                if X_des is not None and Y_des is not None and Angle_des is not None:
+                    if stretch_factor is not None:
+                        X_des /= stretch_factor
+                        Y_des /= stretch_factor
+                    if angle_des_key != "tip_angle_rad":
+                        Angle_des = np.deg2rad(Angle_des)
+                    tip_des.append([X_des, Y_des])
+                    angle_des.append(Angle_des)
+                else:
+                    tip_des.append(None)
+                    angle_des.append(None)
 
             # ------ Full positions ------
             pos_meas, _ = helpers_builders._get_first_in_file(r, ["final_pos_meas"], name="final_pos_meas",
@@ -276,7 +311,29 @@ def load_training(path: str, stretch_factor: Optional[float] = None) -> Tuple[ND
     tip_update = np.asarray(tip_update, dtype=float)
     angle_update = np.asarray(angle_update, dtype=float)
 
-    return L, B, P_meas, P_update, tip_update, angle_update
+    result = (L, B, P_meas, P_update, tip_update, angle_update)
+    if not include_desired_pose:
+        return result
+
+    missing_desired = any(pos is None for pos in tip_des)
+    if missing_desired:
+        if P_meas.shape[0] != L.shape[0] or L.shape[1] < 3:
+            raise KeyError(
+                "Desired tip-pose columns are missing and cannot be reconstructed "
+                "without measured geometry and three position-loss components"
+            )
+        edge_lengths = np.linalg.norm(np.diff(P_meas, axis=1), axis=2)
+        norm_pos = float(np.mean(edge_lengths[edge_lengths > 0]))
+        measured_tip = P_meas[:, -1, :]
+        measured_segments = P_meas[:, -1, :] - P_meas[:, -2, :]
+        measured_angle = np.arctan2(measured_segments[:, 1], measured_segments[:, 0])
+        tip_des_arr = measured_tip + L[:, :2] * norm_pos
+        angle_des_arr = measured_angle + L[:, 2] * norm_angle
+    else:
+        tip_des_arr = np.asarray(tip_des, dtype=float)
+        angle_des_arr = np.asarray(angle_des, dtype=float)
+
+    return result + (tip_des_arr, angle_des_arr)
 
 
 def warm_start_training_from_csv(path: str, Sprvsr: "SupervisorClass", State_meas: "StateClass",
