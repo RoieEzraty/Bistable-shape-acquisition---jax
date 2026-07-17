@@ -1410,10 +1410,11 @@ def plot_transition_diagram(transitions: Counter, *, transitions_between_runs: b
 def plot_cumulative_transition_curve(coverage_df: pd.DataFrame, *,
                                      x_col: str = "training_task",
                                      y_col: str = "cumulative_unique_hamming_transitions",
+                                     x_label: str | None = None,
                                      save_path: str | Path | None = None,
                                      ax=None):
     """
-    Plot cumulative transition coverage as a function of training task.
+    Plot cumulative transition coverage as a function of an ordered run step.
 
     This helper only draws the time/coverage curve. Building the cumulative
     table and transition diagrams stays in the calling notebook/script.
@@ -1435,7 +1436,7 @@ def plot_cumulative_transition_curve(coverage_df: pd.DataFrame, *,
         markersize=5,
         lw=2.5,
     )
-    ax.set_xlabel("training task")
+    ax.set_xlabel(x_label if x_label is not None else x_col.replace("_", " "))
     ax.set_ylabel("cumulative unique Hamming transitions")
     ax.set_ylim(-2, 64)
     ax.axhline(64, color=colors_lst[0], linestyle="--", linewidth=2, alpha=0.8)

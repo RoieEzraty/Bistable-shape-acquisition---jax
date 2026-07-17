@@ -189,11 +189,13 @@ class TrainingConfig:
     # dataset_sampling = 'stress strain'
     dataset_sampling: str = 'tip_grid_sweep'  # update-only y/theta grid, for monitoring buckling
 
-    predet_traj_file: str = r"Predetermined trajectory\July14\example_traj_H5_Mar22Like.csv"
+    # predet_traj_file: str = r"Predetermined trajectory\July14_H5\example_traj_H5_Mar22Like.csv"
+    predet_traj_file: str = r"Predetermined trajectory\July17_H6\example_traj_H6_Mar22Like.csv"
 
     # dataset_file: str = r"Predetermined trajectory\Mar23\buckle={}.csv"
     # dataset_file: str = r"Predetermined trajectory\May27\short_arc\May24Chain_1stEnd\buckle={}.csv"  # 2026June7
-    dataset_file: str = r"Predetermined trajectory\July14\buckle={}.csv"  # 2026June7
+    # dataset_file: str = r"Predetermined trajectory\July14\buckle={}.csv"  # 2026July14
+    dataset_file: str = r"Predetermined trajectory\July17\buckle={}.csv"  # 2026July17
 
     # # tip values to buckle shims - 'BEASTAL' for the BEASTAL scheme, else 'one_to_one'
     # update_scheme: str = 'one_to_one'  # direct normalized loss, equal to num of outputs
