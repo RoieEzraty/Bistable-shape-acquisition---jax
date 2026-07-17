@@ -594,6 +594,128 @@ def export_training_npz(path_npz: str, **arrays):
     np.savez_compressed(path_npz, **arrays)
 
 
+def export_tip_grid_transition_csvs(output_dir: str | Path, Sprvsr: "SupervisorClass",
+                                    State_grid: "StateClass", init_buckle: NDArray,
+                                    *, include_flat_target: bool = False) -> list[Path]:
+    """Export one ordered buckle history CSV for each tip-grid target.
+
+    Each file starts with the true initial buckle at path fraction zero, keeps
+    only distinct intermediate buckle states, and ends at the requested grid
+    target. Consequently, a direct transition normally has two rows and a
+    transition resolved through one middle buckle has three rows.
+
+    Parameters
+    ----------
+    output_dir : str or Path
+        Directory in which the per-target CSV files are created.
+    Sprvsr : SupervisorClass
+        Supervisor populated by ``tip_grid_buckle_sweep``.
+    State_grid : StateClass
+        State history returned by ``tip_grid_buckle_sweep``.
+    init_buckle : ndarray
+        Buckle state from which every independent grid trial starts.
+    include_flat_target : bool, default=False
+        Also export the leading flat-pose target used to initialize the sweep.
+
+    Returns
+    -------
+    list[Path]
+        Paths of the files written, in sweep order.
+    """
+    def arr_to_json(arr: np.ndarray) -> str:
+        return json.dumps(np.asarray(arr).tolist(), separators=(",", ":"))
+
+    def filename_number(value: float) -> str:
+        value = 0.0 if np.isclose(value, 0.0, atol=5e-10) else float(value)
+        return np.format_float_positional(value, precision=8, unique=True, trim="-")
+
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    final_indices = np.asarray(Sprvsr.tip_grid_target_indices, dtype=int)
+    start_indices = np.asarray(Sprvsr.tip_grid_target_start_indices, dtype=int)
+    fractions = np.asarray(Sprvsr.tip_grid_path_fraction_in_t, dtype=float)
+    target_pos = np.asarray(Sprvsr.tip_grid_base_pos_in_t, dtype=float)
+    target_angle = np.asarray(Sprvsr.tip_grid_base_angle_in_t, dtype=float)
+    buckle_history = np.moveaxis(np.asarray(State_grid.buckle_in_t), 2, 0)
+    pos_history = np.moveaxis(np.asarray(State_grid.pos_arr_in_t), 2, 0)
+
+    if not (len(start_indices) == len(final_indices) == len(target_pos) == len(target_angle)):
+        raise ValueError("Tip-grid target metadata have inconsistent lengths.")
+
+    init_buckle_arr = np.asarray(init_buckle, dtype=int).reshape(buckle_history.shape[1:])
+    init_buckle_str = correct_buckle_string(init_buckle_arr)
+    initial_pos = pos_history[final_indices[0]]
+    first_target = 0 if include_flat_target else 1
+    written: list[Path] = []
+
+    for target_i in range(first_target, len(final_indices)):
+        start = int(start_indices[target_i])
+        final = int(final_indices[target_i])
+        final_buckle = buckle_history[final]
+
+        # Retain the ordered buckle changes needed to describe the path. The
+        # terminal buckle is written at the requested endpoint, while genuine
+        # cycles through that same buckle are preserved.
+        change_indices: list[int] = []
+        previous = init_buckle_arr
+        for frame_i in range(start, final + 1):
+            buckle = buckle_history[frame_i]
+            if np.array_equal(buckle, previous):
+                continue
+            change_indices.append(frame_i)
+            previous = buckle
+        nonfinal_changes = [
+            frame_i for frame_i in change_indices
+            if not np.array_equal(buckle_history[frame_i], final_buckle)
+        ]
+        last_middle = nonfinal_changes[-1] if nonfinal_changes else -1
+        middle_indices = [frame_i for frame_i in change_indices if frame_i <= last_middle]
+        row_indices: list[int | None] = [None, *middle_indices, final]
+
+        x_name = filename_number(target_pos[target_i, 0] * Sprvsr.convert_pos)
+        y_name = filename_number(target_pos[target_i, 1] * Sprvsr.convert_pos)
+        theta_name = filename_number(target_angle[target_i] * Sprvsr.convert_angle)
+        path = output_dir / (
+            f"init_{init_buckle_str}_finalTip_x={x_name}_y={y_name}_theta={theta_name}.csv"
+        )
+
+        rows = []
+        for event_t, frame_i in enumerate(row_indices):
+            if frame_i is None:
+                rows.append({
+                    "t": event_t,
+                    "path_fraction": 0.0,
+                    "is_final": False,
+                    "upd_x_tip": float(target_pos[0, 0] * Sprvsr.convert_pos),
+                    "upd_y_tip": float(target_pos[0, 1] * Sprvsr.convert_pos),
+                    "upd_tip_angle": float(target_angle[0] * Sprvsr.convert_angle),
+                    "final_pos_update": arr_to_json(initial_pos * Sprvsr.convert_pos),
+                    "Fx_update": 0.0,
+                    "Fy_update": 0.0,
+                    "buckle_arr_update": arr_to_json(init_buckle_arr),
+                })
+                continue
+
+            rows.append({
+                "t": event_t,
+                "path_fraction": float(fractions[frame_i]),
+                "is_final": frame_i == final,
+                "upd_x_tip": float(Sprvsr.tip_pos_update_in_t[frame_i, 0] * Sprvsr.convert_pos),
+                "upd_y_tip": float(Sprvsr.tip_pos_update_in_t[frame_i, 1] * Sprvsr.convert_pos),
+                "upd_tip_angle": float(Sprvsr.tip_angle_update_in_t[frame_i] * Sprvsr.convert_angle),
+                "final_pos_update": arr_to_json(pos_history[frame_i] * Sprvsr.convert_pos),
+                "Fx_update": float(State_grid.Fx_in_t[frame_i] * Sprvsr.convert_F),
+                "Fy_update": float(State_grid.Fy_in_t[frame_i] * Sprvsr.convert_F),
+                "buckle_arr_update": arr_to_json(buckle_history[frame_i]),
+            })
+
+        pd.DataFrame(rows).to_csv(path, index=False)
+        written.append(path)
+
+    return written
+
+
 # ---------------------------------------------------------------
 # Post-processing files
 # ---------------------------------------------------------------
@@ -1021,7 +1143,8 @@ def _infer_buckle_n_bits(folder: Path, omit_inverted: bool = False) -> int:
     """
     Infer the number of buckle bits from the first transition CSV in a folder.
     """
-    file_patterns = ("final_loss_*.csv", "tip_grid_buckle_sweep_*.csv", "tip_buckle*.csv")
+    file_patterns = ("final_loss_*.csv", "init_*_finalTip_x=*_y=*_theta=*.csv",
+                     "tip_grid_buckle_sweep_*.csv", "tip_buckle*.csv")
     files = sorted({file for pattern in file_patterns for file in folder.glob(pattern)})
     if omit_inverted:
         files = [f for f in files if not f.name.endswith("_inverted.csv")]

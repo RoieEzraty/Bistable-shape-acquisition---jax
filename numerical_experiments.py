@@ -248,6 +248,8 @@ def tip_grid_buckle_sweep(Strctr: StructureClass, Variabs: VariablesClass, Sprvs
     force_frames_list: list[NDArray[np.float32]] = []
     accepted_tip_pos: list[NDArray[np.float32]] = []
     accepted_tip_angle: list[float] = []
+    accepted_tip_fraction: list[float] = []
+    target_start_indices: list[int] = []
     target_final_indices: list[int] = []
 
     t0 = time.time()
@@ -258,6 +260,7 @@ def tip_grid_buckle_sweep(Strctr: StructureClass, Variabs: VariablesClass, Sprvs
         return tip_pos.astype(np.float32), float(tip_angle)
 
     for target_i, (grid_tip_pos, grid_tip_angle) in enumerate(zip(target_tip_pos, target_tip_angle)):
+        target_start_indices.append(len(pos_frames_list))
         current_frac = 0.0
         current_pos = flat_pos.copy()
         current_buckle = init_buckle_arr.copy()
@@ -302,6 +305,7 @@ def tip_grid_buckle_sweep(Strctr: StructureClass, Variabs: VariablesClass, Sprvs
             force_frames_list.append(np.asarray([scratch.Fx, scratch.Fy], dtype=np.float32))
             accepted_tip_pos.append(tip_pos.astype(np.float32))
             accepted_tip_angle.append(float(tip_angle))
+            accepted_tip_fraction.append(float(target_frac))
 
             if plot_every > 0 and ((len(pos_frames_list) - 1) % plot_every == 0):
                 plot_funcs.plot_arm(scratch.pos_arr, scratch.buckle_arr, Strctr.L, modality="update")
@@ -329,6 +333,8 @@ def tip_grid_buckle_sweep(Strctr: StructureClass, Variabs: VariablesClass, Sprvs
         dtype=np.float32,
     )
     Sprvsr.tip_grid_target_indices = np.asarray(target_final_indices, dtype=np.int32)
+    Sprvsr.tip_grid_target_start_indices = np.asarray(target_start_indices, dtype=np.int32)
+    Sprvsr.tip_grid_path_fraction_in_t = np.asarray(accepted_tip_fraction, dtype=np.float32)
     Sprvsr.desired_Fx_in_t = np.zeros(Sprvsr.T, dtype=np.float32)
     Sprvsr.desired_Fy_in_t = np.zeros(Sprvsr.T, dtype=np.float32)
     Sprvsr.desired_pos_in_t = np.zeros((Strctr.nodes, 2, Sprvsr.T), dtype=np.float32)

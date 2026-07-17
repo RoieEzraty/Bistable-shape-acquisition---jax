@@ -12,9 +12,10 @@ import numpy as np
 # MATERIAL = "Leon_metal"
 MATERIAL = "Roie_metal"
 
-HINGES: int = 5  # Hinges
+# HINGES: int = 5  # Hinges
+# HINGES: int = 6  # Hinges
 # HINGES: int = 8  # Hinges
-# HINGES: int = 4  # Hinges
+HINGES: int = 4  # Hinges
 
 L: float = 0.0472  # [m] length of each edge
 
@@ -179,14 +180,14 @@ class TrainingConfig:
     # init_buckle_pattern: tuple = (1)  # initial buckle, 1=up
 
     # dataset_sampling: str = 'uniform'  # random uniform vals for x, y, angle
-    dataset_sampling: str = 'predetermined'  # import measured F along predetermined trajectory every training step t
+    # dataset_sampling: str = 'predetermined'  # import measured F along predetermined trajectory every training step t
     # dataset_sampling: str = 'free_tip'  # free tip pos and angle (zero forces at sensor) during measurement
     # dataset_sampling: str = 'specified'  # constant
     # dataset_sampling: str = 'tile'  # constant
     # dataset_sampling = 'almost_flat'  # flat piece w a bit of constant noise, single measurement
     # dataset_sampling = 'flat'  # flat piece, single measurement
     # dataset_sampling = 'stress strain'
-    # dataset_sampling: str = 'tip_grid_sweep'  # update-only y/theta grid, for monitoring buckling
+    dataset_sampling: str = 'tip_grid_sweep'  # update-only y/theta grid, for monitoring buckling
 
     predet_traj_file: str = r"Predetermined trajectory\July14\example_traj_H5_Mar22Like.csv"
 
@@ -196,9 +197,9 @@ class TrainingConfig:
 
     # # tip values to buckle shims - 'BEASTAL' for the BEASTAL scheme, else 'one_to_one'
     # update_scheme: str = 'one_to_one'  # direct normalized loss, equal to num of outputs
-    update_scheme: str = 'loss_diff'  # difference of x and y loss components
+    # update_scheme: str = 'loss_diff'  # difference of x and y loss components
     # update_scheme: str = 'loss_x_trend'  # delta tip by trend of loss x, delta angle by addition of losses
-    # update_scheme: str = 'pos'  # difference in measured and desired tip position and angle
+    update_scheme: str = 'pos'  # difference in measured and desired tip position and angle
     pos_delta_mode: str = 'signed double'  # 'signed double' = Mar23 sign factors, 'direct' = May3 direct position loss, 'singed' = July8
     use_tangent_clamp: bool = True  # If True, preserve tangential update direction when clamping the free tip.
     # update_scheme: str = 'lossx_concavity'  # tip_angle changes due to concavity of loss x along trajectory.
