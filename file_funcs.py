@@ -858,7 +858,15 @@ def build_loss_columns(folder: str | Path, old: bool = False, omit_inverted: boo
         if init_match is None or desired_match is None:
             continue
 
-        df = pd.read_csv(file)
+        try:
+            df = pd.read_csv(file)
+        except pd.errors.EmptyDataError:
+            init_bits = init_match.group(1)
+            desired_bits = desired_match.group(1)
+            records.append((int(init_bits, 2), int(desired_bits, 2),
+                            [1.0, loss_from_filename(file)], [np.nan, np.nan],
+                            [init_bits, desired_bits]))
+            continue
         if df.empty:
             continue
 
