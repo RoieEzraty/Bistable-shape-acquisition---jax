@@ -24,6 +24,29 @@ import colors, helpers_builders
 # -------------------------------------------------
 # Plot importants
 # -------------------------------------------------
+def plot_accuracy_afo_H(Hs: NDArray, accuracy: NDArray, bars: bool = False) -> tuple:
+    """Plot accuracy as a function of ``H``, using bars or a dot-and-line curve."""
+    Hs = np.asarray(Hs)
+    accuracy = np.asarray(accuracy)
+    if Hs.ndim != 1 or accuracy.ndim != 1 or Hs.shape != accuracy.shape:
+        raise ValueError("Hs and accuracy must be one-dimensional arrays of equal length.")
+
+    colors_lst, _, _ = colors.color_scheme()
+    fig, ax = plt.subplots(figsize=(5, 3.5))
+    if bars:
+        ax.bar(Hs, accuracy, color=colors_lst[0], width=0.65)
+    else:
+        ax.plot(Hs, accuracy, color=colors_lst[0], marker="o", markersize=6, linewidth=2)
+    ax.set_xlabel(r"$H$")
+    ax.set_ylabel("accuracy")
+    ax.set_ylim(0, 1)
+    ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+    ax.spines[["top", "right"]].set_visible(False)
+    fig.tight_layout()
+    plt.show()
+    return fig, ax
+
+
 def plot_arm(pos_vec: np.ndarray, buckle: np.ndarray, L: float, modality: str, show: bool = True, ax=None) -> None:
     """
     Plot arm configuration together with buckle direction arrows.
