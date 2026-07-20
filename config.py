@@ -229,7 +229,7 @@ class TrainingConfig:
 
     clamp_margin = 0.0
     if HINGES > 5:
-        clamp_margin = 0.1 * L * (HINGES - 1)
+        clamp_margin = 0.25 * L * (HINGES - 1)
 
     if update_scheme == 'pos' and HINGES > 2:
         tradeoff_pos_angle: float = 1/2 + 1/8 * HINGES

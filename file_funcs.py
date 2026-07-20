@@ -814,8 +814,9 @@ def average_successful_train_time(folder: str | Path, thresh: float = 1e-6,
 
 
 def build_loss_columns(folder: str | Path, old: bool = False, omit_inverted: bool = False,
-                       log_norm: bool = True, save_path: Optional[str | Path] = None) -> Tuple[NDArray[np.float64],
-                                                                                               NDArray[np.float64], NDArray]:
+                       log_norm: bool = True, save_path: Optional[str | Path] = None,
+                       include_symm: bool = False) -> Tuple[NDArray[np.float64],
+                                                           NDArray[np.float64], NDArray]:
     """
     Read training CSVs in a folder and plot initial/final MSE loss as two color columns.
 
@@ -831,6 +832,11 @@ def build_loss_columns(folder: str | Path, old: bool = False, omit_inverted: boo
         If True, use logarithmic color scaling for positive losses.
     save_path     : str | Path | None
         Optional path for saving the figure.
+    include_symm  : bool, default=False
+        If True, assign each task the elementwise minimum initial/final loss
+        and Hamming distance of that task and its reciprocal task. A reciprocal
+        task is obtained by flipping every bit in both the initial and desired
+        buckle states.
 
     Returns
     -------
@@ -903,6 +909,30 @@ def build_loss_columns(folder: str | Path, old: bool = False, omit_inverted: boo
     loss_columns = np.asarray(losses, dtype=float)
     Hamming_columns = np.asarray(Hammings, dtype=float)
     buckle_pairs_arr = np.asarray(buckle_pairs, dtype=str)
+
+    if include_symm:
+        task_losses: dict[tuple[str, str], NDArray[np.float64]] = {}
+        task_Hammings: dict[tuple[str, str], NDArray[np.float64]] = {}
+        for pair, loss, Hamming in zip(buckle_pairs, loss_columns, Hamming_columns):
+            task = (pair[0], pair[1])
+            if task in task_losses:
+                task_losses[task] = np.fmin(task_losses[task], loss)
+                task_Hammings[task] = np.fmin(task_Hammings[task], Hamming)
+            else:
+                task_losses[task] = loss.copy()
+                task_Hammings[task] = Hamming.copy()
+
+        for index, pair in enumerate(buckle_pairs):
+            n_bits = len(pair[0])
+            reciprocal_indices = helpers_builders.reciprocal_transition(
+                (int(pair[0], 2), int(pair[1], 2)), n_bits)
+            reciprocal_task = tuple(format(state, f"0{n_bits}b")
+                                    for state in reciprocal_indices)
+            reciprocal_loss = task_losses.get(reciprocal_task)
+            if reciprocal_loss is not None:
+                loss_columns[index] = np.fmin(loss_columns[index], reciprocal_loss)
+                Hamming_columns[index] = np.fmin(Hamming_columns[index],
+                                                 task_Hammings[reciprocal_task])
 
     return loss_columns, Hamming_columns, buckle_pairs_arr
 

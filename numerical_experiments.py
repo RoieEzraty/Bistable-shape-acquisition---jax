@@ -443,6 +443,73 @@ def compress_to_tip_pos(Strctr: "StructureClass", Variabs: "VariablesClass", Spr
 compress_to_tip_position = compress_to_tip_pos
 
 
+def check_non_abelianity(
+        Strctr: StructureClass, Variabs: VariablesClass, Sprvsr: SupervisorClass, CFG: ExperimentConfig,
+        init_buckle: NDArray, flat_tip_pos: NDArray, flat_tip_angle: float,
+        initial_tip_pos: NDArray, initial_tip_angle: float,
+        final_tip_pos: NDArray, final_tip_angle: float, Eq_iterations: int,
+        verbose: bool = False) -> dict:
+    """Compare final buckle states when tip position and angle are changed in opposite orders."""
+
+    def run_leg(label, buckle, tip_pos_i, tip_angle_i, tip_pos_f, tip_angle_f, init_pos):
+        if verbose:
+            print(f"\n{label}")
+        State, pos_in_t, force_in_t = compress_to_tip_position(
+            Strctr, Variabs, Sprvsr, CFG,
+            np.asarray(buckle, dtype=int).copy(),
+            np.asarray(tip_pos_i, dtype=float), float(tip_angle_i),
+            np.asarray(tip_pos_f, dtype=float), float(tip_angle_f),
+            int(Eq_iterations),
+            init_pos=None if init_pos is None else np.asarray(init_pos, dtype=float).copy(),
+        )
+        if verbose:
+            print("buckle:", tuple(np.asarray(State.buckle_arr, dtype=int).reshape(-1)))
+        return State, pos_in_t, force_in_t
+
+    State_initial, pos_warm, force_warm = run_leg(
+        "warm start: flat -> initial pose",
+        init_buckle, flat_tip_pos, flat_tip_angle, initial_tip_pos, initial_tip_angle,
+        init_pos=None,
+    )
+    initial_pos_arr = State_initial.pos_arr.copy()
+    initial_buckle_arr = State_initial.buckle_arr.copy()
+
+    State_pos, pos_pos, force_pos = run_leg(
+        "path A, leg 1: move position first",
+        initial_buckle_arr, initial_tip_pos, initial_tip_angle, final_tip_pos, initial_tip_angle,
+        init_pos=initial_pos_arr,
+    )
+    State_pos_angle, pos_pos_angle, force_pos_angle = run_leg(
+        "path A, leg 2: then move angle",
+        State_pos.buckle_arr, final_tip_pos, initial_tip_angle, final_tip_pos, final_tip_angle,
+        init_pos=State_pos.pos_arr,
+    )
+
+    State_angle, pos_angle, force_angle = run_leg(
+        "path B, leg 1: move angle first",
+        initial_buckle_arr, initial_tip_pos, initial_tip_angle, initial_tip_pos, final_tip_angle,
+        init_pos=initial_pos_arr,
+    )
+    State_angle_pos, pos_angle_pos, force_angle_pos = run_leg(
+        "path B, leg 2: then move position",
+        State_angle.buckle_arr, initial_tip_pos, final_tip_angle, final_tip_pos, final_tip_angle,
+        init_pos=State_angle.pos_arr,
+    )
+
+    buckle_pos_then_angle = tuple(np.asarray(State_pos_angle.buckle_arr, dtype=int).reshape(-1))
+    buckle_angle_then_pos = tuple(np.asarray(State_angle_pos.buckle_arr, dtype=int).reshape(-1))
+    return {
+        "warm_start": (State_initial, pos_warm, force_warm),
+        "position_first": (State_pos, pos_pos, force_pos),
+        "position_then_angle": (State_pos_angle, pos_pos_angle, force_pos_angle),
+        "angle_first": (State_angle, pos_angle, force_angle),
+        "angle_then_position": (State_angle_pos, pos_angle_pos, force_angle_pos),
+        "buckle_position_then_angle": buckle_pos_then_angle,
+        "buckle_angle_then_position": buckle_angle_then_pos,
+        "non_abelian": buckle_pos_then_angle != buckle_angle_then_pos,
+    }
+
+
 # ---------------------------------------------------------------
 # Full experiment from file
 # ---------------------------------------------------------------
