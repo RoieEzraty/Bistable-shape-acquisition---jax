@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import jax.numpy as jnp
 import numpy as np
 import matplotlib.pyplot as plt
@@ -7,7 +9,7 @@ from IPython.display import HTML
 from matplotlib import patches
 from matplotlib.ticker import MaxNLocator
 from matplotlib.animation import FuncAnimation, PillowWriter  # for GIF export
-from matplotlib.colors import BoundaryNorm, ListedColormap, LogNorm
+from matplotlib.colors import BoundaryNorm, ListedColormap, LogNorm, Normalize
 from matplotlib.lines import Line2D
 from scipy.signal import savgol_filter
 from matplotlib.patches import Ellipse, FancyArrowPatch
@@ -16,7 +18,7 @@ from pathlib import Path
 
 from typing import Tuple, List, Union
 from numpy.typing import NDArray
-from typing import TYPE_CHECKING, Callable, Union, Optional
+from typing import TYPE_CHECKING, Callable, Union, Optional, Sequence
 
 import colors, helpers_builders
 
@@ -45,6 +47,143 @@ def plot_accuracy_afo_H(Hs: NDArray, accuracy: NDArray, bars: bool = False) -> t
     fig.tight_layout()
     plt.show()
     return fig, ax
+
+
+def plot_accuracy_loss_hamming_summary(
+        Hs: NDArray,
+        accuracy: NDArray,
+        loss_columns: Sequence[NDArray],
+        hamming_columns: Sequence[NDArray],
+        metric_Hs: Sequence[int],
+        save_path: Optional[str | Path] = None,
+        dpi: int = 300,
+        font_size: float = 16.0
+) -> tuple:
+    """Plot accuracy and initial/final training metrics in one figure.
+
+    The top panel shows accuracy as a function of hinge count. The bottom row
+    follows :func:`plot_loss_columns`: MSE loss and Hamming distance each have
+    initial and final columns, with one row per run. Loss normalization is
+    shared across hinge counts, as is Hamming normalization.
+
+    Parameters
+    ----------
+    Hs, accuracy
+        One-dimensional arrays used in the accuracy panel.
+    loss_columns, hamming_columns
+        Matching sequences of ``(N, 2)`` initial/final metric arrays.
+    metric_Hs
+        Hinge count corresponding to each pair of metric arrays.
+    save_path
+        Optional output path.
+    dpi
+        Resolution used when saving the figure.
+
+    Returns
+    -------
+    fig, axes
+        The figure and a dictionary containing the top and bottom axes.
+    """
+    Hs = np.asarray(Hs)
+    accuracy = np.asarray(accuracy, dtype=float)
+    if Hs.ndim != 1 or accuracy.ndim != 1 or Hs.shape != accuracy.shape:
+        raise ValueError("Hs and accuracy must be one-dimensional arrays of equal length.")
+    if not (len(loss_columns) == len(hamming_columns) == len(metric_Hs)):
+        raise ValueError("loss_columns, hamming_columns, and metric_Hs must have equal lengths.")
+    if len(metric_Hs) == 0:
+        raise ValueError("At least one bottom panel is required.")
+
+    def validate_metric(metric: NDArray) -> NDArray:
+        metric = np.asarray(metric, dtype=float)
+        if metric.ndim != 2 or metric.shape[1] != 2:
+            raise ValueError("Each metric array must have shape (N, 2).")
+        return metric
+
+    losses = []
+    hammings = []
+    for loss, hamming in zip(loss_columns, hamming_columns):
+        loss = validate_metric(loss)
+        hamming = validate_metric(hamming)
+        if loss.shape != hamming.shape:
+            raise ValueError("Each loss/Hamming pair must contain the same number of rows.")
+        losses.append(loss.copy())
+        hammings.append(hamming)
+
+    positive_losses = np.concatenate([loss[np.isfinite(loss) & (loss > 0)] for loss in losses])
+    if positive_losses.size:
+        loss_floor = float(positive_losses.min()) * 0.5
+        loss_norm = LogNorm(vmin=loss_floor, vmax=float(positive_losses.max()))
+        for loss in losses:
+            loss[loss <= 0] = loss_floor
+    else:
+        loss_norm = Normalize(vmin=0.0, vmax=1.0)
+
+    finite_hamming = np.concatenate([hamming[np.isfinite(hamming)] for hamming in hammings])
+    hamming_vmax = max(1.0, float(finite_hamming.max())) if finite_hamming.size else 1.0
+    hamming_norm = Normalize(vmin=0.0, vmax=hamming_vmax)
+
+    colors_lst, _, custom_cmap = colors.color_scheme()
+    fig = plt.figure(figsize=(10.0, 12.0), constrained_layout=True)
+    grid = fig.add_gridspec(
+        4, 2 * len(metric_Hs), height_ratios=(1.0, 2.2, 0.10, 0.10))
+
+    accuracy_ax = fig.add_subplot(grid[0, :])
+    accuracy_ax.bar(Hs, accuracy, color=colors_lst[0], width=0.65)
+    accuracy_ax.set(xlabel=r"$H$", ylabel="Accuracy", ylim=(0, 1))
+    accuracy_ax.xaxis.set_major_locator(MaxNLocator(integer=True))
+    accuracy_ax.spines[["top", "right"]].set_visible(False)
+    accuracy_ax.tick_params(labelsize=font_size)
+    accuracy_ax.xaxis.label.set_size(font_size)
+    accuracy_ax.yaxis.label.set_size(font_size)
+
+    loss_axes = []
+    hamming_axes = []
+    loss_image = None
+    hamming_image = None
+    for group, (hinges, loss, hamming) in enumerate(zip(metric_Hs, losses, hammings)):
+        loss_ax = fig.add_subplot(grid[1, 2 * group])
+        hamming_ax = fig.add_subplot(grid[1, 2 * group + 1], sharey=loss_ax)
+
+        loss_image = loss_ax.imshow(
+            loss, aspect="auto", cmap=custom_cmap, norm=loss_norm, interpolation="nearest")
+        hamming_image = hamming_ax.imshow(
+            hamming, aspect="auto", cmap=custom_cmap, norm=hamming_norm, interpolation="nearest")
+
+        loss_ax.set_title(fr"$H={hinges}$ Loss", fontsize=font_size)
+        hamming_ax.set_title(fr"$H={hinges}$ Hamming", fontsize=font_size)
+        for ax in (loss_ax, hamming_ax):
+            ax.set_xticks([0, 1], labels=["Initial", "Final"], fontsize=font_size)
+            ax.tick_params(axis="y", labelsize=font_size)
+        run_ticks = np.linspace(0, loss.shape[0] - 1, min(6, loss.shape[0]), dtype=int)
+        if group == 0:
+            loss_ax.set_ylabel("Run", fontsize=font_size)
+            loss_ax.set_yticks(run_ticks, labels=(run_ticks + 1).astype(str))
+        else:
+            loss_ax.tick_params(axis="y", left=False, labelleft=False)
+        hamming_ax.tick_params(axis="y", labelleft=False)
+
+        loss_axes.append(loss_ax)
+        hamming_axes.append(hamming_ax)
+
+    loss_colorbar_ax = fig.add_subplot(grid[2, :])
+    hamming_colorbar_ax = fig.add_subplot(grid[3, :])
+    loss_colorbar = fig.colorbar(loss_image, cax=loss_colorbar_ax, orientation="horizontal")
+    loss_colorbar.set_label("Loss", fontsize=font_size)
+    loss_colorbar.ax.tick_params(labelsize=font_size)
+    hamming_colorbar = fig.colorbar(
+        hamming_image, cax=hamming_colorbar_ax, orientation="horizontal")
+    hamming_colorbar.set_label("Hamming", fontsize=font_size)
+    hamming_colorbar.ax.tick_params(labelsize=font_size)
+
+    if save_path is not None:
+        fig.savefig(save_path, dpi=dpi, bbox_inches="tight")
+    plt.show()
+    return fig, {
+        "accuracy": accuracy_ax,
+        "loss": loss_axes,
+        "hamming": hamming_axes,
+        "colorbars": (loss_colorbar, hamming_colorbar),
+    }
 
 
 def plot_arm(pos_vec: np.ndarray, buckle: np.ndarray, L: float, modality: str, show: bool = True, ax=None) -> None:
@@ -1261,7 +1400,8 @@ def plot_success_matrix_with_pathways(M_corr: np.ndarray, N: int, title: str = "
 def plot_transition_diagram(transitions: Counter, *, transitions_between_runs: bool = True,
                             only_reached_nodes: bool = False, edge_zero_loss_count=None, missing_edges=None,
                             layout: str = "layers", initial_state: int | str | None = None,
-                            desired_state: int | str | None = None):
+                            desired_state: int | str | None = None, title: str | None = None,
+                            ax=None, show_legend: bool = True, show: bool = True):
     """
     Plot a directed buckle-transition diagram.
 
@@ -1282,6 +1422,14 @@ def plot_transition_diagram(transitions: Counter, *, transitions_between_runs: b
     initial_state, desired_state : int | str, optional
         Buckle states to highlight. Initial node perimeter uses ``colors_lst[0]``;
         desired node perimeter uses ``colors_lst[1]``.
+    title : str, optional
+        Title displayed above the axes.
+    ax : matplotlib.axes.Axes, optional
+        Existing axes on which to draw. A new figure is created when omitted.
+    show_legend : bool
+        If True, draw the transition legend on these axes.
+    show : bool
+        If True, display the figure after drawing.
     """
     colors_lst, _, _ = colors.color_scheme()
     occured_clr = colors_lst[0]
@@ -1310,17 +1458,24 @@ def plot_transition_diagram(transitions: Counter, *, transitions_between_runs: b
 
     pos = helpers_builders.state_positions(H, layout=layout)
 
+    created_ax = ax is None
     if layout == "ring":
-        fig, ax = plt.subplots(figsize=(10, 10))
-        node_width = 0.11
-        node_height = 0.08
+        if created_ax:
+            fig, ax = plt.subplots(figsize=(10, 10))
+        else:
+            fig = ax.figure
+        node_width = 0.5
+        node_height = 0.25
         node_fontsize = 14 if H >= 5 else 18
-        missing_alpha = 0.2
-        missing_lw = 0.8
+        missing_alpha = 0.8
+        missing_lw = 1.2
     else:
-        fig, ax = plt.subplots(figsize=(12, 8))
-        node_width = 0.1
-        node_height = 0.08
+        if created_ax:
+            fig, ax = plt.subplots(figsize=(12, 8))
+        else:
+            fig = ax.figure
+        node_width = 0.16
+        node_height = 0.12
         node_fontsize = 18
         missing_alpha = 0.75
         missing_lw = 1.5
@@ -1407,7 +1562,8 @@ def plot_transition_diagram(transitions: Counter, *, transitions_between_runs: b
 
     legend_handles += [Line2D([0], [0], color=missing_clr, lw=2, linestyle="--", label="missing")]
 
-    ax.legend(handles=legend_handles, loc="upper right", frameon=False, fontsize=14)
+    if show_legend:
+        ax.legend(handles=legend_handles, loc="upper right", frameon=False, fontsize=14)
 
     if used_nodes:
         visible_xy = np.array([pos[s] for s in used_nodes], dtype=float)
@@ -1419,21 +1575,126 @@ def plot_transition_diagram(transitions: Counter, *, transitions_between_runs: b
     x_center = 0.5 * (x_min + x_max)
     y_center = 0.5 * (y_min + y_max)
     span = max(x_max - x_min, y_max - y_min, node_width, node_height)
-    margin = 0.25 * span if layout == "ring" else 0.12 * span
+    margin = 0.10 * span if layout == "ring" else 0.12 * span
     half_span = 0.5 * span + margin
 
     ax.set_xlim(x_center - half_span, x_center + half_span)
     ax.set_ylim(y_center - half_span, y_center + half_span)
     ax.set_aspect("equal")
     ax.axis("off")
-    plt.tight_layout()
-    plt.show()
+    if title is not None:
+        ax.set_title(title, fontsize=18, fontweight="bold", pad=12)
+    if created_ax:
+        fig.tight_layout()
+    if show:
+        plt.show()
+    return fig, ax
+
+
+def plot_ring_transition_diagrams(
+        position_transitions: Counter,
+        force_transitions: Counter,
+        sweep_transitions: Counter,
+        *,
+        edge_zero_loss_counts: Sequence[Counter | None] = (None, None, None),
+        missing_edges: Sequence[Sequence[tuple[int, int]] | None] = (None, None, None),
+        titles: Sequence[str] = ("Position", "Force", "Random"),
+        transitions_between_runs: bool = True,
+        only_reached_nodes: bool = False,
+        save_stem: str | Path | None = None,
+        export_png: bool = False,
+        export_eps: bool = False,
+        export_pdf: bool = False,
+        dpi: int = 300,
+        show: bool = True,
+):
+    """Plot position, force, and sweep ring-transition diagrams side by side.
+
+    Parameters
+    ----------
+    position_transitions, force_transitions, sweep_transitions : Counter
+        Directed transition counts for the three panels.
+    edge_zero_loss_counts : sequence of Counter or None
+        Zero-loss transition counts, ordered as position, force, and sweep.
+    missing_edges : sequence of edge sequences or None
+        Missing directed edges for each panel, in the same order.
+    titles : sequence of str
+        Titles displayed above the three panels.
+    transitions_between_runs, only_reached_nodes : bool
+        Passed through to :func:`plot_transition_diagram`.
+    save_stem : str or Path, optional
+        Output path without an extension. A supplied suffix is replaced.
+    export_png, export_eps, export_pdf : bool
+        Export the figure in the selected format(s). ``save_stem`` is required
+        when either option is enabled.
+    dpi : int
+        Resolution used for PNG export.
+    show : bool
+        If True, display the completed figure.
+
+    Returns
+    -------
+    tuple
+        ``(fig, axes)`` for further notebook customization.
+    """
+    if len(edge_zero_loss_counts) != 3 or len(missing_edges) != 3 or len(titles) != 3:
+        raise ValueError("edge_zero_loss_counts, missing_edges, and titles must each contain three items.")
+    if (export_png or export_eps or export_pdf) and save_stem is None:
+        raise ValueError("save_stem is required when an export format is enabled.")
+
+    transition_sets = (position_transitions, force_transitions, sweep_transitions)
+    fig, axes = plt.subplots(1, 3, figsize=(20, 7))
+
+    for ax_i, transitions_i, zero_loss_i, missing_i, title_i in zip(
+            axes, transition_sets, edge_zero_loss_counts, missing_edges, titles):
+        plot_transition_diagram(
+            transitions_i,
+            transitions_between_runs=transitions_between_runs,
+            only_reached_nodes=only_reached_nodes,
+            edge_zero_loss_count=zero_loss_i,
+            missing_edges=missing_i,
+            layout="ring",
+            title=title_i,
+            ax=ax_i,
+            show_legend=False,
+            show=False,
+        )
+
+    colors_lst, _, _ = colors.color_scheme()
+    legend_handles = [
+        Line2D([0], [0], color=colors_lst[1], lw=4, label="successful transition"),
+        Line2D([0], [0], color=colors_lst[0], lw=4,
+               label="unintentional" if transitions_between_runs else "occurred"),
+        Line2D([0], [0], color=colors_lst[4], lw=2, linestyle="--", label="missing"),
+    ]
+    if not transitions_between_runs:
+        legend_handles.pop(0)
+    fig.legend(handles=legend_handles, loc="lower center", ncol=len(legend_handles),
+               frameon=False, fontsize=21, bbox_to_anchor=(0.5, 0.01))
+    fig.subplots_adjust(left=0.005, right=0.995, top=0.91, bottom=0.15, wspace=-0.20)
+
+    if save_stem is not None:
+        output_stem = Path(save_stem).with_suffix("")
+        output_stem.parent.mkdir(parents=True, exist_ok=True)
+        if export_png:
+            fig.savefig(output_stem.with_suffix(".png"), dpi=dpi, bbox_inches="tight", facecolor="white")
+        with plt.rc_context({"pdf.fonttype": 42, "ps.fonttype": 42}):
+            if export_eps:
+                fig.savefig(output_stem.with_suffix(".eps"), format="eps", bbox_inches="tight", facecolor="white")
+            if export_pdf:
+                fig.savefig(output_stem.with_suffix(".pdf"), format="pdf", bbox_inches="tight", facecolor="white")
+
+    if show:
+        plt.show()
+    return fig, axes
 
 
 def plot_cumulative_transition_curve(coverage_df: pd.DataFrame, *,
                                      x_col: str = "training_task",
                                      y_col: str = "cumulative_unique_hamming_transitions",
                                      x_label: str | None = None,
+                                     label: str | None = None,
+                                     color_index: int = 0,
                                      save_path: str | Path | None = None,
                                      ax=None):
     """
@@ -1441,6 +1702,8 @@ def plot_cumulative_transition_curve(coverage_df: pd.DataFrame, *,
 
     This helper only draws the time/coverage curve. Building the cumulative
     table and transition diagrams stays in the calling notebook/script.
+    Pass a shared ``ax`` with different labels and color indices to compare
+    several coverage curves on one plot.
     """
     colors_lst, _, _ = colors.color_scheme()
     created_ax = ax is None
@@ -1452,22 +1715,30 @@ def plot_cumulative_transition_curve(coverage_df: pd.DataFrame, *,
     ax.plot(
         coverage_df[x_col],
         coverage_df[y_col],
-        color=colors_lst[0],
+        color=colors_lst[color_index],
         marker="o",
-        markerfacecolor=colors_lst[0],
-        markeredgecolor=colors_lst[0],
+        markerfacecolor=colors_lst[color_index],
+        markeredgecolor=colors_lst[color_index],
         markersize=5,
         lw=2.5,
+        label=label,
     )
     ax.set_xlabel(x_label if x_label is not None else x_col.replace("_", " "))
     ax.set_ylabel("cumulative unique Hamming transitions")
     ax.set_ylim(-2, 64)
-    ax.axhline(64, color=colors_lst[0], linestyle="--", linewidth=2, alpha=0.8)
+    if not any(line.get_gid() == "transition-coverage-limit" for line in ax.lines):
+        limit_line = ax.axhline(
+            64, color=colors_lst[0], linestyle="--", linewidth=2, alpha=0.8
+        )
+        limit_line.set_gid("transition-coverage-limit")
+    if label is not None:
+        ax.legend(frameon=False)
     ax.xaxis.set_major_locator(MaxNLocator(integer=True))
-    ax.grid(False, alpha=0.25, linewidth=0.8)
+    ax.grid(False)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
-    fig.tight_layout()
+    if created_ax:
+        fig.tight_layout()
     if save_path is not None:
         fig.savefig(save_path, dpi=200, bbox_inches="tight")
     if created_ax:
