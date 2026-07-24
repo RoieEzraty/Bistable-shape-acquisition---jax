@@ -1315,12 +1315,16 @@ def build_transition_counts(folder: Path, only_init_and_final_buckles: bool = Fa
             per_file_loss[file.name] = loss
 
         edges_this_file = []
-        if only_init_and_final_buckles:
-            zip_states = zip(states[:1], states[-1:])
+        if only_init_and_final_buckles and not is_sweep_file:  # final run step sometimes screwed
+            # zip_states = zip(states[:1], states[-1:])
+            zip_states = zip(states[:1], states[-2:-1])
         elif is_sweep_file:
-            zip_states = zip([states[0]] * (len(states) - 1), states[1:])
+            if only_init_and_final_buckles:
+                zip_states = zip(states[:1], states[-1:])
+            else:
+                zip_states = zip([states[0]] * (len(states) - 1), states[1:])
         else:
-            zip_states = zip(states[:-1], states[1:])
+            zip_states = zip(states[:-2], states[1:-1])
 
         for a, b in zip_states:
             if a != b:

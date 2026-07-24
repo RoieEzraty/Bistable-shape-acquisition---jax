@@ -11,7 +11,7 @@ from numpy.typing import NDArray
 # ==================================
 # color scheme
 # ==================================
-def color_scheme(show: bool = False) -> Tuple[list[str], str, Colormap]:
+def color_scheme(show: bool = False, add_shim: bool = False) -> Tuple[list[str], str, Colormap]:
     """
     define color scheme and return main colors, main red color and a colormap
 
@@ -27,6 +27,7 @@ def color_scheme(show: bool = False) -> Tuple[list[str], str, Colormap]:
     # Define the custom color scheme as a colormap
     colors_lst = ['#4500E0', '#54CCE0', '#CD23E1', '#9EE1B1', '#E04F68']
     red = '#E04F68'
+    shim = '#3C4861'
 
     # Create the custom colormap for the gradient
     custom_cmap = LinearSegmentedColormap.from_list('custom_cmap', [colors_lst[1], colors_lst[2], colors_lst[0]], N=256)
@@ -56,4 +57,8 @@ def color_scheme(show: bool = False) -> Tuple[list[str], str, Colormap]:
 
         plt.tight_layout()
         plt.show()
+
+    if add_shim:
+        return colors_lst, red, custom_cmap, shim    
+
     return colors_lst, red, custom_cmap

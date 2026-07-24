@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Callable, Union, Optional, Sequence
 
 import colors, helpers_builders
 
+colors_lst, red, custom_cmap, shim = colors.color_scheme(add_shim=True)
 
 # -------------------------------------------------
 # Plot importants
@@ -186,7 +187,18 @@ def plot_accuracy_loss_hamming_summary(
     }
 
 
-def plot_arm(pos_vec: np.ndarray, buckle: np.ndarray, L: float, modality: str, show: bool = True, ax=None) -> None:
+def plot_arm(
+    pos_vec: np.ndarray,
+    buckle: np.ndarray,
+    L: float,
+    modality: str,
+    show: bool = True,
+    ax=None,
+    annotate_tip: bool = True,
+    invert_x: bool = False,
+    invert_y: bool = False,
+    dpi: Optional[float] = None,
+) -> None:
     """
     Plot arm configuration together with buckle direction arrows.
 
@@ -198,22 +210,28 @@ def plot_arm(pos_vec: np.ndarray, buckle: np.ndarray, L: float, modality: str, s
     modality  - Optional[str], selects chain color. ``"measurement"`` and ``"desired"`` use one color, ``"update"`` another.
     show      - bool, if True and ``ax`` not provided, display figure.
     ax        - Optional[Axes], existing matplotlib axes to draw on.
+    dpi       - Optional[float], figure resolution when creating new axes. For
+                example, use ``dpi=300`` for a paper-ready raster figure.
     """
     # ------ prelims ------
-    colors_lst, _, _ = colors.color_scheme()
-
     N_nodes = pos_vec[:, 0].shape[0]
+
+    if invert_x:
+        pos_vec = pos_vec.at[:, 0].set(-pos_vec[:, 0])
+    if invert_y:
+        pos_vec = pos_vec.at[:, 1].set(-pos_vec[:, 1])
 
     # pick axes
     created_ax = ax is None
     if created_ax:
-        _, ax = plt.subplots(figsize=(4, 4))
+        _, ax = plt.subplots(figsize=(4, 4), dpi=dpi)
 
     xs, ys = pos_vec[:, 0], pos_vec[:, 1]
     tip_angle_deg = np.rad2deg(float(helpers_builders._get_tip_angle(pos_vec)))
 
     if modality in {"measurement", "desired"}:
-        clr = colors_lst[0]
+        # clr = colors_lst[0]
+        clr = red
     elif modality == "update":
         clr = colors_lst[2]
     else:
@@ -242,16 +260,16 @@ def plot_arm(pos_vec: np.ndarray, buckle: np.ndarray, L: float, modality: str, s
             continue
 
         arrow = patches.FancyArrowPatch(p, p + (v / norm_v) * 0.004 * N_nodes, arrowstyle="-|>", mutation_scale=25,
-                                        linewidth=3, capstyle="round", joinstyle="round")
+                                        linewidth=3, capstyle="round", joinstyle="round", color=shim)
         try:
             ax.add_patch(arrow)
         except Exception:
             print("bad animation, lets solve this later")
 
     # ------ annotate tip and aesthetics -------
-    # annotate tip
-    ax.annotate(rf"$x={xs[-1]:.2f},\ y={ys[-1]:.2f},\ \theta={tip_angle_deg:.2f}$",
-                xy=(xs[-1], ys[-1]), xytext=(xs[-1] - 0.05, ys[-1] - 0.05))
+    if annotate_tip:
+        ax.annotate(rf"$x={xs[-1]:.2f},\ y={ys[-1]:.2f},\ \theta={tip_angle_deg:.2f}$",
+                    xy=(xs[-1], ys[-1]), xytext=(xs[-1] - 0.05, ys[-1] - 0.05))
 
     # aesthetics
     ax.set_aspect("equal", adjustable="datalim")
