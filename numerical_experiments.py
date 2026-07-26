@@ -363,7 +363,8 @@ def tip_grid_buckle_sweep(Strctr: StructureClass, Variabs: VariablesClass, Sprvs
 # ---------------------------------------------------------------
 def compress_to_tip_pos(Strctr: "StructureClass", Variabs: "VariablesClass", Sprvsr: "SupervisorClass", CFG: ExperimentConfig,
                         buckle: NDArray, tip_pos_i: NDArray, tip_angle_i: float, tip_pos_f: NDArray, tip_angle_f: float,
-                        Eq_iterations: int, init_pos: Optional[NDArray] = None) -> Tuple["StateClass", list[NDArray], list[NDArray]]:
+                        Eq_iterations: int, init_pos: Optional[NDArray] = None, plot: bool = False) -> Tuple["StateClass",
+                                                                                                             list[NDArray], list[NDArray]]:
     """
     Incrementally compress origami to final tip position and angle, ensuring stable convergence, in Eq_iterations steps.
 
@@ -440,9 +441,6 @@ def compress_to_tip_pos(Strctr: "StructureClass", Variabs: "VariablesClass", Spr
     return State, pos_in_t, force_in_t
 
 
-compress_to_tip_position = compress_to_tip_pos
-
-
 def check_non_abelianity(
         Strctr: StructureClass, Variabs: VariablesClass, Sprvsr: SupervisorClass, CFG: ExperimentConfig,
         init_buckle: NDArray, flat_tip_pos: NDArray, flat_tip_angle: float,
@@ -451,10 +449,13 @@ def check_non_abelianity(
         verbose: bool = False) -> dict:
     """Compare final buckle states when tip position and angle are changed in opposite orders."""
 
+    custom_x_lim = [-0.25, 0.01]
+    custom_y_lim = [-0.09, 0.17]
+
     def run_leg(label, buckle, tip_pos_i, tip_angle_i, tip_pos_f, tip_angle_f, init_pos):
         if verbose:
             print(f"\n{label}")
-        State, pos_in_t, force_in_t = compress_to_tip_position(
+        State, pos_in_t, force_in_t = compress_to_tip_pos(
             Strctr, Variabs, Sprvsr, CFG,
             np.asarray(buckle, dtype=int).copy(),
             np.asarray(tip_pos_i, dtype=float), float(tip_angle_i),
@@ -471,6 +472,10 @@ def check_non_abelianity(
         init_buckle, flat_tip_pos, flat_tip_angle, initial_tip_pos, initial_tip_angle,
         init_pos=None,
     )
+    plot_funcs.plot_arm(pos_warm[-1][-1], State_initial.buckle_arr, Strctr.L, 
+                        modality="measurement", show=False, invert_x=True, invert_y = True, 
+                        annotate_tip=False, dpi = 300, x_lim = custom_x_lim, y_lim = custom_y_lim)
+    plt.show()
     initial_pos_arr = State_initial.pos_arr.copy()
     initial_buckle_arr = State_initial.buckle_arr.copy()
 
@@ -479,22 +484,38 @@ def check_non_abelianity(
         initial_buckle_arr, initial_tip_pos, initial_tip_angle, final_tip_pos, initial_tip_angle,
         init_pos=initial_pos_arr,
     )
+    plot_funcs.plot_arm(pos_pos[-1][-1], State_pos.buckle_arr, Strctr.L, 
+                            modality="measurement", show=False, invert_x=True, invert_y = True, 
+                            annotate_tip=False, dpi = 300, x_lim = custom_x_lim, y_lim = custom_y_lim)
+    plt.show()
     State_pos_angle, pos_pos_angle, force_pos_angle = run_leg(
         "path A, leg 2: then move angle",
         State_pos.buckle_arr, final_tip_pos, initial_tip_angle, final_tip_pos, final_tip_angle,
         init_pos=State_pos.pos_arr,
     )
-
+    plot_funcs.plot_arm(pos_pos_angle[-1][-1], State_pos_angle.buckle_arr, Strctr.L, 
+                                modality="measurement", show=False, invert_x=True, invert_y = True, 
+                                annotate_tip=False, dpi = 300, x_lim = custom_x_lim, y_lim = custom_y_lim)
+    plt.show()
     State_angle, pos_angle, force_angle = run_leg(
         "path B, leg 1: move angle first",
         initial_buckle_arr, initial_tip_pos, initial_tip_angle, initial_tip_pos, final_tip_angle,
         init_pos=initial_pos_arr,
     )
+    plot_funcs.plot_arm(pos_angle[-1][-1], State_angle.buckle_arr, Strctr.L, 
+                                    modality="measurement", show=False, invert_x=True, invert_y = True, 
+                                    annotate_tip=False, dpi = 300, x_lim = custom_x_lim, y_lim = custom_y_lim)
+    plt.show()
+
     State_angle_pos, pos_angle_pos, force_angle_pos = run_leg(
         "path B, leg 2: then move position",
         State_angle.buckle_arr, initial_tip_pos, final_tip_angle, final_tip_pos, final_tip_angle,
         init_pos=State_angle.pos_arr,
     )
+    plot_funcs.plot_arm(pos_angle_pos[-1][-1], State_angle_pos.buckle_arr, Strctr.L, 
+                                    modality="measurement", show=False, invert_x=True, invert_y = True, 
+                                    annotate_tip=False, dpi = 300, x_lim = custom_x_lim, y_lim = custom_y_lim)
+    plt.show()
 
     buckle_pos_then_angle = tuple(np.asarray(State_pos_angle.buckle_arr, dtype=int).reshape(-1))
     buckle_angle_then_pos = tuple(np.asarray(State_angle_pos.buckle_arr, dtype=int).reshape(-1))
@@ -624,7 +645,7 @@ def measure_determined_pos_from_file(Strctr: "StructureClass", Variabs: "Variabl
 # ---------------------------------------------------------------
 def one_shot(Strctr: "StructureClass", Variabs: "VariablesClass", Sprvsr: "SupervisorClass", State: "StateClass",
              CFG: ExperimentConfig, buckle: NDArray, tip_pos: NDArray, tip_angle: float, control_tip: bool = True,
-             init_pos: Optional[np.ndarray] = None, t: int = 0) -> Tuple[NDArray, NDArray]:
+             init_pos: Optional[np.ndarray] = None, t: int = 0, plot: bool = False) -> Tuple[NDArray, NDArray]:
     """
     Perform a single equilibrium computation and state update for the system.
 
@@ -673,8 +694,9 @@ def one_shot(Strctr: "StructureClass", Variabs: "VariablesClass", Sprvsr: "Super
     print('pos_arr', final_pos)
     print('edge len', Strctr.all_edge_lengths(State.pos_arr))
     print('total edge error', np.sum((Strctr.all_edge_lengths(State.pos_arr)-Strctr.L)**2)/(Strctr.edges*Strctr.L**2))
-    plot_funcs.plot_arm(State.pos_arr, State.buckle_arr, Strctr.L, modality="measurement")
-    plt.show()
+    if plot:
+        plot_funcs.plot_arm(State.pos_arr, State.buckle_arr, Strctr.L, modality="measurement")
+        plt.show()
     return pos_in_t, F_in_t[-1]
 
 
