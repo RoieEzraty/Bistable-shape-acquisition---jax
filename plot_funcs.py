@@ -198,6 +198,8 @@ def plot_arm(
     invert_x: bool = False,
     invert_y: bool = False,
     dpi: Optional[float] = None,
+    x_lim: Optional[Sequence[float]] = None,
+    y_lim: Optional[Sequence[float]] = None,
 ) -> None:
     """
     Plot arm configuration together with buckle direction arrows.
@@ -210,16 +212,21 @@ def plot_arm(
     modality  - Optional[str], selects chain color. ``"measurement"`` and ``"desired"`` use one color, ``"update"`` another.
     show      - bool, if True and ``ax`` not provided, display figure.
     ax        - Optional[Axes], existing matplotlib axes to draw on.
+    invert_x  - bool, mirror the plotted coordinates about the y-axis.
+    invert_y  - bool, mirror the plotted coordinates about the x-axis.
     dpi       - Optional[float], figure resolution when creating new axes. For
                 example, use ``dpi=300`` for a paper-ready raster figure.
+    x_lim     - Optional two-value sequence with the fixed x-axis limits.
+    y_lim     - Optional two-value sequence with the fixed y-axis limits.
     """
     # ------ prelims ------
+    pos_vec = np.asarray(pos_vec).copy()
     N_nodes = pos_vec[:, 0].shape[0]
 
     if invert_x:
-        pos_vec = pos_vec.at[:, 0].set(-pos_vec[:, 0])
+        pos_vec[:, 0] *= -1
     if invert_y:
-        pos_vec = pos_vec.at[:, 1].set(-pos_vec[:, 1])
+        pos_vec[:, 1] *= -1
 
     # pick axes
     created_ax = ax is None
@@ -272,9 +279,18 @@ def plot_arm(
                     xy=(xs[-1], ys[-1]), xytext=(xs[-1] - 0.05, ys[-1] - 0.05))
 
     # aesthetics
-    ax.set_aspect("equal", adjustable="datalim")
-    ax.set_xlim(xs.min() - 0.5 * L, xs.max() + 0.5 * L)
-    ax.set_ylim(ys.min() - 0.5 * L, ys.max() + 0.5 * L)
+    # ``adjustable="datalim"`` changes one of the requested limits at draw
+    # time in order to obtain an equal aspect ratio.  Adjust the axes box
+    # instead so explicitly supplied limits remain unchanged.
+    ax.set_aspect("equal", adjustable="box")
+    if x_lim is not None:
+        ax.set_xlim(x_lim[0], x_lim[1])
+    else:
+        ax.set_xlim(xs.min() - 0.5 * L, xs.max() + 0.5 * L)
+    if y_lim is not None:
+        ax.set_ylim(y_lim[0], y_lim[1])
+    else:
+        ax.set_ylim(ys.min() - 0.5 * L, ys.max() + 0.5 * L)
     ax.set_xlabel("x")
     ax.set_ylabel("y")
     ax.set_title(modality if modality is not None

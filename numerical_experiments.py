@@ -537,8 +537,8 @@ def check_non_abelianity(
 def measure_determined_pos_from_file(Strctr: "StructureClass", Variabs: "VariablesClass", Sprvsr: "SupervisorClass",
                                      CFG: ExperimentConfig, path: str, buckle: NDArray,
                                      stretch_factor: Optional[float] = None, order: str = 'fwd_and_bcwrd',
-                                     reset_every_step: bool = False,
-                                     out_filename: Optional[str] = None) -> Tuple[NDArray, NDArray, NDArray]:
+                                     reset_every_step: bool = False,out_filename: Optional[str] = None,
+                                     plot: Optional[bool] = False) -> Tuple[NDArray, NDArray, NDArray]:
     """
     tip performs prescribed trajectory from a CSV file, measure simulated tip forces. Export results to csv,
 
@@ -604,7 +604,7 @@ def measure_determined_pos_from_file(Strctr: "StructureClass", Variabs: "Variabl
         tip_angle = float(P[i, 2])
 
         pos_traj, final_F = one_shot(Strctr, Variabs, Sprvsr, State, CFG, buckle, tip_pos, tip_angle,
-                                     init_pos=prev_final_pos, t=i)
+                                     init_pos=prev_final_pos, t=i, plot=plot)
 
         # Record simulated forces (State updated inside one_shot)
         F_x_vec[i] = State.Fx
@@ -695,7 +695,8 @@ def one_shot(Strctr: "StructureClass", Variabs: "VariablesClass", Sprvsr: "Super
     print('edge len', Strctr.all_edge_lengths(State.pos_arr))
     print('total edge error', np.sum((Strctr.all_edge_lengths(State.pos_arr)-Strctr.L)**2)/(Strctr.edges*Strctr.L**2))
     if plot:
-        plot_funcs.plot_arm(State.pos_arr, State.buckle_arr, Strctr.L, modality="measurement")
+        plot_funcs.plot_arm(State.pos_arr, State.buckle_arr, Strctr.L, modality="measurement", annotate_tip = False,
+                            invert_x = True, invert_y = True, x_lim = [-0.25, 0.01], y_lim=[-0.12, .12])
         plt.show()
     return pos_in_t, F_in_t[-1]
 
