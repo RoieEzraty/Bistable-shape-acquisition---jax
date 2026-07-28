@@ -594,6 +594,215 @@ def export_training_npz(path_npz: str, **arrays):
     np.savez_compressed(path_npz, **arrays)
 
 
+def export_tip_grid_buckle_map_npz(path_npz: str | Path, Sprvsr: "SupervisorClass",
+                                   buckle_grid_frames: NDArray, *, y_num: int,
+                                   theta_num: int, snake: bool = True,
+                                   init_buckle: Optional[NDArray] = None) -> Path:
+    """Export the final buckle and tip pose at every tip-grid point.
+
+    The saved arrays use canonical grid order: increasing ``y`` along axis 0
+    and increasing ``theta`` along axis 1. If the sweep used snake ordering,
+    the odd rows are reversed before saving.
+
+    ``buckle_matrix`` has shape ``(y_num, theta_num, hinges, shims)``.
+    ``grid_points`` has shape ``(y_num, theta_num, 3)`` and stores
+    ``[x, y, theta]`` in simulation units (metres and radians).
+    """
+    path_npz = Path(path_npz)
+    path_npz.parent.mkdir(parents=True, exist_ok=True)
+
+    target_indices = np.asarray(Sprvsr.tip_grid_target_indices, dtype=int)
+    frames = np.asarray(buckle_grid_frames, dtype=np.int32)
+    target_buckles = frames[target_indices]
+    target_points = np.column_stack((
+        np.asarray(Sprvsr.tip_grid_base_pos_in_t, dtype=np.float32),
+        np.asarray(Sprvsr.tip_grid_base_angle_in_t, dtype=np.float32),
+    ))
+
+    expected_targets = 1 + int(y_num) * int(theta_num)
+    if len(target_indices) != expected_targets or len(target_points) != expected_targets:
+        raise ValueError(
+            f"Expected {expected_targets} targets including the leading flat pose, "
+            f"got {len(target_indices)} buckle targets and {len(target_points)} grid points."
+        )
+
+    buckle_matrix = target_buckles[1:].reshape(y_num, theta_num, *target_buckles.shape[1:])
+    grid_points = target_points[1:].reshape(y_num, theta_num, 3)
+    if snake:
+        buckle_matrix[1::2] = buckle_matrix[1::2, ::-1].copy()
+        grid_points[1::2] = grid_points[1::2, ::-1].copy()
+
+    buckle_ids = np.asarray([
+        helpers_builders.buckle_to_index(buckle.reshape(-1))
+        for buckle in buckle_matrix.reshape(-1, *buckle_matrix.shape[2:])
+    ], dtype=np.int32).reshape(y_num, theta_num)
+
+    arrays: dict[str, Any] = {
+        "buckle_matrix": buckle_matrix,
+        "buckle_ids": buckle_ids,
+        "grid_points": grid_points,
+        "y_values": grid_points[:, 0, 1],
+        "theta_values": grid_points[0, :, 2],
+        "x_values": grid_points[:, 0, 0],
+        "y_num": np.int32(y_num),
+        "theta_num": np.int32(theta_num),
+        "source_snake": np.bool_(snake),
+        "y_scale": np.float32(Sprvsr.convert_pos),
+    }
+    if init_buckle is not None:
+        arrays["init_buckle"] = np.asarray(init_buckle, dtype=np.int32)
+
+    np.savez_compressed(path_npz, **arrays)
+    return path_npz
+
+
+def load_tip_grid_buckle_maps_from_csvs(
+        directory: str | Path, *, pos_scale: float = 1000.0,
+        angle_scale: float = 180.0 / np.pi
+        ) -> dict[str, dict[str, Any]]:
+    """Reconstruct canonical tip-grid buckle maps from transition CSV files.
+
+    Parameters
+    ----------
+    directory : str or Path
+        Directory containing files named
+        ``init_<bits>_finalTip_x=<x>_y=<y>_theta=<theta>.csv``.
+    pos_scale : float, default=1000
+        Position export scale used by the CSVs. Exported positions are divided
+        by this value so returned grid points are in simulation units.
+    angle_scale : float, default=180/pi
+        Angle export scale used by the CSVs. Exported angles are divided by
+        this value so returned grid points are in radians.
+
+    Returns
+    -------
+    dict[str, dict[str, Any]]
+        Mapping from initial buckle bit string to a grid-data dictionary. Each
+        dictionary contains:
+
+        - ``buckle_matrix``: ``(y, theta, hinges, shims)``
+        - ``buckle_grid_frames``: flattened canonical grid frames
+        - ``buckle_ids``: ``(y, theta)``
+        - ``grid_points``: ``(y, theta, 3)`` storing ``[x, y, theta]``
+        - ``x_values``, ``y_values``, and ``theta_values``
+        - ``source_files``: ``(y, theta)`` filenames
+
+        Both grid axes are sorted in increasing order, independent of the
+        original snake sweep order.
+    """
+    if pos_scale == 0 or angle_scale == 0:
+        raise ValueError("pos_scale and angle_scale must be nonzero.")
+
+    directory = Path(directory)
+    pattern = "init_*_finalTip_x=*_y=*_theta=*.csv"
+    files = sorted(directory.glob(pattern))
+    if not files:
+        raise FileNotFoundError(f"No files matching {pattern!r} in {directory}")
+
+    filename_re = re.compile(
+        r"^init_([01]+)_finalTip_x=.*_y=.*_theta=.*\.csv$"
+    )
+    records_by_init: dict[str, list[dict[str, Any]]] = {}
+    required_columns = {
+        "upd_x_tip", "upd_y_tip", "upd_tip_angle", "buckle_arr_update",
+    }
+
+    for path in files:
+        match = filename_re.fullmatch(path.name)
+        if match is None:
+            continue
+
+        with open(path, newline="", encoding="utf-8") as csv_file:
+            reader = csv.DictReader(csv_file)
+            missing_columns = required_columns - set(reader.fieldnames or [])
+            if missing_columns:
+                raise ValueError(
+                    f"{path.name} is missing required columns: {sorted(missing_columns)}"
+                )
+            final_rows = deque(reader, maxlen=1)
+        if not final_rows:
+            raise ValueError(f"{path.name} contains no transition rows.")
+
+        final_row = final_rows[0]
+        init_bits = match.group(1)
+        records_by_init.setdefault(init_bits, []).append({
+            "x": round(float(final_row["upd_x_tip"]) / pos_scale, 8),
+            "y": round(float(final_row["upd_y_tip"]) / pos_scale, 8),
+            "theta": round(float(final_row["upd_tip_angle"]) / angle_scale, 8),
+            "buckle": helpers_builders.buckle_cell_to_array(
+                final_row["buckle_arr_update"]
+            ).astype(np.int32),
+            "file": path.name,
+        })
+
+    maps: dict[str, dict[str, Any]] = {}
+    for init_bits, records in sorted(records_by_init.items()):
+        y_values = np.asarray(sorted({record["y"] for record in records}), dtype=float)
+        theta_values = np.asarray(
+            sorted({record["theta"] for record in records}), dtype=float
+        )
+        expected_files = len(y_values) * len(theta_values)
+        if len(records) != expected_files:
+            raise ValueError(
+                f"Initial buckle {init_bits} has {len(records)} files but its "
+                f"{len(y_values)} x {len(theta_values)} grid requires {expected_files}."
+            )
+
+        buckle_shape = records[0]["buckle"].shape
+        buckle_matrix = np.empty(
+            (len(y_values), len(theta_values), *buckle_shape), dtype=np.int32
+        )
+        grid_points = np.empty((len(y_values), len(theta_values), 3), dtype=float)
+        source_files = np.empty((len(y_values), len(theta_values)), dtype=object)
+        occupied = np.zeros((len(y_values), len(theta_values)), dtype=bool)
+        y_index = {value: i for i, value in enumerate(y_values)}
+        theta_index = {value: i for i, value in enumerate(theta_values)}
+
+        for record in records:
+            if record["buckle"].shape != buckle_shape:
+                raise ValueError(
+                    f"Inconsistent buckle shape in {record['file']}: "
+                    f"expected {buckle_shape}, got {record['buckle'].shape}."
+                )
+            yi = y_index[record["y"]]
+            ti = theta_index[record["theta"]]
+            if occupied[yi, ti]:
+                raise ValueError(
+                    f"Duplicate grid point y={record['y']}, theta={record['theta']} "
+                    f"for initial buckle {init_bits}."
+                )
+            occupied[yi, ti] = True
+            buckle_matrix[yi, ti] = record["buckle"]
+            grid_points[yi, ti] = [record["x"], record["y"], record["theta"]]
+            source_files[yi, ti] = record["file"]
+
+        if not np.all(occupied):
+            raise ValueError(f"Initial buckle {init_bits} has missing grid points.")
+
+        buckle_ids = np.asarray([
+            helpers_builders.buckle_to_index(buckle.reshape(-1))
+            for buckle in buckle_matrix.reshape(-1, *buckle_shape)
+        ], dtype=np.int32).reshape(len(y_values), len(theta_values))
+
+        maps[init_bits] = {
+            "buckle_matrix": buckle_matrix,
+            "buckle_grid_frames": buckle_matrix.reshape(
+                len(y_values) * len(theta_values), *buckle_shape
+            ),
+            "buckle_ids": buckle_ids,
+            "grid_points": grid_points,
+            "x_values": grid_points[:, 0, 0],
+            "y_values": y_values,
+            "theta_values": theta_values,
+            "y_num": len(y_values),
+            "theta_num": len(theta_values),
+            "source_files": source_files,
+            "y_scale": float(pos_scale),
+        }
+
+    return maps
+
+
 def export_tip_grid_transition_csvs(output_dir: str | Path, Sprvsr: "SupervisorClass",
                                     State_grid: "StateClass", init_buckle: NDArray,
                                     *, include_flat_target: bool = False) -> list[Path]:

@@ -1256,8 +1256,10 @@ def build_transition_counts(folder: Path, only_init_and_final_buckles: bool = Fa
     Go over all training/sweep CSV files and extract directed buckle transitions.
 
     Training files use consecutive transitions, ``state[t-1] -> state[t]``.
-    Sweep files are independent trials from the initial buckle, so they use
-    ``state[0] -> state[t]`` for every saved sweep step.
+    Legacy aggregated sweep files contain many independent grid trials and use
+    ``state[0] -> state[t]``. Per-target ``init_*_finalTip_*`` sweep files
+    contain one ordered path and use consecutive initial -> middle -> final
+    transitions.
 
     Parameters
     ----------
@@ -1278,8 +1280,10 @@ def build_transition_counts(folder: Path, only_init_and_final_buckles: bool = Fa
     per_file_loss = {}
     edge_zero_loss_count = Counter()  # all zeros initially
 
-    training_patterns = ("final_loss_*.csv", "init_*_finalTip_x=*_y=*_theta=*.csv")
-    sweep_patterns = ("tip_grid_buckle_sweep_*.csv", "tip_buckle*.csv")
+    training_patterns = ("final_loss_*.csv",)
+    aggregate_sweep_patterns = ("tip_grid_buckle_sweep_*.csv", "tip_buckle*.csv")
+    target_sweep_patterns = ("init_*_finalTip_x=*_y=*_theta=*.csv",)
+    sweep_patterns = aggregate_sweep_patterns + target_sweep_patterns
     file_patterns = training_patterns + sweep_patterns
     files = sorted({file for pattern in file_patterns for file in folder.glob(pattern)})
     if not files:
@@ -1289,6 +1293,12 @@ def build_transition_counts(folder: Path, only_init_and_final_buckles: bool = Fa
 
     for file in files:
         is_sweep_file = any(file.match(pattern) for pattern in sweep_patterns)
+        is_aggregate_sweep_file = any(
+            file.match(pattern) for pattern in aggregate_sweep_patterns
+        )
+        is_target_sweep_file = any(
+            file.match(pattern) for pattern in target_sweep_patterns
+        )
         df = pd.read_csv(file)
 
         states = []
@@ -1318,11 +1328,16 @@ def build_transition_counts(folder: Path, only_init_and_final_buckles: bool = Fa
         if only_init_and_final_buckles and not is_sweep_file:  # final run step sometimes screwed
             # zip_states = zip(states[:1], states[-1:])
             zip_states = zip(states[:1], states[-2:-1])
-        elif is_sweep_file:
+        elif is_aggregate_sweep_file:
             if only_init_and_final_buckles:
                 zip_states = zip(states[:1], states[-1:])
             else:
                 zip_states = zip([states[0]] * (len(states) - 1), states[1:])
+        elif is_target_sweep_file:
+            if only_init_and_final_buckles:
+                zip_states = zip(states[:1], states[-1:])
+            else:
+                zip_states = zip(states[:-1], states[1:])
         else:
             zip_states = zip(states[:-2], states[1:-1])
 

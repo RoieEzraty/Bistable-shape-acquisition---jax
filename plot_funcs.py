@@ -200,6 +200,7 @@ def plot_arm(
     dpi: Optional[float] = None,
     x_lim: Optional[Sequence[float]] = None,
     y_lim: Optional[Sequence[float]] = None,
+    font_size: Optional[float] = None,
 ) -> None:
     """
     Plot arm configuration together with buckle direction arrows.
@@ -218,6 +219,7 @@ def plot_arm(
                 example, use ``dpi=300`` for a paper-ready raster figure.
     x_lim     - Optional two-value sequence with the fixed x-axis limits.
     y_lim     - Optional two-value sequence with the fixed y-axis limits.
+    font_size - Optional font size for the title, axis labels, and tick labels.
     """
     # ------ prelims ------
     pos_vec = np.asarray(pos_vec).copy()
@@ -242,7 +244,7 @@ def plot_arm(
     elif modality == "update":
         clr = colors_lst[2]
     else:
-        clr = colors_lst[1]
+        clr = red
 
     # ------ chain faces and nodes ------
     ax.plot(xs, ys, linewidth=4, color=clr)
@@ -291,10 +293,16 @@ def plot_arm(
         ax.set_ylim(y_lim[0], y_lim[1])
     else:
         ax.set_ylim(ys.min() - 0.5 * L, ys.max() + 0.5 * L)
-    ax.set_xlabel("x")
-    ax.set_ylabel("y")
-    ax.set_title(modality if modality is not None
-                 else f"Tip (x, y, theta)=({xs[-1]:.2f}, {ys[-1]:.2f}, {tip_angle_deg:.2f})")
+    text_kwargs = {} if font_size is None else {"fontsize": font_size}
+    ax.set_xlabel("x", **text_kwargs)
+    ax.set_ylabel("y", **text_kwargs)
+    ax.set_title(
+        modality if modality is not None
+        else None,
+        **text_kwargs,
+    )
+    if font_size is not None:
+        ax.tick_params(axis="both", labelsize=font_size)
 
     if show and created_ax:
         plt.show()
@@ -506,7 +514,8 @@ def buckle_state_colormap(n_bits: int) -> tuple[ListedColormap, BoundaryNorm]:
 def plot_tip_grid_buckle_ids(buckle_grid_frames: NDArray, y_num: int, theta_num: int,
                              theta_min: float, theta_max: float, y_min: float, y_max: float, *,
                              grid_start: int = 1, snake: bool = True, y_scale: float = 1000.0,
-                             save_path: Optional[str | Path] = None, show: bool = True, ax=None
+                             save_path: Optional[str | Path] = None, show: bool = True,
+                             font_size: Optional[float] = None, ax=None
                              ) -> tuple[plt.Figure, plt.Axes, NDArray[np.int32]]:
     """
     Plot the final buckle state reached at each y/theta grid point.
@@ -543,9 +552,12 @@ def plot_tip_grid_buckle_ids(buckle_grid_frames: NDArray, y_num: int, theta_num:
         fig = ax.figure
 
     ax.imshow(buckle_ids, origin="lower", aspect="auto", extent=extent, cmap=cmap, norm=norm)
-    ax.set_xlabel("tip angle [rad]")
-    ax.set_ylabel("tip y [mm]")
-    ax.set_title("Buckle state after update sweep")
+    text_kwargs = {} if font_size is None else {"fontsize": font_size}
+    ax.set_xlabel("tip angle [rad]", **text_kwargs)
+    ax.set_ylabel("tip y [mm]", **text_kwargs)
+    ax.set_title("Buckle state after update sweep", **text_kwargs)
+    if font_size is not None:
+        ax.tick_params(axis="both", labelsize=font_size)
 
     observed_ids = sorted(int(idx) for idx in np.unique(buckle_ids))
     handles = [
@@ -553,7 +565,16 @@ def plot_tip_grid_buckle_ids(buckle_grid_frames: NDArray, y_num: int, theta_num:
         for idx in observed_ids
     ]
     if handles:
-        ax.legend(handles=handles, title="buckle", bbox_to_anchor=(1.02, 1), loc="upper left")
+        legend_kwargs = {}
+        if font_size is not None:
+            legend_kwargs = {"fontsize": font_size, "title_fontsize": font_size}
+        ax.legend(
+            handles=handles,
+            title="buckle",
+            bbox_to_anchor=(1.02, 1),
+            loc="upper left",
+            **legend_kwargs,
+        )
 
     if save_path is not None:
         fig.savefig(save_path, dpi=200, bbox_inches="tight")
@@ -561,6 +582,51 @@ def plot_tip_grid_buckle_ids(buckle_grid_frames: NDArray, y_num: int, theta_num:
         plt.show()
 
     return fig, ax, buckle_ids
+
+
+def plot_tip_grid_buckle_ids_from_npz(path_npz: str | Path, *,
+                                      save_path: Optional[str | Path] = None,
+                                      show: bool = True,
+                                      font_size: Optional[float] = None, ax=None
+                                      ) -> tuple[plt.Figure, plt.Axes, NDArray[np.int32]]:
+    """Load and plot a completed tip-grid buckle-map archive.
+
+    Archives written by ``file_funcs.export_tip_grid_buckle_map_npz`` are
+    already arranged in canonical increasing-y/increasing-theta grid order.
+    """
+    with np.load(path_npz, allow_pickle=False) as data:
+        buckle_matrix = np.asarray(data["buckle_matrix"], dtype=np.int32)
+        grid_points = np.asarray(data["grid_points"], dtype=float)
+        y_scale = float(data["y_scale"]) if "y_scale" in data else 1000.0
+
+    if buckle_matrix.ndim != 4:
+        raise ValueError(
+            "Saved buckle_matrix must have shape (y_num, theta_num, hinges, shims)."
+        )
+    if grid_points.shape != (*buckle_matrix.shape[:2], 3):
+        raise ValueError(
+            "Saved grid_points must have shape (y_num, theta_num, 3) aligned "
+            "with buckle_matrix."
+        )
+
+    y_num, theta_num = buckle_matrix.shape[:2]
+    frames = buckle_matrix.reshape(y_num * theta_num, *buckle_matrix.shape[2:])
+    return plot_tip_grid_buckle_ids(
+        frames,
+        y_num=y_num,
+        theta_num=theta_num,
+        theta_min=float(np.min(grid_points[:, :, 2])),
+        theta_max=float(np.max(grid_points[:, :, 2])),
+        y_min=float(np.min(grid_points[:, :, 1])),
+        y_max=float(np.max(grid_points[:, :, 1])),
+        grid_start=0,
+        snake=False,
+        y_scale=y_scale,
+        save_path=save_path,
+        show=show,
+        font_size=font_size,
+        ax=ax,
+    )
 
 
 # ------------------------------------------------

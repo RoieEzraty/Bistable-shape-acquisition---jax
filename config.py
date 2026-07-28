@@ -180,14 +180,14 @@ class TrainingConfig:
     # init_buckle_pattern: tuple = (1)  # initial buckle, 1=up
 
     # dataset_sampling: str = 'uniform'  # random uniform vals for x, y, angle
-    dataset_sampling: str = 'predetermined'  # import measured F along predetermined trajectory every training step t
+    # dataset_sampling: str = 'predetermined'  # import measured F along predetermined trajectory every training step t
     # dataset_sampling: str = 'free_tip'  # free tip pos and angle (zero forces at sensor) during measurement
     # dataset_sampling: str = 'specified'  # constant
     # dataset_sampling: str = 'tile'  # constant
     # dataset_sampling = 'almost_flat'  # flat piece w a bit of constant noise, single measurement
     # dataset_sampling = 'flat'  # flat piece, single measurement
     # dataset_sampling = 'stress strain'
-    # dataset_sampling: str = 'tip_grid_sweep'  # update-only y/theta grid, for monitoring buckling
+    dataset_sampling: str = 'tip_grid_sweep'  # update-only y/theta grid, for monitoring buckling
 
     # predet_traj_file: str = r"Predetermined trajectory\July14_H5\example_traj_H5_Mar22Like.csv"
     predet_traj_file: str = r"Predetermined trajectory\July17_H6\example_traj_H6_Mar22Like.csv"
