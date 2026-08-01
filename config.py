@@ -13,9 +13,9 @@ import numpy as np
 MATERIAL = "Roie_metal"
 
 # HINGES: int = 5  # Hinges
-HINGES: int = 6  # Hinges
+# HINGES: int = 6  # Hinges
 # HINGES: int = 8  # Hinges
-# HINGES: int = 4  # Hinges
+HINGES: int = 4  # Hinges
 
 L: float = 0.0472  # [m] length of each edge
 
@@ -170,7 +170,7 @@ class TrainingConfig:
     if desired_buckle_type == 'random':
         desired_buckle_rand_key: int = 169  # key for seed of random sampling of buckle pattern
     elif desired_buckle_type == 'specified':
-        desired_buckle_pattern: tuple = (-1, 1, 1, -1)  # desired buckle, 1=up
+        desired_buckle_pattern: tuple = (-1, -1, -1, -1)  # desired buckle, 1=up
         # desired_buckle_pattern: tuple = (1, 1, 1, 1, 1)  # desired buckle, 1=up
         # desired_buckle_pattern: tuple = (1, -1, -1, -1, -1, 1, 1, 1)  # desired buckle, 1=up
 
