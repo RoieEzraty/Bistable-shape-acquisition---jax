@@ -449,7 +449,7 @@ def check_non_abelianity(
         verbose: bool = False) -> dict:
     """Compare final buckle states when tip position and angle are changed in opposite orders."""
 
-    custom_x_lim = [-0.25, 0.01]
+    custom_x_lim = [-0.01, 0.25]
     custom_y_lim = [-0.09, 0.17]
 
     def run_leg(label, buckle, tip_pos_i, tip_angle_i, tip_pos_f, tip_angle_f, init_pos):
@@ -472,9 +472,10 @@ def check_non_abelianity(
         init_buckle, flat_tip_pos, flat_tip_angle, initial_tip_pos, initial_tip_angle,
         init_pos=None,
     )
-    plot_funcs.plot_arm(pos_warm[-1][-1], State_initial.buckle_arr, Strctr.L, 
-                        modality="measurement", show=False, invert_x=True, invert_y = True, 
-                        annotate_tip=False, dpi = 300, x_lim = custom_x_lim, y_lim = custom_y_lim)
+    plot_funcs.plot_arm(pos_warm[-1][-1], -State_initial.buckle_arr, Strctr.L, 
+                        modality=None, show=False, invert_x=False, invert_y = True, 
+                        annotate_tip=False, dpi = 300, x_lim = custom_x_lim, y_lim = custom_y_lim, font_size=20, save="pdf")
+    
     plt.show()
     initial_pos_arr = State_initial.pos_arr.copy()
     initial_buckle_arr = State_initial.buckle_arr.copy()
@@ -484,27 +485,27 @@ def check_non_abelianity(
         initial_buckle_arr, initial_tip_pos, initial_tip_angle, final_tip_pos, initial_tip_angle,
         init_pos=initial_pos_arr,
     )
-    plot_funcs.plot_arm(pos_pos[-1][-1], State_pos.buckle_arr, Strctr.L, 
-                            modality="measurement", show=False, invert_x=True, invert_y = True, 
-                            annotate_tip=False, dpi = 300, x_lim = custom_x_lim, y_lim = custom_y_lim)
+    plot_funcs.plot_arm(pos_pos[-1][-1], -State_pos.buckle_arr, Strctr.L, 
+                        modality=None, show=False, invert_x=False, invert_y = True, 
+                        annotate_tip=False, dpi = 300, x_lim = custom_x_lim, y_lim = custom_y_lim, font_size=20, save="pdf")
     plt.show()
     State_pos_angle, pos_pos_angle, force_pos_angle = run_leg(
         "path A, leg 2: then move angle",
         State_pos.buckle_arr, final_tip_pos, initial_tip_angle, final_tip_pos, final_tip_angle,
         init_pos=State_pos.pos_arr,
     )
-    plot_funcs.plot_arm(pos_pos_angle[-1][-1], State_pos_angle.buckle_arr, Strctr.L, 
-                                modality="measurement", show=False, invert_x=True, invert_y = True, 
-                                annotate_tip=False, dpi = 300, x_lim = custom_x_lim, y_lim = custom_y_lim)
+    plot_funcs.plot_arm(pos_pos_angle[-1][-1], -State_pos_angle.buckle_arr, Strctr.L, 
+                        modality=None, show=False, invert_x=False, invert_y = True, 
+                        annotate_tip=False, dpi = 300, x_lim = custom_x_lim, y_lim = custom_y_lim, font_size=20, save="pdf")
     plt.show()
     State_angle, pos_angle, force_angle = run_leg(
         "path B, leg 1: move angle first",
         initial_buckle_arr, initial_tip_pos, initial_tip_angle, initial_tip_pos, final_tip_angle,
         init_pos=initial_pos_arr,
     )
-    plot_funcs.plot_arm(pos_angle[-1][-1], State_angle.buckle_arr, Strctr.L, 
-                                    modality="measurement", show=False, invert_x=True, invert_y = True, 
-                                    annotate_tip=False, dpi = 300, x_lim = custom_x_lim, y_lim = custom_y_lim)
+    plot_funcs.plot_arm(pos_angle[-1][-1], -State_angle.buckle_arr, Strctr.L, 
+                        modality=None, show=False, invert_x=False, invert_y = True, 
+                        annotate_tip=False, dpi = 300, x_lim = custom_x_lim, y_lim = custom_y_lim, font_size=20, save="pdf")
     plt.show()
 
     State_angle_pos, pos_angle_pos, force_angle_pos = run_leg(
@@ -512,9 +513,9 @@ def check_non_abelianity(
         State_angle.buckle_arr, initial_tip_pos, final_tip_angle, final_tip_pos, final_tip_angle,
         init_pos=State_angle.pos_arr,
     )
-    plot_funcs.plot_arm(pos_angle_pos[-1][-1], State_angle_pos.buckle_arr, Strctr.L, 
-                                    modality="measurement", show=False, invert_x=True, invert_y = True, 
-                                    annotate_tip=False, dpi = 300, x_lim = custom_x_lim, y_lim = custom_y_lim)
+    plot_funcs.plot_arm(pos_angle_pos[-1][-1], -State_angle_pos.buckle_arr, Strctr.L, 
+                        modality=None, show=False, invert_x=False, invert_y = True, 
+                        annotate_tip=False, dpi = 300, x_lim = custom_x_lim, y_lim = custom_y_lim, font_size=20, save="pdf")
     plt.show()
 
     buckle_pos_then_angle = tuple(np.asarray(State_pos_angle.buckle_arr, dtype=int).reshape(-1))

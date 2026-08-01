@@ -35,7 +35,7 @@ def plot_accuracy_afo_H(Hs: NDArray, accuracy: NDArray, bars: bool = False) -> t
         raise ValueError("Hs and accuracy must be one-dimensional arrays of equal length.")
 
     colors_lst, _, _ = colors.color_scheme()
-    fig, ax = plt.subplots(figsize=(5, 3.5))
+    fig, ax = plt.subplots(figsize=(5, 2.5))
     if bars:
         ax.bar(Hs, accuracy, color=colors_lst[0], width=0.65)
     else:
@@ -124,7 +124,7 @@ def plot_accuracy_loss_hamming_summary(
     hamming_norm = Normalize(vmin=0.0, vmax=hamming_vmax)
 
     colors_lst, _, custom_cmap = colors.color_scheme()
-    fig = plt.figure(figsize=(10.0, 12.0), constrained_layout=True)
+    fig = plt.figure(figsize=(7.5, 10.0), constrained_layout=True)
     grid = fig.add_gridspec(
         4, 2 * len(metric_Hs), height_ratios=(1.0, 2.2, 0.10, 0.10))
 
@@ -201,6 +201,8 @@ def plot_arm(
     x_lim: Optional[Sequence[float]] = None,
     y_lim: Optional[Sequence[float]] = None,
     font_size: Optional[float] = None,
+    save: Optional[str] = None,
+    show_encastre: bool = True,
 ) -> None:
     """
     Plot arm configuration together with buckle direction arrows.
@@ -220,6 +222,10 @@ def plot_arm(
     x_lim     - Optional two-value sequence with the fixed x-axis limits.
     y_lim     - Optional two-value sequence with the fixed y-axis limits.
     font_size - Optional font size for the title, axis labels, and tick labels.
+    save      - Optional output format. Use ``"pdf"`` to save the figure in
+                the current directory with a filename describing the chain.
+    show_encastre - bool, draw a grey fixed support at the chain base. Its
+                    diagonal hatching extends away from the chain.
     """
     # ------ prelims ------
     pos_vec = np.asarray(pos_vec).copy()
@@ -246,10 +252,37 @@ def plot_arm(
     else:
         clr = red
 
+    # ------ fixed support at the chain base ------
+    if show_encastre:
+        support_color = "0.5"
+        support_side = 1.0 if invert_x else -1.0
+        support_half_height = 0.38 * L
+        hatch_length = 0.16 * L
+        hatch_rise = 0.12 * L
+
+        ax.plot(
+            [0.0, 0.0],
+            [-support_half_height, support_half_height],
+            color=support_color,
+            linewidth=2.5,
+            solid_capstyle="round",
+            zorder=1,
+        )
+        for hatch_y in np.linspace(
+                -support_half_height, support_half_height - hatch_rise, 5):
+            ax.plot(
+                [0.0, support_side * hatch_length],
+                [hatch_y, hatch_y + hatch_rise],
+                color=support_color,
+                linewidth=1.5,
+                solid_capstyle="round",
+                zorder=1,
+            )
+
     # ------ chain faces and nodes ------
     ax.plot(xs, ys, linewidth=4, color=clr)
     ax.scatter(xs, ys, s=60, zorder=3, color=clr)
-    ax.scatter([0], [0], s=60, zorder=3, color="k")
+    ax.scatter([0], [0], s=60, zorder=3, color="0.5")
 
     # # ------ line of wall ------
     # ax.plot([xs[-1], xs[-1]],
@@ -303,6 +336,19 @@ def plot_arm(
     )
     if font_size is not None:
         ax.tick_params(axis="both", labelsize=font_size)
+
+    if save is not None:
+        if save.lower() != "pdf":
+            raise ValueError('plot_arm currently supports only save="pdf".')
+        buckle_string = "_".join(
+            str(int(value)) for value in np.asarray(buckle).reshape(-1)
+        )
+        inversion_label = "_inverted_x" if invert_x else ""
+        filename = (
+            f"chain_buckle={buckle_string}{inversion_label}"
+            f"_x={xs[-1]:.3f}_y={ys[-1]:.3f}_theta={tip_angle_deg:.3f}.pdf"
+        )
+        ax.figure.savefig(filename, format="pdf", bbox_inches="tight")
 
     if show and created_ax:
         plt.show()
@@ -1501,7 +1547,8 @@ def plot_transition_diagram(transitions: Counter, *, transitions_between_runs: b
                             only_reached_nodes: bool = False, edge_zero_loss_count=None, missing_edges=None,
                             layout: str = "layers", initial_state: int | str | None = None,
                             desired_state: int | str | None = None, title: str | None = None,
-                            ax=None, show_legend: bool = True, show: bool = True):
+                            font_size: float = 18, ax=None,
+                            show_legend: bool = True, show: bool = True):
     """
     Plot a directed buckle-transition diagram.
 
@@ -1524,6 +1571,9 @@ def plot_transition_diagram(transitions: Counter, *, transitions_between_runs: b
         desired node perimeter uses ``colors_lst[1]``.
     title : str, optional
         Title displayed above the axes.
+    font_size : float, default=18
+        Font size for node labels, title, legend, and axis labels. Axis tick
+        labels use ``font_size - 2``.
     ax : matplotlib.axes.Axes, optional
         Existing axes on which to draw. A new figure is created when omitted.
     show_legend : bool
@@ -1566,7 +1616,7 @@ def plot_transition_diagram(transitions: Counter, *, transitions_between_runs: b
             fig = ax.figure
         node_width = 0.5
         node_height = 0.25
-        node_fontsize = 14 if H >= 5 else 18
+        node_fontsize = font_size
         missing_alpha = 0.8
         missing_lw = 1.2
     else:
@@ -1576,7 +1626,7 @@ def plot_transition_diagram(transitions: Counter, *, transitions_between_runs: b
             fig = ax.figure
         node_width = 0.16
         node_height = 0.12
-        node_fontsize = 18
+        node_fontsize = font_size
         missing_alpha = 0.75
         missing_lw = 1.5
 
@@ -1663,7 +1713,12 @@ def plot_transition_diagram(transitions: Counter, *, transitions_between_runs: b
     legend_handles += [Line2D([0], [0], color=missing_clr, lw=2, linestyle="--", label="missing")]
 
     if show_legend:
-        ax.legend(handles=legend_handles, loc="upper right", frameon=False, fontsize=14)
+        ax.legend(
+            handles=legend_handles,
+            loc="upper right",
+            frameon=False,
+            fontsize=font_size,
+        )
 
     if used_nodes:
         visible_xy = np.array([pos[s] for s in used_nodes], dtype=float)
@@ -1681,9 +1736,10 @@ def plot_transition_diagram(transitions: Counter, *, transitions_between_runs: b
     ax.set_xlim(x_center - half_span, x_center + half_span)
     ax.set_ylim(y_center - half_span, y_center + half_span)
     ax.set_aspect("equal")
+    ax.tick_params(axis="both", labelsize=max(font_size - 2, 1))
     ax.axis("off")
     if title is not None:
-        ax.set_title(title, fontsize=18, fontweight="bold", pad=12)
+        ax.set_title(title, fontsize=font_size, fontweight="bold", pad=12)
     if created_ax:
         fig.tight_layout()
     if show:
@@ -1698,7 +1754,7 @@ def plot_ring_transition_diagrams(
         *,
         edge_zero_loss_counts: Sequence[Counter | None] = (None, None, None),
         missing_edges: Sequence[Sequence[tuple[int, int]] | None] = (None, None, None),
-        titles: Sequence[str] = ("Position", "Force", "Random"),
+        titles: Sequence[str] = ("Random", "Position", "Force", "Combined"),
         transitions_between_runs: bool = True,
         only_reached_nodes: bool = False,
         save_stem: str | Path | None = None,
@@ -1706,9 +1762,14 @@ def plot_ring_transition_diagrams(
         export_eps: bool = False,
         export_pdf: bool = False,
         dpi: int = 300,
+        font_size: float = 20,
         show: bool = True,
 ):
-    """Plot position, force, and sweep ring-transition diagrams side by side.
+    """Plot random, position, force, and combined ring-transition diagrams.
+
+    The combined panel merges position and force. An edge is intentional if
+    either method has a zero-loss occurrence, and is missing only if both
+    methods are missing it.
 
     Parameters
     ----------
@@ -1719,7 +1780,7 @@ def plot_ring_transition_diagrams(
     missing_edges : sequence of edge sequences or None
         Missing directed edges for each panel, in the same order.
     titles : sequence of str
-        Titles displayed above the three panels.
+        Titles displayed above the four panels.
     transitions_between_runs, only_reached_nodes : bool
         Passed through to :func:`plot_transition_diagram`.
     save_stem : str or Path, optional
@@ -1729,6 +1790,8 @@ def plot_ring_transition_diagrams(
         when either option is enabled.
     dpi : int
         Resolution used for PNG export.
+    font_size : float, default=20
+        Shared font size for node labels, titles, and the figure legend.
     show : bool
         If True, display the completed figure.
 
@@ -1737,16 +1800,44 @@ def plot_ring_transition_diagrams(
     tuple
         ``(fig, axes)`` for further notebook customization.
     """
-    if len(edge_zero_loss_counts) != 3 or len(missing_edges) != 3 or len(titles) != 3:
-        raise ValueError("edge_zero_loss_counts, missing_edges, and titles must each contain three items.")
+    if len(edge_zero_loss_counts) != 3 or len(missing_edges) != 3:
+        raise ValueError("edge_zero_loss_counts and missing_edges must each contain three items.")
+    if len(titles) != 4:
+        raise ValueError("titles must contain four items.")
     if (export_png or export_eps or export_pdf) and save_stem is None:
         raise ValueError("save_stem is required when an export format is enabled.")
 
-    transition_sets = (position_transitions, force_transitions, sweep_transitions)
-    fig, axes = plt.subplots(1, 3, figsize=(20, 7))
+    position_zero_loss = Counter(edge_zero_loss_counts[0] or {})
+    force_zero_loss = Counter(edge_zero_loss_counts[1] or {})
+    sweep_zero_loss = Counter(edge_zero_loss_counts[2] or {})
+    combined_transitions = position_transitions + force_transitions
+    combined_zero_loss = position_zero_loss + force_zero_loss
+    combined_missing = sorted(
+        set(missing_edges[0] or []) & set(missing_edges[1] or [])
+    )
+
+    transition_sets = (
+        sweep_transitions,
+        position_transitions,
+        force_transitions,
+        combined_transitions,
+    )
+    zero_loss_sets = (
+        sweep_zero_loss,
+        position_zero_loss,
+        force_zero_loss,
+        combined_zero_loss,
+    )
+    missing_sets = (
+        missing_edges[2],
+        missing_edges[0],
+        missing_edges[1],
+        combined_missing,
+    )
+    fig, axes = plt.subplots(1, 4, figsize=(26, 7))
 
     for ax_i, transitions_i, zero_loss_i, missing_i, title_i in zip(
-            axes, transition_sets, edge_zero_loss_counts, missing_edges, titles):
+            axes, transition_sets, zero_loss_sets, missing_sets, titles):
         plot_transition_diagram(
             transitions_i,
             transitions_between_runs=transitions_between_runs,
@@ -1755,6 +1846,7 @@ def plot_ring_transition_diagrams(
             missing_edges=missing_i,
             layout="ring",
             title=title_i,
+            font_size=font_size,
             ax=ax_i,
             show_legend=False,
             show=False,
@@ -1770,8 +1862,8 @@ def plot_ring_transition_diagrams(
     if not transitions_between_runs:
         legend_handles.pop(0)
     fig.legend(handles=legend_handles, loc="lower center", ncol=len(legend_handles),
-               frameon=False, fontsize=21, bbox_to_anchor=(0.5, 0.01))
-    fig.subplots_adjust(left=0.005, right=0.995, top=0.91, bottom=0.15, wspace=-0.20)
+               frameon=False, fontsize=font_size, bbox_to_anchor=(0.5, 0.01))
+    fig.subplots_adjust(left=0.005, right=0.995, top=0.91, bottom=0.15, wspace=-0.16)
 
     if save_stem is not None:
         output_stem = Path(save_stem).with_suffix("")
@@ -1824,7 +1916,7 @@ def plot_cumulative_transition_curve(coverage_df: pd.DataFrame, *,
         label=label,
     )
     ax.set_xlabel(x_label if x_label is not None else x_col.replace("_", " "))
-    ax.set_ylabel("cumulative unique Hamming transitions")
+    ax.set_ylabel("cumulative Hamming transitions")
     ax.set_ylim(-2, 64)
     if not any(line.get_gid() == "transition-coverage-limit" for line in ax.lines):
         limit_line = ax.axhline(
