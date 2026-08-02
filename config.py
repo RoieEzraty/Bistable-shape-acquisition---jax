@@ -187,7 +187,7 @@ class TrainingConfig:
     # dataset_sampling = 'almost_flat'  # flat piece w a bit of constant noise, single measurement
     # dataset_sampling = 'flat'  # flat piece, single measurement
     # dataset_sampling = 'stress strain'
-    dataset_sampling: str = 'tip_grid_sweep'  # update-only y/theta grid, for monitoring buckling
+    dataset_sampling: str = 'tip_grid_sweep'  # update-only diagonal sweep, for monitoring buckling
 
     # predet_traj_file: str = r"Predetermined trajectory\July14_H5\example_traj_H5_Mar22Like.csv"
     predet_traj_file: str = r"Predetermined trajectory\July17_H6\example_traj_H6_Mar22Like.csv"
@@ -245,17 +245,29 @@ class TrainingConfig:
     rand_key_dataset: int = 7  # for random sampling of dataset, if dataset_sampling is True
     rand_key_tip: int = 8  # for random sampling of update tip positions, once forces explode
 
-    # Update-only grid sweep for monitoring buckling. Positions are in [m], angles in [rad].
+    # Update-only diagonal sweep for monitoring buckling. Positions are in [m], angles in [rad].
     # x follows x_s -> x_l -> x_s as y goes from y_min to y_max.
-    tip_grid_x_s: float | None = 0.0472/2  # None uses the flat-chain tip x = Strctr.edges * Strctr.L
-    tip_grid_x_l: float | None = (HINGES * 0.0472)*3/4
-    tip_grid_y_min: float = -(HINGES * 0.0472)/2.5
-    tip_grid_y_max: float = (HINGES * 0.0472)/2.5
-    tip_grid_y_num: int = 12
-    tip_grid_theta_min: float = -np.pi/2
-    tip_grid_theta_max: float = np.pi/2
-    tip_grid_theta_num: int = 12
-    tip_grid_snake: bool = True  # reverse theta direction every other y row for a continuous sweep
+    tip_diag_x_s: float | None = 0.0472/2  # None uses the flat-chain tip x = Strctr.edges * Strctr.L
+    tip_diag_x_l: float | None = (HINGES * 0.0472)*3/4
+    tip_diag_y_min: float = -(HINGES * 0.0472)/2.5
+    tip_diag_y_max: float = (HINGES * 0.0472)/2.5
+    tip_diag_y_num: int = 12
+    tip_diag_theta_min: float = -np.pi/2
+    tip_diag_theta_max: float = np.pi/2
+    tip_diag_theta_num: int = 12
+    tip_diag_snake: bool = True  # reverse theta direction every other y row for a continuous sweep
+
+    # Independent polar grid sweeps centered at [L/2, 0].
+    tip_grid_r_min: float = 2*L
+    tip_grid_r_max: float = (HINGES-1)*L
+    tip_grid_r_num: int = 12
+    tip_grid_phi_min: float = -7*np.pi/8
+    tip_grid_phi_max: float = 7*np.pi/8
+    tip_grid_phi_num: int = 12
+    tip_grid_theta_min: float = -np.pi*1/2  # clockwise limit
+    tip_grid_theta_max: float = np.pi*1/2  # anticlockwise limit
+    tip_grid_theta_steps: int = 3  # steps per 0 -> angular-limit quarter sweep
+    tip_grid_snake: bool = True  # reverse radius direction every other phi row
 
     # unit conversions
     convert_pos = 1000  # convert [m] to [mm]

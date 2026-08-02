@@ -557,6 +557,18 @@ def buckle_state_colormap(n_bits: int) -> tuple[ListedColormap, BoundaryNorm]:
     return cmap, norm
 
 
+def _grid_values_to_edges(values: NDArray) -> NDArray[np.float64]:
+    """Use grid endpoints as plot bounds and midpoints as internal cell edges."""
+    values = np.asarray(values, dtype=float)
+    if values.ndim != 1 or len(values) < 2:
+        raise ValueError("A filled grid plot requires at least two values per axis.")
+    return np.concatenate((
+        values[:1],
+        0.5 * (values[:-1] + values[1:]),
+        values[-1:],
+    ))
+
+
 def plot_tip_grid_buckle_ids(buckle_grid_frames: NDArray, y_num: int, theta_num: int,
                              theta_min: float, theta_max: float, y_min: float, y_max: float, *,
                              grid_start: int = 1, snake: bool = True, y_scale: float = 1000.0,
@@ -637,13 +649,18 @@ def plot_tip_grid_buckle_ids_from_npz(path_npz: str | Path, *,
                                       ) -> tuple[plt.Figure, plt.Axes, NDArray[np.int32]]:
     """Load and plot a completed tip-grid buckle-map archive.
 
-    Archives written by ``file_funcs.export_tip_grid_buckle_map_npz`` are
-    already arranged in canonical increasing-y/increasing-theta grid order.
+    Cartesian y/theta maps are drawn as a rectangular color grid. Polar x/y
+    maps are drawn as filled annular sectors around their saved polar center.
     """
     with np.load(path_npz, allow_pickle=False) as data:
         buckle_matrix = np.asarray(data["buckle_matrix"], dtype=np.int32)
+        saved_buckle_ids = np.asarray(data["buckle_ids"], dtype=np.int32)
         grid_points = np.asarray(data["grid_points"], dtype=float)
         y_scale = float(data["y_scale"]) if "y_scale" in data else 1000.0
+        grid_axes = str(data["grid_axes"]) if "grid_axes" in data else "ytheta"
+        valid_mask = np.asarray(data["valid_mask"], dtype=bool) if "valid_mask" in data else None
+        r_values = np.asarray(data["r_values"], dtype=float) if "r_values" in data else None
+        phi_values = np.asarray(data["phi_values"], dtype=float) if "phi_values" in data else None
 
     if buckle_matrix.ndim != 4:
         raise ValueError(
@@ -656,13 +673,86 @@ def plot_tip_grid_buckle_ids_from_npz(path_npz: str | Path, *,
         )
 
     y_num, theta_num = buckle_matrix.shape[:2]
+    if grid_axes == "polar_xy":
+        if r_values is None or phi_values is None:
+            raise ValueError("A polar buckle map requires saved r_values and phi_values.")
+        if valid_mask is None:
+            valid_mask = np.all(np.isfinite(grid_points), axis=2)
+        if not np.any(valid_mask):
+            raise ValueError("The polar buckle map contains no completed grid cells.")
+
+        phi_indices, r_indices = np.nonzero(valid_mask)
+        center_x = np.median(
+            grid_points[:, :, 0][valid_mask]
+            - r_values[r_indices] * np.cos(phi_values[phi_indices])
+        )
+        center_y = np.median(
+            grid_points[:, :, 1][valid_mask]
+            - r_values[r_indices] * np.sin(phi_values[phi_indices])
+        )
+        phi_edges = _grid_values_to_edges(phi_values)
+        r_edges = _grid_values_to_edges(r_values)
+        r_edges[0] = max(0.0, r_edges[0])
+
+        n_bits = int(np.prod(buckle_matrix.shape[2:]))
+        cmap, norm = buckle_state_colormap(n_bits)
+        created_ax = ax is None
+        if created_ax:
+            fig, ax = plt.subplots(figsize=(7, 5))
+        else:
+            fig = ax.figure
+        center_mm = (center_x * y_scale, center_y * y_scale)
+        for phi_i, r_i in zip(phi_indices, r_indices):
+            inner_radius = r_edges[r_i] * y_scale
+            outer_radius = r_edges[r_i + 1] * y_scale
+            ax.add_patch(patches.Wedge(
+                center_mm,
+                outer_radius,
+                theta1=np.degrees(phi_edges[phi_i]),
+                theta2=np.degrees(phi_edges[phi_i + 1]),
+                width=outer_radius - inner_radius,
+                facecolor=cmap(norm(saved_buckle_ids[phi_i, r_i])),
+                edgecolor="none",
+            ))
+        ax.autoscale_view()
+        ax.margins(0.02)
+        ax.set_aspect("equal")
+        text_kwargs = {} if font_size is None else {"fontsize": font_size}
+        ax.set_xlabel("tip x [mm]", **text_kwargs)
+        ax.set_ylabel("tip y [mm]", **text_kwargs)
+        ax.set_title("Buckle state after update sweep", **text_kwargs)
+        if font_size is not None:
+            ax.tick_params(axis="both", labelsize=font_size)
+
+        observed_ids = sorted(int(idx) for idx in np.unique(saved_buckle_ids[valid_mask]))
+        handles = [patches.Patch(
+                facecolor=cmap(norm(idx)),
+                label=helpers_builders.index_to_buckle(idx, n_bits=n_bits),
+            ) for idx in observed_ids]
+        if handles:
+            legend_kwargs = {}
+            if font_size is not None:
+                legend_kwargs = {"fontsize": font_size, "title_fontsize": font_size}
+            ax.legend(
+                handles=handles, title="buckle",
+                bbox_to_anchor=(1.02, 1), loc="upper left",
+                **legend_kwargs,
+            )
+        if save_path is not None:
+            fig.savefig(save_path, dpi=200, bbox_inches="tight")
+        if show and created_ax:
+            plt.show()
+        return fig, ax, saved_buckle_ids
+
     frames = buckle_matrix.reshape(y_num * theta_num, *buckle_matrix.shape[2:])
-    return plot_tip_grid_buckle_ids(
+    x_min = float(np.min(grid_points[:, :, 2]))
+    x_max = float(np.max(grid_points[:, :, 2]))
+    fig, ax, buckle_ids = plot_tip_grid_buckle_ids(
         frames,
         y_num=y_num,
         theta_num=theta_num,
-        theta_min=float(np.min(grid_points[:, :, 2])),
-        theta_max=float(np.max(grid_points[:, :, 2])),
+        theta_min=x_min,
+        theta_max=x_max,
         y_min=float(np.min(grid_points[:, :, 1])),
         y_max=float(np.max(grid_points[:, :, 1])),
         grid_start=0,
@@ -673,6 +763,7 @@ def plot_tip_grid_buckle_ids_from_npz(path_npz: str | Path, *,
         font_size=font_size,
         ax=ax,
     )
+    return fig, ax, buckle_ids
 
 
 # ------------------------------------------------
@@ -872,7 +963,8 @@ def plot_compare_sim_exp_training(exp_file_path: str, sim_file_path: str,
 # Animations
 # --------------------------------------------------------
 def animate_arm_w_arcs(traj_pos, L, Fx: Optional[NDArray] = None, Fy: Optional[NDArray] = None, frames=10,
-                       interval_ms=30, save_path=None, fps=30, buckle_traj=None):
+                       interval_ms=30, save_path: Optional[str | Path] = None,
+                       fps=30, buckle_traj=None):
     """
     Animate an N-link arm over time, optionally drawing hinge arcs.
 
@@ -882,7 +974,7 @@ def animate_arm_w_arcs(traj_pos, L, Fx: Optional[NDArray] = None, Fy: Optional[N
     L           - float, reference link length used for axis scaling.
     frames      - int, approximate number of displayed frames after temporal downsampling.
     interval_ms - int, delay between displayed frames in milliseconds.
-    save_path   - Optional[str], if given, save the animation to ``.gif`` or ``.mp4``.
+    save_path   - Optional[str | Path], if given, save the animation to ``.gif``, ``.html``, or ``.mp4``.
     fps         - int, output frame rate used when saving.
     show_inline - bool, if True, return an HTML animation object for notebook display.
     buckle_traj - Optional[array-like], buckle history with shape ``(T, H, S)`` or static buckle state ``(H, S)``.
@@ -1007,15 +1099,17 @@ def animate_arm_w_arcs(traj_pos, L, Fx: Optional[NDArray] = None, Fy: Optional[N
     anim = FuncAnimation(fig, update, frames=T, init_func=init, interval=interval_ms, blit=True)
 
     if save_path is not None:
-        if save_path.lower().endswith(".gif"):
-            anim.save(save_path, writer=PillowWriter(fps=fps))
-        elif save_path.lower().endswith(".html"):
-            with open(save_path, "w", encoding="utf-8") as f:
+        save_path = Path(save_path)
+        suffix = save_path.suffix.lower()
+        if suffix == ".gif":
+            anim.save(str(save_path), writer=PillowWriter(fps=fps))
+        elif suffix == ".html":
+            with save_path.open("w", encoding="utf-8") as f:
                 f.write(anim.to_jshtml())
-        elif save_path.lower().endswith(".mp4"):  # doesn't work as of 2026Apr14
-            anim.save(save_path, writer="ffmpeg", fps=fps)
+        elif suffix == ".mp4":  # doesn't work as of 2026Apr14
+            anim.save(str(save_path), writer="ffmpeg", fps=fps)
         else:
-            raise ValueError("save_path must end with .gif or .mp4")
+            raise ValueError("save_path must end with .gif, .html, or .mp4")
 
     plt.close(fig)
     return fig, anim

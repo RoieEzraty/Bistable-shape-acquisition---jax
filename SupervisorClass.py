@@ -129,8 +129,14 @@ class SupervisorClass:
 
     def __init__(self, Strctr, CFG, supress_prints: bool = True) -> None:
         self.T = int(CFG.Train.T)  # total training-set size (& algorithm time, dont confuse with time to equilib state)
-        if CFG.Train.dataset_sampling == 'tip_grid_sweep':
-            self.T = 1 + int(CFG.Train.tip_grid_y_num) * int(CFG.Train.tip_grid_theta_num)
+        if CFG.Train.dataset_sampling == 'tip_diag_sweep':
+            self.T = 1 + int(CFG.Train.tip_diag_y_num) * int(CFG.Train.tip_diag_theta_num)
+        elif CFG.Train.dataset_sampling == 'tip_grid_sweep':
+            theta_steps = int(CFG.Train.tip_grid_theta_steps)
+            if theta_steps < 1:
+                raise ValueError("tip_grid_theta_steps must be at least 1.")
+            self.T = (int(CFG.Train.tip_grid_r_num) * int(CFG.Train.tip_grid_phi_num)
+                      * (1 + 3 * theta_steps))
         self.alpha = float(CFG.Train.alpha)
         self.tradeoff_pos_angle = float(CFG.Train.tradeoff_pos_angle)
         self.update_scheme = str(CFG.Train.update_scheme)
@@ -292,7 +298,10 @@ class SupervisorClass:
                                      Optional:
                                      dist_noise  - constant y-offset
                                      angle_noise - constant angle offset
-                     "tile" - Repeats blocks of tip_pos and tip_angle to fill T.
+                    "tile": Repeats blocks of tip_pos and tip_angle to fill T.
+                    "tip_diag_sweep": Diagonal position path crossed with tip angles.
+                    "tip_grid_sweep": Independent Cartesian x/y points. Each point
+                                      uses the angle sequence 0 -> clockwise -> anticlockwise.
         tip_pos     : ndarray of shape (2,), optional, only for "specified" or "tile"
         tip_angle   : float, optional, optional, only for "specified" or "tile"
         dist_noise  : float, default 0.0. Only for "stress strain". Constant y-offset.
@@ -354,29 +363,29 @@ class SupervisorClass:
             self.tip_pos_in_t[:] = np.tile(tip_pos, (self.T // len(tip_pos) + 1, 1))[:self.T]
             tip_angles_block = np.repeat(tip_angle, tip_pos.shape[0])
             self.tip_angle_in_t[:] = np.tile(tip_angles_block, self.T // len(tip_angles_block) + 1)[:self.T]
-        elif sampling == 'tip_grid_sweep':
-            x_s = CFG.Train.tip_grid_x_s
+        elif sampling == 'tip_diag_sweep':
+            x_s = CFG.Train.tip_diag_x_s
             if x_s is None:
                 x_s = float(Strctr.edges * Strctr.L)
-            x_l = CFG.Train.tip_grid_x_l
+            x_l = CFG.Train.tip_diag_x_l
             if x_l is None:
                 x_l = x_s
 
-            y_vals = np.linspace(CFG.Train.tip_grid_y_min, CFG.Train.tip_grid_y_max,
-                                 CFG.Train.tip_grid_y_num, dtype=np.float32)
-            y_phase = np.linspace(0.0, 1.0, CFG.Train.tip_grid_y_num, dtype=np.float32)
+            y_vals = np.linspace(CFG.Train.tip_diag_y_min, CFG.Train.tip_diag_y_max,
+                                 CFG.Train.tip_diag_y_num, dtype=np.float32)
+            y_phase = np.linspace(0.0, 1.0, CFG.Train.tip_diag_y_num, dtype=np.float32)
             x_weight = 1.0 - np.abs(2.0 * y_phase - 1.0)
             if np.max(x_weight) > 0.0:
                 x_weight = x_weight / np.max(x_weight)
             x_vals = x_s + (x_l - x_s) * x_weight
-            theta_vals = np.linspace(CFG.Train.tip_grid_theta_min, CFG.Train.tip_grid_theta_max,
-                                     CFG.Train.tip_grid_theta_num, dtype=np.float32)
+            theta_vals = np.linspace(CFG.Train.tip_diag_theta_min, CFG.Train.tip_diag_theta_max,
+                                     CFG.Train.tip_diag_theta_num, dtype=np.float32)
 
             tip_positions = [[float(Strctr.L * (Strctr.hinges + 1)), 0.0]]
             tip_angles = [0.0]
             for y_idx, (x_tip, y_tip) in enumerate(zip(x_vals, y_vals)):
                 theta_row = theta_vals
-                if CFG.Train.tip_grid_snake and y_idx % 2 == 1:
+                if CFG.Train.tip_diag_snake and y_idx % 2 == 1:
                     theta_row = theta_vals[::-1]
                 for theta in theta_row:
                     tip_positions.append([float(x_tip), float(y_tip)])
@@ -388,6 +397,78 @@ class SupervisorClass:
             self.tip_angle_update_in_t[:] = self.tip_angle_in_t
             self.tip_grid_base_pos_in_t = self.tip_pos_update_in_t.copy()
             self.tip_grid_base_angle_in_t = self.tip_angle_update_in_t.copy()
+            self.total_angle_update_in_t[:] = np.asarray(
+                [helpers_builders._get_total_angle(pos, 0.0, Strctr.L) for pos in self.tip_pos_update_in_t],
+                dtype=np.float32,
+            )
+        elif sampling == 'tip_grid_sweep':
+            r_num = int(CFG.Train.tip_grid_r_num)
+            phi_num = int(CFG.Train.tip_grid_phi_num)
+            theta_steps = int(CFG.Train.tip_grid_theta_steps)
+            if r_num < 1 or phi_num < 1 or theta_steps < 1:
+                raise ValueError(
+                    "tip_grid_r_num, tip_grid_phi_num, and tip_grid_theta_steps must be at least 1."
+                )
+            if CFG.Train.tip_grid_theta_min >= 0.0:
+                raise ValueError("tip_grid_theta_min must be negative for clockwise rotation.")
+            if CFG.Train.tip_grid_theta_max <= 0.0:
+                raise ValueError("tip_grid_theta_max must be positive for anticlockwise rotation.")
+
+            r_vals = np.linspace(CFG.Train.tip_grid_r_min, CFG.Train.tip_grid_r_max,
+                                 r_num, dtype=np.float32)
+            phi_vals = np.linspace(CFG.Train.tip_grid_phi_min, CFG.Train.tip_grid_phi_max,
+                                   phi_num, dtype=np.float32)
+            grid_points: list[list[float]] = []
+            grid_indices: list[list[int]] = []
+            for phi_idx, phi in enumerate(phi_vals):
+                r_indices = range(r_num - 1, -1, -1) if CFG.Train.tip_grid_snake and phi_idx % 2 else range(r_num)
+                for r_idx in r_indices:
+                    radius = r_vals[r_idx]
+                    grid_points.append([
+                        float(Strctr.L / 2 + radius * np.cos(phi)),
+                        float(radius * np.sin(phi)),
+                    ])
+                    grid_indices.append([phi_idx, r_idx])
+
+            negative_leg = np.linspace(0.0, CFG.Train.tip_grid_theta_min,
+                                       theta_steps + 1, dtype=np.float32)
+            negative_to_positive = np.linspace(
+                CFG.Train.tip_grid_theta_min, CFG.Train.tip_grid_theta_max,
+                2 * theta_steps + 1, dtype=np.float32
+            )[1:]
+            negative_first = np.concatenate((negative_leg, negative_to_positive))
+
+            positive_leg = np.linspace(0.0, CFG.Train.tip_grid_theta_max,
+                                       theta_steps + 1, dtype=np.float32)
+            positive_to_negative = np.linspace(
+                CFG.Train.tip_grid_theta_max, CFG.Train.tip_grid_theta_min,
+                2 * theta_steps + 1, dtype=np.float32
+            )[1:]
+            positive_first = np.concatenate((positive_leg, positive_to_negative))
+            point_positions = np.asarray(grid_points, dtype=np.float32)
+            total_angles = np.asarray([
+                helpers_builders._get_total_angle(pos, 0.0, Strctr.L)
+                for pos in point_positions
+            ], dtype=np.float32)
+            angle_sequences = np.asarray([
+                positive_first if point_i % 2 == 0 else negative_first
+                for point_i in range(len(point_positions))
+            ], dtype=np.float32)
+
+            self.tip_grid_point_positions = point_positions
+            self.tip_grid_point_indices = np.asarray(grid_indices, dtype=np.int32)
+            self.tip_grid_r_values = r_vals
+            self.tip_grid_phi_values = phi_vals
+            self.tip_grid_angle_sequence = negative_first
+            self.tip_grid_angle_sequences = angle_sequences
+            self.tip_grid_total_angles = total_angles
+            self.tip_pos_in_t[:] = np.repeat(point_positions, angle_sequences.shape[1], axis=0)
+            self.tip_angle_in_t[:] = np.concatenate([
+                total_angle + angle_sequence
+                for total_angle, angle_sequence in zip(total_angles, angle_sequences)
+            ])
+            self.tip_pos_update_in_t[:] = self.tip_pos_in_t
+            self.tip_angle_update_in_t[:] = self.tip_angle_in_t
             self.total_angle_update_in_t[:] = np.asarray(
                 [helpers_builders._get_total_angle(pos, 0.0, Strctr.L) for pos in self.tip_pos_update_in_t],
                 dtype=np.float32,

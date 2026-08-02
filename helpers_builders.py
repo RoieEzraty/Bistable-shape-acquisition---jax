@@ -1281,7 +1281,11 @@ def build_transition_counts(folder: Path, only_init_and_final_buckles: bool = Fa
     edge_zero_loss_count = Counter()  # all zeros initially
 
     training_patterns = ("final_loss_*.csv",)
-    aggregate_sweep_patterns = ("tip_grid_buckle_sweep_*.csv", "tip_buckle*.csv")
+    aggregate_sweep_patterns = (
+        "tip_diag_buckle_sweep_*.csv",
+        "tip_grid_buckle_sweep_*.csv",  # legacy filename
+        "tip_buckle*.csv",
+    )
     target_sweep_patterns = ("init_*_finalTip_x=*_y=*_theta=*.csv",)
     sweep_patterns = aggregate_sweep_patterns + target_sweep_patterns
     file_patterns = training_patterns + sweep_patterns

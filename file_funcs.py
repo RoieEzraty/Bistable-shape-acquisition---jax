@@ -595,19 +595,12 @@ def export_training_npz(path_npz: str, **arrays):
 
 
 def export_tip_grid_buckle_map_npz(path_npz: str | Path, Sprvsr: "SupervisorClass",
-                                   buckle_grid_frames: NDArray, *, y_num: int,
-                                   theta_num: int, snake: bool = True,
+                                   buckle_grid_frames: NDArray, *, y_num: Optional[int] = None,
+                                   theta_num: Optional[int] = None,
+                                   r_num: Optional[int] = None,
+                                   phi_num: Optional[int] = None, snake: bool = True,
                                    init_buckle: Optional[NDArray] = None) -> Path:
-    """Export the final buckle and tip pose at every tip-grid point.
-
-    The saved arrays use canonical grid order: increasing ``y`` along axis 0
-    and increasing ``theta`` along axis 1. If the sweep used snake ordering,
-    the odd rows are reversed before saving.
-
-    ``buckle_matrix`` has shape ``(y_num, theta_num, hinges, shims)``.
-    ``grid_points`` has shape ``(y_num, theta_num, 3)`` and stores
-    ``[x, y, theta]`` in simulation units (metres and radians).
-    """
+    """Export final buckle states on either the y/theta or polar sweep grid."""
     path_npz = Path(path_npz)
     path_npz.parent.mkdir(parents=True, exist_ok=True)
 
@@ -619,23 +612,47 @@ def export_tip_grid_buckle_map_npz(path_npz: str | Path, Sprvsr: "SupervisorClas
         np.asarray(Sprvsr.tip_grid_base_angle_in_t, dtype=np.float32),
     ))
 
-    expected_targets = 1 + int(y_num) * int(theta_num)
+    is_polar_grid = r_num is not None
+    first_num = int(phi_num if is_polar_grid else y_num)
+    second_num = int(r_num if is_polar_grid else theta_num)
+    polar_indices = getattr(
+        Sprvsr, "tip_grid_completed_point_indices", Sprvsr.tip_grid_point_indices
+    )
+    expected_targets = (
+        len(polar_indices) if is_polar_grid
+        else 1 + first_num * second_num
+    )
     if len(target_indices) != expected_targets or len(target_points) != expected_targets:
         raise ValueError(
-            f"Expected {expected_targets} targets including the leading flat pose, "
+            f"Expected {expected_targets} targets, "
             f"got {len(target_indices)} buckle targets and {len(target_points)} grid points."
         )
 
-    buckle_matrix = target_buckles[1:].reshape(y_num, theta_num, *target_buckles.shape[1:])
-    grid_points = target_points[1:].reshape(y_num, theta_num, 3)
-    if snake:
-        buckle_matrix[1::2] = buckle_matrix[1::2, ::-1].copy()
-        grid_points[1::2] = grid_points[1::2, ::-1].copy()
-
-    buckle_ids = np.asarray([
-        helpers_builders.buckle_to_index(buckle.reshape(-1))
-        for buckle in buckle_matrix.reshape(-1, *buckle_matrix.shape[2:])
-    ], dtype=np.int32).reshape(y_num, theta_num)
+    if is_polar_grid:
+        buckle_matrix = np.zeros(
+            (first_num, second_num, *target_buckles.shape[1:]), dtype=np.int32
+        )
+        grid_points = np.full((first_num, second_num, 3), np.nan, dtype=np.float32)
+        buckle_ids = np.zeros((first_num, second_num), dtype=np.int32)
+        valid_mask = np.zeros((first_num, second_num), dtype=bool)
+        for target_i, (phi_idx, r_idx) in enumerate(polar_indices):
+            buckle = target_buckles[target_i]
+            buckle_matrix[phi_idx, r_idx] = buckle
+            grid_points[phi_idx, r_idx] = target_points[target_i]
+            buckle_ids[phi_idx, r_idx] = helpers_builders.buckle_to_index(buckle.reshape(-1))
+            valid_mask[phi_idx, r_idx] = True
+    else:
+        buckle_matrix = target_buckles[1:].reshape(
+            first_num, second_num, *target_buckles.shape[1:]
+        )
+        grid_points = target_points[1:].reshape(first_num, second_num, 3)
+        if snake:
+            buckle_matrix[1::2] = buckle_matrix[1::2, ::-1].copy()
+            grid_points[1::2] = grid_points[1::2, ::-1].copy()
+        buckle_ids = np.asarray([
+            helpers_builders.buckle_to_index(buckle.reshape(-1))
+            for buckle in buckle_matrix.reshape(-1, *buckle_matrix.shape[2:])
+        ], dtype=np.int32).reshape(first_num, second_num)
 
     arrays: dict[str, Any] = {
         "buckle_matrix": buckle_matrix,
@@ -643,14 +660,30 @@ def export_tip_grid_buckle_map_npz(path_npz: str | Path, Sprvsr: "SupervisorClas
         "grid_points": grid_points,
         "y_values": grid_points[:, 0, 1],
         "theta_values": grid_points[0, :, 2],
-        "x_values": grid_points[:, 0, 0],
-        "y_num": np.int32(y_num),
-        "theta_num": np.int32(theta_num),
+        "x_values": grid_points[:, :, 0] if is_polar_grid else grid_points[:, 0, 0],
+        "grid_axes": np.asarray("polar_xy" if is_polar_grid else "ytheta"),
         "source_snake": np.bool_(snake),
         "y_scale": np.float32(Sprvsr.convert_pos),
     }
+    if is_polar_grid:
+        arrays["valid_mask"] = valid_mask
+        arrays["r_values"] = np.asarray(Sprvsr.tip_grid_r_values)
+        arrays["phi_values"] = np.asarray(Sprvsr.tip_grid_phi_values)
+        arrays["r_num"] = np.int32(second_num)
+        arrays["phi_num"] = np.int32(first_num)
+    else:
+        arrays["y_num"] = np.int32(first_num)
+        arrays["theta_num"] = np.int32(second_num)
     if init_buckle is not None:
         arrays["init_buckle"] = np.asarray(init_buckle, dtype=np.int32)
+    if hasattr(Sprvsr, "tip_grid_angle_sequences"):
+        arrays["angle_sequences"] = np.asarray(
+            Sprvsr.tip_grid_angle_sequences, dtype=np.float32
+        )
+    if hasattr(Sprvsr, "tip_grid_transition_csv_mode"):
+        arrays["transition_csv_mode"] = np.asarray(
+            Sprvsr.tip_grid_transition_csv_mode
+        )
 
     np.savez_compressed(path_npz, **arrays)
     return path_npz
@@ -806,21 +839,22 @@ def load_tip_grid_buckle_maps_from_csvs(
 def export_tip_grid_transition_csvs(output_dir: str | Path, Sprvsr: "SupervisorClass",
                                     State_grid: "StateClass", init_buckle: NDArray,
                                     *, include_flat_target: bool = False) -> list[Path]:
-    """Export one ordered buckle history CSV for each tip-grid target.
+    """Export one ordered trajectory CSV for each sweep target.
 
-    Each file starts with the true initial buckle at path fraction zero, keeps
-    only distinct intermediate buckle states, and ends at the requested grid
-    target. Consequently, a direct transition normally has two rows and a
-    transition resolved through one middle buckle has three rows.
+    Polar-grid files contain every accepted command for one spatial grid point:
+    the completed move to that point, every configured angle, and any fractional
+    refinement steps. Diagonal-grid files retain the true initial state, only
+    distinct intermediate buckle states, and the final target.
 
     Parameters
     ----------
     output_dir : str or Path
         Directory in which the per-target CSV files are created.
     Sprvsr : SupervisorClass
-        Supervisor populated by ``tip_grid_buckle_sweep``.
+        Supervisor populated by ``tip_diag_buckle_sweep`` or
+        ``tip_grid_buckle_sweep``.
     State_grid : StateClass
-        State history returned by ``tip_grid_buckle_sweep``.
+        State history returned by the sweep.
     init_buckle : ndarray
         Buckle state from which every independent grid trial starts.
     include_flat_target : bool, default=False
@@ -840,6 +874,7 @@ def export_tip_grid_transition_csvs(output_dir: str | Path, Sprvsr: "SupervisorC
 
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+    is_polar_grid = Sprvsr.dataset_sampling == "tip_grid_sweep"
 
     final_indices = np.asarray(Sprvsr.tip_grid_target_indices, dtype=int)
     start_indices = np.asarray(Sprvsr.tip_grid_target_start_indices, dtype=int)
@@ -854,40 +889,51 @@ def export_tip_grid_transition_csvs(output_dir: str | Path, Sprvsr: "SupervisorC
 
     init_buckle_arr = np.asarray(init_buckle, dtype=int).reshape(buckle_history.shape[1:])
     init_buckle_str = correct_buckle_string(init_buckle_arr)
-    initial_pos = pos_history[final_indices[0]]
-    first_target = 0 if include_flat_target else 1
+    initial_pos = (
+        np.asarray(Sprvsr.tip_grid_initial_pos, dtype=float)
+        if is_polar_grid else pos_history[final_indices[0]]
+    )
+    initial_tip_pos = initial_pos[-1] if is_polar_grid else target_pos[0]
+    initial_tip_angle = 0.0 if is_polar_grid else target_angle[0]
+    first_target = 0 if is_polar_grid or include_flat_target else 1
     written: list[Path] = []
 
     for target_i in range(first_target, len(final_indices)):
         start = int(start_indices[target_i])
         final = int(final_indices[target_i])
-        final_buckle = buckle_history[final]
+        if is_polar_grid:
+            row_indices: list[int | None] = list(range(start, final + 1))
+        else:
+            final_buckle = buckle_history[final]
 
-        # Retain the ordered buckle changes needed to describe the path. The
-        # terminal buckle is written at the requested endpoint, while genuine
-        # cycles through that same buckle are preserved.
-        change_indices: list[int] = []
-        previous = init_buckle_arr
-        for frame_i in range(start, final + 1):
-            buckle = buckle_history[frame_i]
-            if np.array_equal(buckle, previous):
-                continue
-            change_indices.append(frame_i)
-            previous = buckle
-        nonfinal_changes = [
-            frame_i for frame_i in change_indices
-            if not np.array_equal(buckle_history[frame_i], final_buckle)
-        ]
-        last_middle = nonfinal_changes[-1] if nonfinal_changes else -1
-        middle_indices = [frame_i for frame_i in change_indices if frame_i <= last_middle]
-        row_indices: list[int | None] = [None, *middle_indices, final]
+            # Retain the ordered buckle changes needed to describe the path.
+            change_indices: list[int] = []
+            previous = init_buckle_arr
+            for frame_i in range(start, final + 1):
+                buckle = buckle_history[frame_i]
+                if np.array_equal(buckle, previous):
+                    continue
+                change_indices.append(frame_i)
+                previous = buckle
+            nonfinal_changes = [
+                frame_i for frame_i in change_indices
+                if not np.array_equal(buckle_history[frame_i], final_buckle)
+            ]
+            last_middle = nonfinal_changes[-1] if nonfinal_changes else -1
+            middle_indices = [frame_i for frame_i in change_indices if frame_i <= last_middle]
+            row_indices = [None, *middle_indices, final]
 
         x_name = filename_number(target_pos[target_i, 0] * Sprvsr.convert_pos)
         y_name = filename_number(target_pos[target_i, 1] * Sprvsr.convert_pos)
-        theta_name = filename_number(target_angle[target_i] * Sprvsr.convert_angle)
-        path = output_dir / (
-            f"init_{init_buckle_str}_finalTip_x={x_name}_y={y_name}_theta={theta_name}.csv"
-        )
+        if is_polar_grid:
+            path = output_dir / (
+                f"init_{init_buckle_str}_finalTip_x={x_name}_y={y_name}.csv"
+            )
+        else:
+            theta_name = filename_number(target_angle[target_i] * Sprvsr.convert_angle)
+            path = output_dir / (
+                f"init_{init_buckle_str}_finalTip_x={x_name}_y={y_name}_theta={theta_name}.csv"
+            )
 
         rows = []
         for event_t, frame_i in enumerate(row_indices):
@@ -896,9 +942,9 @@ def export_tip_grid_transition_csvs(output_dir: str | Path, Sprvsr: "SupervisorC
                     "t": event_t,
                     "path_fraction": 0.0,
                     "is_final": False,
-                    "upd_x_tip": float(target_pos[0, 0] * Sprvsr.convert_pos),
-                    "upd_y_tip": float(target_pos[0, 1] * Sprvsr.convert_pos),
-                    "upd_tip_angle": float(target_angle[0] * Sprvsr.convert_angle),
+                    "upd_x_tip": float(initial_tip_pos[0] * Sprvsr.convert_pos),
+                    "upd_y_tip": float(initial_tip_pos[1] * Sprvsr.convert_pos),
+                    "upd_tip_angle": float(initial_tip_angle * Sprvsr.convert_angle),
                     "final_pos_update": arr_to_json(initial_pos * Sprvsr.convert_pos),
                     "Fx_update": 0.0,
                     "Fy_update": 0.0,
@@ -922,6 +968,9 @@ def export_tip_grid_transition_csvs(output_dir: str | Path, Sprvsr: "SupervisorC
         pd.DataFrame(rows).to_csv(path, index=False)
         written.append(path)
 
+    Sprvsr.tip_grid_transition_csv_mode = (
+        "all_accepted_steps_xy_filename" if is_polar_grid else "buckle_changes_only"
+    )
     return written
 
 
@@ -1391,7 +1440,7 @@ def _infer_buckle_n_bits(folder: Path, omit_inverted: bool = False) -> int:
     Infer the number of buckle bits from the first transition CSV in a folder.
     """
     file_patterns = ("final_loss_*.csv", "init_*_finalTip_x=*_y=*_theta=*.csv",
-                     "tip_grid_buckle_sweep_*.csv", "tip_buckle*.csv")
+                     "tip_diag_buckle_sweep_*.csv", "tip_grid_buckle_sweep_*.csv", "tip_buckle*.csv")
     files = sorted({file for pattern in file_patterns for file in folder.glob(pattern)})
     if omit_inverted:
         files = [f for f in files if not f.name.endswith("_inverted.csv")]
