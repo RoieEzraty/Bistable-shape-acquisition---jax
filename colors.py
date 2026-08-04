@@ -11,12 +11,14 @@ from numpy.typing import NDArray
 # ==================================
 # color scheme
 # ==================================
-def color_scheme(show: bool = False, add_shim: bool = False) -> Tuple[list[str], str, Colormap]:
+def color_scheme(scheme: str = "mine", show: bool = False, add_shim: bool = False) -> Tuple[list[str], str, Colormap]:
     """
     define color scheme and return main colors, main red color and a colormap
 
     inputs:
+    scheme - str, name of color scheme to use, options: "mine", "Leon"
     show - boolean of whether to plot colormap and red color
+    add_shim - boolean of whether to return shim color as well
 
     outputs:
     colors      - list of strings names of colors in hexadecimal (#RRGGBB)
@@ -25,12 +27,19 @@ def color_scheme(show: bool = False, add_shim: bool = False) -> Tuple[list[str],
     """
     # ------ Define colors ------
     # Define the custom color scheme as a colormap
-    colors_lst = ['#4500E0', '#54CCE0', '#CD23E1', '#9EE1B1', '#E04F68']
-    red = '#E04F68'
+    # Define the custom color scheme as a colormap
+    if scheme == "mine":
+        colors_lst = ['#4500E0', '#54CCE0', '#CD23E1', '#9EE1B1', '#E04F68']
+        red = '#E04F68'
+        # Create the custom colormap for the gradient
+        custom_cmap = LinearSegmentedColormap.from_list('custom_cmap', [colors_lst[1], colors_lst[2], colors_lst[0]], N=256)
+    elif scheme == "Leon":
+        colors_lst = ['#971b1e', '#e21f27', '#2d679f', '#88d5ee', '#bde3f8']
+        red = '#F26667'
+        custom_cmap = LinearSegmentedColormap.from_list('custom_cmap', [colors_lst[3], colors_lst[4], red], N=256)
     shim = '#3C4861'
 
-    # Create the custom colormap for the gradient
-    custom_cmap = LinearSegmentedColormap.from_list('custom_cmap', [colors_lst[1], colors_lst[2], colors_lst[0]], N=256)
+    
 
     # ------ Show ------
     if show:

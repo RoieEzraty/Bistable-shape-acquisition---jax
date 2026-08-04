@@ -600,11 +600,16 @@ def export_tip_grid_buckle_map_npz(path_npz: str | Path, Sprvsr: "SupervisorClas
                                    r_num: Optional[int] = None,
                                    phi_num: Optional[int] = None, snake: bool = True,
                                    init_buckle: Optional[NDArray] = None) -> Path:
-    """Export final buckle states on either the y/theta or polar sweep grid."""
+    """Export final and first-transition buckle states on a tip sweep grid.
+
+    For polar arc sweeps, ``first_buckle_ids`` records the first buckle change
+    after arrival at the spatial grid point. Fractional travel is excluded.
+    """
     path_npz = Path(path_npz)
     path_npz.parent.mkdir(parents=True, exist_ok=True)
 
     target_indices = np.asarray(Sprvsr.tip_grid_target_indices, dtype=int)
+    start_indices = np.asarray(Sprvsr.tip_grid_target_start_indices, dtype=int)
     frames = np.asarray(buckle_grid_frames, dtype=np.int32)
     target_buckles = frames[target_indices]
     target_points = np.column_stack((
@@ -622,11 +627,42 @@ def export_tip_grid_buckle_map_npz(path_npz: str | Path, Sprvsr: "SupervisorClas
         len(polar_indices) if is_polar_grid
         else 1 + first_num * second_num
     )
-    if len(target_indices) != expected_targets or len(target_points) != expected_targets:
+    if (len(start_indices) != expected_targets
+            or len(target_indices) != expected_targets
+            or len(target_points) != expected_targets):
         raise ValueError(
             f"Expected {expected_targets} targets, "
-            f"got {len(target_indices)} buckle targets and {len(target_points)} grid points."
+            f"got {len(start_indices)} starts, {len(target_indices)} buckle targets, "
+            f"and {len(target_points)} grid points."
         )
+
+    first_buckle_ids = None
+    if init_buckle is not None:
+        init_buckle_arr = np.asarray(init_buckle, dtype=np.int32).reshape(frames.shape[1:])
+        first_ids = np.full(len(target_indices), -1, dtype=np.int32)
+        fractions = (
+            np.asarray(Sprvsr.tip_grid_path_fraction_in_t, dtype=float)
+            if is_polar_grid else None
+        )
+        for target_i, (start, final) in enumerate(zip(start_indices, target_indices)):
+            baseline = init_buckle_arr
+            first_frame = int(start)
+            if is_polar_grid:
+                arrival_offsets = np.flatnonzero(
+                    np.isclose(fractions[start:final + 1], 1.0)
+                )
+                if not len(arrival_offsets):
+                    raise ValueError(
+                        f"Target {target_i} has no path_fraction=1 arrival frame."
+                    )
+                arrival_frame = int(start + arrival_offsets[0])
+                baseline = frames[arrival_frame]
+                first_frame = arrival_frame + 1
+
+            for buckle in frames[first_frame:final + 1]:
+                if not np.array_equal(buckle, baseline):
+                    first_ids[target_i] = helpers_builders.buckle_to_index(buckle.reshape(-1))
+                    break
 
     if is_polar_grid:
         buckle_matrix = np.zeros(
@@ -635,11 +671,14 @@ def export_tip_grid_buckle_map_npz(path_npz: str | Path, Sprvsr: "SupervisorClas
         grid_points = np.full((first_num, second_num, 3), np.nan, dtype=np.float32)
         buckle_ids = np.zeros((first_num, second_num), dtype=np.int32)
         valid_mask = np.zeros((first_num, second_num), dtype=bool)
+        first_buckle_ids = np.full((first_num, second_num), -1, dtype=np.int32)
         for target_i, (phi_idx, r_idx) in enumerate(polar_indices):
             buckle = target_buckles[target_i]
             buckle_matrix[phi_idx, r_idx] = buckle
             grid_points[phi_idx, r_idx] = target_points[target_i]
             buckle_ids[phi_idx, r_idx] = helpers_builders.buckle_to_index(buckle.reshape(-1))
+            if init_buckle is not None:
+                first_buckle_ids[phi_idx, r_idx] = first_ids[target_i]
             valid_mask[phi_idx, r_idx] = True
     else:
         buckle_matrix = target_buckles[1:].reshape(
@@ -653,6 +692,10 @@ def export_tip_grid_buckle_map_npz(path_npz: str | Path, Sprvsr: "SupervisorClas
             helpers_builders.buckle_to_index(buckle.reshape(-1))
             for buckle in buckle_matrix.reshape(-1, *buckle_matrix.shape[2:])
         ], dtype=np.int32).reshape(first_num, second_num)
+        if init_buckle is not None:
+            first_buckle_ids = first_ids[1:].reshape(first_num, second_num)
+            if snake:
+                first_buckle_ids[1::2] = first_buckle_ids[1::2, ::-1].copy()
 
     arrays: dict[str, Any] = {
         "buckle_matrix": buckle_matrix,
@@ -676,6 +719,7 @@ def export_tip_grid_buckle_map_npz(path_npz: str | Path, Sprvsr: "SupervisorClas
         arrays["theta_num"] = np.int32(second_num)
     if init_buckle is not None:
         arrays["init_buckle"] = np.asarray(init_buckle, dtype=np.int32)
+        arrays["first_buckle_ids"] = first_buckle_ids
     if hasattr(Sprvsr, "tip_grid_angle_sequences"):
         arrays["angle_sequences"] = np.asarray(
             Sprvsr.tip_grid_angle_sequences, dtype=np.float32
@@ -727,13 +771,13 @@ def load_tip_grid_buckle_maps_from_csvs(
         raise ValueError("pos_scale and angle_scale must be nonzero.")
 
     directory = Path(directory)
-    pattern = "init_*_finalTip_x=*_y=*_theta=*.csv"
+    pattern = "init_*_finalTip_x=*_y=*.csv"
     files = sorted(directory.glob(pattern))
     if not files:
         raise FileNotFoundError(f"No files matching {pattern!r} in {directory}")
 
     filename_re = re.compile(
-        r"^init_([01]+)_finalTip_x=.*_y=.*_theta=.*\.csv$"
+        r"^init_([01]+)_finalTip_x=.*_y=.*\.csv$"
     )
     records_by_init: dict[str, list[dict[str, Any]]] = {}
     required_columns = {
@@ -1439,11 +1483,11 @@ def _infer_buckle_n_bits(folder: Path, omit_inverted: bool = False) -> int:
     """
     Infer the number of buckle bits from the first transition CSV in a folder.
     """
-    file_patterns = ("final_loss_*.csv", "init_*_finalTip_x=*_y=*_theta=*.csv",
+    file_patterns = ("final_loss_*.csv", "init_*_finalTip_x=*_y=*.csv",
                      "tip_diag_buckle_sweep_*.csv", "tip_grid_buckle_sweep_*.csv", "tip_buckle*.csv")
     files = sorted({file for pattern in file_patterns for file in folder.glob(pattern)})
     if omit_inverted:
-        files = [f for f in files if not f.name.endswith("_inverted.csv")]
+        files = [f for f in files if "_inverted" not in f.stem]
     if not files:
         raise FileNotFoundError(f"No files matching {file_patterns} in {folder}")
 
@@ -1470,7 +1514,7 @@ def buckle_transitions(folder: str | Path, only_init_and_final_buckles: bool = F
     folder                      : path, all csv run files, from every init to every desired
     only_init_and_final_buckles : bool, True = transition is only from initial to final (not necessarily the desired)
                                   desired transition colored Cyan, undesired colored purple
-    omit_inverted               : bool, True = do not account for  "_inverted.csv" output files
+    omit_inverted               : bool, True = omit files containing ``_inverted`` in their stem
     transition_mode             : str, "hamming" checks missing one-bit transitions; "ring" checks all-to-all transitions
     reciprocity                 : bool, True = add each transition count to its bitwise sign-opposite transition
 

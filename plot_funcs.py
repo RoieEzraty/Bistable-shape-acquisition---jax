@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING, Callable, Union, Optional, Sequence
 
 import colors, helpers_builders
 
-colors_lst, red, custom_cmap, shim = colors.color_scheme(add_shim=True)
+colors_lst, red, custom_cmap, shim = colors.color_scheme(scheme="Leon", add_shim=True)
 
 # -------------------------------------------------
 # Plot importants
@@ -123,17 +123,19 @@ def plot_accuracy_loss_hamming_summary(
     hamming_vmax = max(1.0, float(finite_hamming.max())) if finite_hamming.size else 1.0
     hamming_norm = Normalize(vmin=0.0, vmax=hamming_vmax)
 
-    colors_lst, _, custom_cmap = colors.color_scheme()
+    colors_lst, red, custom_cmap = colors.color_scheme(scheme="Leon")
     fig = plt.figure(figsize=(7.5, 10.0), constrained_layout=True)
     grid = fig.add_gridspec(
         4, 2 * len(metric_Hs), height_ratios=(1.0, 2.2, 0.10, 0.10))
 
     accuracy_ax = fig.add_subplot(grid[0, :])
-    accuracy_ax.bar(Hs, accuracy, color=colors_lst[0], width=0.65)
+    accuracy_ax.bar(
+        Hs, accuracy, color=red, edgecolor="black", linewidth=1.5, width=0.65)
     accuracy_ax.set(xlabel=r"$H$", ylabel="Accuracy", ylim=(0, 1))
     accuracy_ax.xaxis.set_major_locator(MaxNLocator(integer=True))
     accuracy_ax.spines[["top", "right"]].set_visible(False)
-    accuracy_ax.tick_params(labelsize=font_size)
+    accuracy_ax.spines[["bottom", "left"]].set_linewidth(2.0)
+    accuracy_ax.tick_params(labelsize=font_size, width=2.0)
     accuracy_ax.xaxis.label.set_size(font_size)
     accuracy_ax.yaxis.label.set_size(font_size)
 
@@ -543,7 +545,7 @@ def buckle_state_colormap(n_bits: int) -> tuple[ListedColormap, BoundaryNorm]:
     color across different sweep runs. For a 4-hinge chain this gives 15 colors
     sampled from the custom colormap and the 16th color as the custom red.
     """
-    _, red, custom_cmap = colors.color_scheme()
+    colors_lst, red, custom_cmap = colors.color_scheme(scheme = "Leon")
     n_states = 2 ** int(n_bits)
 
     if n_states <= 1:
@@ -569,11 +571,83 @@ def _grid_values_to_edges(values: NDArray) -> NDArray[np.float64]:
     ))
 
 
+def _first_buckle_ids_from_csvs(
+        csv_folder: str | Path, init_buckle: str, grid_points: NDArray,
+        valid_mask: NDArray, y_scale: float,
+        ) -> NDArray[np.int32]:
+    """Read the first post-arrival buckle transition from grid CSVs.
+
+    The first row whose ``path_fraction`` equals one defines the buckle state
+    on arrival at the spatial grid point. Changes during fractional travel to
+    that point are ignored; the returned state is the first different buckle
+    encountered by the subsequent angle arc.
+    """
+    csv_folder = Path(csv_folder)
+    csv_paths = sorted(csv_folder.glob(f"init_{init_buckle}_finalTip_*.csv"))
+    if not csv_paths:
+        raise FileNotFoundError(
+            f"No transition CSVs for initial buckle {init_buckle} in {csv_folder}."
+        )
+
+    valid_flat_indices = np.flatnonzero(valid_mask)
+    saved_targets = np.column_stack((
+        grid_points[:, :, 0][valid_mask] * y_scale,
+        grid_points[:, :, 1][valid_mask] * y_scale,
+        grid_points[:, :, 2][valid_mask] * 180.0 / np.pi,
+    ))
+    first_ids = np.full(valid_mask.shape, -1, dtype=np.int32)
+    assigned = np.zeros(valid_mask.shape, dtype=bool)
+
+    required_columns = [
+        "path_fraction", "upd_x_tip", "upd_y_tip", "upd_tip_angle",
+        "buckle_arr_update",
+    ]
+    for csv_path in csv_paths:
+        trajectory = pd.read_csv(csv_path, usecols=required_columns)
+        target_columns = ["upd_x_tip", "upd_y_tip", "upd_tip_angle"]
+        final_target = trajectory.iloc[-1][target_columns].to_numpy(dtype=float)
+        errors = np.max(np.abs(saved_targets - final_target), axis=1)
+        nearest_i = int(np.argmin(errors))
+        if errors[nearest_i] > 1e-3:
+            raise ValueError(f"Could not match {csv_path.name} to an NPZ grid point.")
+
+        flat_i = int(valid_flat_indices[nearest_i])
+        grid_i = np.unravel_index(flat_i, valid_mask.shape)
+        if assigned[grid_i]:
+            raise ValueError(f"Multiple transition CSVs match grid point {grid_i}.")
+        assigned[grid_i] = True
+
+        arrival_rows = np.flatnonzero(np.isclose(
+            trajectory["path_fraction"].to_numpy(dtype=float), 1.0
+        ))
+        if not len(arrival_rows):
+            raise ValueError(f"{csv_path.name} has no path_fraction=1 arrival row.")
+        arrival_i = int(arrival_rows[0])
+        arrival_buckle = helpers_builders.buckle_cell_to_array(
+            trajectory.iloc[arrival_i]["buckle_arr_update"]
+        ).reshape(-1)
+
+        for cell in trajectory.iloc[arrival_i + 1:]["buckle_arr_update"]:
+            buckle = helpers_builders.buckle_cell_to_array(cell).reshape(-1)
+            if not np.array_equal(buckle, arrival_buckle):
+                first_ids[grid_i] = helpers_builders.buckle_to_index(buckle)
+                break
+
+    missing_count = int(np.count_nonzero(valid_mask & ~assigned))
+    if missing_count:
+        raise ValueError(
+            f"Missing transition CSVs for {missing_count} completed NPZ grid points."
+        )
+    return first_ids
+
+
 def plot_tip_grid_buckle_ids(buckle_grid_frames: NDArray, y_num: int, theta_num: int,
                              theta_min: float, theta_max: float, y_min: float, y_max: float, *,
                              grid_start: int = 1, snake: bool = True, y_scale: float = 1000.0,
                              save_path: Optional[str | Path] = None, show: bool = True,
-                             font_size: Optional[float] = None, ax=None
+                             font_size: Optional[float] = None, ax=None,
+                             buckle_ids_override: Optional[NDArray] = None,
+                             title: Optional[str] = None,
                              ) -> tuple[plt.Figure, plt.Axes, NDArray[np.int32]]:
     """
     Plot the final buckle state reached at each y/theta grid point.
@@ -585,22 +659,28 @@ def plot_tip_grid_buckle_ids(buckle_grid_frames: NDArray, y_num: int, theta_num:
     frames = np.asarray(buckle_grid_frames, dtype=int)
     n_bits = int(np.prod(frames.shape[1:]))
 
-    grid_frames = frames[grid_start:]
-    if grid_frames.shape[0] != y_num * theta_num:
-        raise ValueError(
-            f"Expected {y_num * theta_num} grid frames after grid_start={grid_start}, "
-            f"got {grid_frames.shape[0]}."
-        )
+    if buckle_ids_override is None:
+        grid_frames = frames[grid_start:]
+        if grid_frames.shape[0] != y_num * theta_num:
+            raise ValueError(
+                f"Expected {y_num * theta_num} grid frames after grid_start={grid_start}, "
+                f"got {grid_frames.shape[0]}."
+            )
 
-    buckle_ids = np.array(
-        [helpers_builders.buckle_to_index(frame.reshape(-1)) for frame in grid_frames],
-        dtype=np.int32,
-    ).reshape(y_num, theta_num)
+        buckle_ids = np.array(
+            [helpers_builders.buckle_to_index(frame.reshape(-1)) for frame in grid_frames],
+            dtype=np.int32,
+        ).reshape(y_num, theta_num)
 
-    if snake:
-        buckle_ids[1::2, :] = buckle_ids[1::2, ::-1]
+        if snake:
+            buckle_ids[1::2, :] = buckle_ids[1::2, ::-1]
+    else:
+        buckle_ids = np.asarray(buckle_ids_override, dtype=np.int32)
+        if buckle_ids.shape != (y_num, theta_num):
+            raise ValueError("buckle_ids_override must match the saved grid shape.")
 
     cmap, norm = buckle_state_colormap(n_bits)
+    cmap = cmap.with_extremes(bad=shim)
     extent = [theta_min, theta_max, y_min * y_scale, y_max * y_scale]
 
     created_ax = ax is None
@@ -609,19 +689,22 @@ def plot_tip_grid_buckle_ids(buckle_grid_frames: NDArray, y_num: int, theta_num:
     else:
         fig = ax.figure
 
-    ax.imshow(buckle_ids, origin="lower", aspect="auto", extent=extent, cmap=cmap, norm=norm)
+    plotted_ids = np.ma.masked_less(buckle_ids, 0)
+    ax.imshow(plotted_ids, origin="lower", aspect="auto", extent=extent, cmap=cmap, norm=norm)
     text_kwargs = {} if font_size is None else {"fontsize": font_size}
     ax.set_xlabel("tip angle [rad]", **text_kwargs)
     ax.set_ylabel("tip y [mm]", **text_kwargs)
-    ax.set_title("Buckle state after update sweep", **text_kwargs)
+    ax.set_title(title or "Buckle state after update sweep", **text_kwargs)
     if font_size is not None:
         ax.tick_params(axis="both", labelsize=font_size)
 
-    observed_ids = sorted(int(idx) for idx in np.unique(buckle_ids))
+    observed_ids = sorted(int(idx) for idx in np.unique(buckle_ids) if idx >= 0)
     handles = [
         patches.Patch(facecolor=cmap(norm(idx)), label=helpers_builders.index_to_buckle(idx, n_bits=n_bits))
         for idx in observed_ids
     ]
+    if np.any(buckle_ids < 0):
+        handles.append(patches.Patch(facecolor=shim, label="no buckle"))
     if handles:
         legend_kwargs = {}
         if font_size is not None:
@@ -643,7 +726,11 @@ def plot_tip_grid_buckle_ids(buckle_grid_frames: NDArray, y_num: int, theta_num:
 
 
 def plot_tip_grid_buckle_ids_from_npz(path_npz: str | Path, *,
+                                      init_buckle: Optional[str] = None,
+                                      buckle_to_plot: str = "last",
+                                      csv_folder: Optional[str | Path] = None,
                                       save_path: Optional[str | Path] = None,
+                                      save: Optional[str] = None,
                                       show: bool = True,
                                       font_size: Optional[float] = None, ax=None
                                       ) -> tuple[plt.Figure, plt.Axes, NDArray[np.int32]]:
@@ -651,16 +738,84 @@ def plot_tip_grid_buckle_ids_from_npz(path_npz: str | Path, *,
 
     Cartesian y/theta maps are drawn as a rectangular color grid. Polar x/y
     maps are drawn as filled annular sectors around their saved polar center.
+    ``buckle_to_plot="last"`` plots the final state at each grid point;
+    ``buckle_to_plot="first"`` plots the first buckle transition after arrival
+    at each spatial grid point when ``csv_folder`` is provided. Changes during
+    fractional travel to the point are ignored. Points with no post-arrival
+    buckle transition are colored with the shim color. Without ``csv_folder``,
+    the archive's precomputed ``first_buckle_ids`` are used. If ``path_npz`` is
+    a directory, ``init_buckle`` selects its
+    ``tip_grid_buckle_map_<buckle>.npz`` archive. Use ``save="pdf"`` to save
+    ``tip_grid_buckle_ids_<buckle>.pdf`` (or its ``_first`` variant) in the
+    current directory, or ``save_path`` to choose an explicit output path.
     """
+    if buckle_to_plot not in {"first", "last"}:
+        raise ValueError('buckle_to_plot must be "first" or "last".')
+
+    save_pdf = False
+    if save is not None:
+        if save.lower() != "pdf":
+            raise ValueError(
+                'plot_tip_grid_buckle_ids_from_npz currently supports only save="pdf".'
+            )
+        if save_path is not None:
+            raise ValueError("Use either save or save_path, not both.")
+        save_pdf = True
+
+    path_npz = Path(path_npz)
+    if path_npz.is_dir() and init_buckle is not None:
+        path_npz = path_npz / f"tip_grid_buckle_map_{init_buckle}.npz"
+
     with np.load(path_npz, allow_pickle=False) as data:
         buckle_matrix = np.asarray(data["buckle_matrix"], dtype=np.int32)
         saved_buckle_ids = np.asarray(data["buckle_ids"], dtype=np.int32)
+        first_buckle_ids = (
+            np.asarray(data["first_buckle_ids"], dtype=np.int32)
+            if "first_buckle_ids" in data else None
+        )
         grid_points = np.asarray(data["grid_points"], dtype=float)
         y_scale = float(data["y_scale"]) if "y_scale" in data else 1000.0
         grid_axes = str(data["grid_axes"]) if "grid_axes" in data else "ytheta"
         valid_mask = np.asarray(data["valid_mask"], dtype=bool) if "valid_mask" in data else None
         r_values = np.asarray(data["r_values"], dtype=float) if "r_values" in data else None
         phi_values = np.asarray(data["phi_values"], dtype=float) if "phi_values" in data else None
+        saved_init_buckle = (
+            np.asarray(data["init_buckle"], dtype=int) if "init_buckle" in data else None
+        )
+
+    if init_buckle is None and saved_init_buckle is not None:
+        init_buckle = "".join(
+            "1" if value > 0 else "0" for value in saved_init_buckle.reshape(-1)
+        )
+    if buckle_to_plot == "first" and csv_folder is not None:
+        if init_buckle is None:
+            raise ValueError("init_buckle is required when reading transition CSVs.")
+        completed_mask = (
+            valid_mask if valid_mask is not None
+            else np.all(np.isfinite(grid_points), axis=2)
+        )
+        first_buckle_ids = _first_buckle_ids_from_csvs(
+            csv_folder, init_buckle, grid_points, completed_mask, y_scale
+        )
+    if save_pdf:
+        buckle_suffix = f"_{init_buckle}" if init_buckle is not None else ""
+        state_suffix = "_first" if buckle_to_plot == "first" else ""
+        save_path = Path(f"tip_grid_buckle_ids{buckle_suffix}{state_suffix}.pdf")
+
+    if buckle_to_plot == "first":
+        if first_buckle_ids is None:
+            raise ValueError(
+                "This NPZ does not contain first_buckle_ids; regenerate it with "
+                "file_funcs.export_tip_grid_buckle_map_npz() or provide csv_folder."
+            )
+        plotted_buckle_ids = first_buckle_ids
+    else:
+        plotted_buckle_ids = saved_buckle_ids
+    plot_title = (
+        "First buckle transition state"
+        if buckle_to_plot == "first"
+        else "Buckle state after update sweep"
+    )
 
     if buckle_matrix.ndim != 4:
         raise ValueError(
@@ -711,7 +866,10 @@ def plot_tip_grid_buckle_ids_from_npz(path_npz: str | Path, *,
                 theta1=np.degrees(phi_edges[phi_i]),
                 theta2=np.degrees(phi_edges[phi_i + 1]),
                 width=outer_radius - inner_radius,
-                facecolor=cmap(norm(saved_buckle_ids[phi_i, r_i])),
+                facecolor=(
+                    shim if plotted_buckle_ids[phi_i, r_i] < 0
+                    else cmap(norm(plotted_buckle_ids[phi_i, r_i]))
+                ),
                 edgecolor="none",
             ))
         ax.autoscale_view()
@@ -720,15 +878,19 @@ def plot_tip_grid_buckle_ids_from_npz(path_npz: str | Path, *,
         text_kwargs = {} if font_size is None else {"fontsize": font_size}
         ax.set_xlabel("tip x [mm]", **text_kwargs)
         ax.set_ylabel("tip y [mm]", **text_kwargs)
-        ax.set_title("Buckle state after update sweep", **text_kwargs)
+        ax.set_title(plot_title, **text_kwargs)
         if font_size is not None:
             ax.tick_params(axis="both", labelsize=font_size)
 
-        observed_ids = sorted(int(idx) for idx in np.unique(saved_buckle_ids[valid_mask]))
+        observed_ids = sorted(
+            int(idx) for idx in np.unique(plotted_buckle_ids[valid_mask]) if idx >= 0
+        )
         handles = [patches.Patch(
                 facecolor=cmap(norm(idx)),
                 label=helpers_builders.index_to_buckle(idx, n_bits=n_bits),
             ) for idx in observed_ids]
+        if np.any(plotted_buckle_ids[valid_mask] < 0):
+            handles.append(patches.Patch(facecolor=shim, label="no buckle"))
         if handles:
             legend_kwargs = {}
             if font_size is not None:
@@ -742,7 +904,7 @@ def plot_tip_grid_buckle_ids_from_npz(path_npz: str | Path, *,
             fig.savefig(save_path, dpi=200, bbox_inches="tight")
         if show and created_ax:
             plt.show()
-        return fig, ax, saved_buckle_ids
+        return fig, ax, plotted_buckle_ids
 
     frames = buckle_matrix.reshape(y_num * theta_num, *buckle_matrix.shape[2:])
     x_min = float(np.min(grid_points[:, :, 2]))
@@ -762,6 +924,8 @@ def plot_tip_grid_buckle_ids_from_npz(path_npz: str | Path, *,
         show=show,
         font_size=font_size,
         ax=ax,
+        buckle_ids_override=plotted_buckle_ids,
+        title=plot_title,
     )
     return fig, ax, buckle_ids
 
@@ -1638,11 +1802,13 @@ def plot_success_matrix_with_pathways(M_corr: np.ndarray, N: int, title: str = "
 
 
 def plot_transition_diagram(transitions: Counter, *, transitions_between_runs: bool = True,
-                            only_reached_nodes: bool = False, edge_zero_loss_count=None, missing_edges=None,
+                            only_reached_nodes: bool = False, only_hamming_transitions: bool = False,
+                            edge_zero_loss_count=None, missing_edges=None,
                             layout: str = "layers", initial_state: int | str | None = None,
                             desired_state: int | str | None = None, title: str | None = None,
                             font_size: float = 18, ax=None,
-                            show_legend: bool = True, show: bool = True):
+                            show_legend: bool = True, show: bool = True,
+                            save: str | None = None):
     """
     Plot a directed buckle-transition diagram.
 
@@ -1654,10 +1820,12 @@ def plot_transition_diagram(transitions: Counter, *, transitions_between_runs: b
         If True, color zero-loss initial-to-final transitions as successes.
     only_reached_nodes : bool
         If True, show only nodes touched by observed transitions.
+    only_hamming_transitions : bool
+        If True, draw only transitions between states with Hamming distance one.
     edge_zero_loss_count : Counter, optional
         Counts of zero-loss files per transition.
     missing_edges : iterable, optional
-        Directed transitions to draw as dashed missing edges.
+        Directed transitions to draw as opaque, dotted missing edges.
     layout : str
         ``"layers"``/``"hamming"`` arranges states by Hamming weight; ``"ring"`` arranges states on a ring.
     initial_state, desired_state : int | str, optional
@@ -1674,11 +1842,14 @@ def plot_transition_diagram(transitions: Counter, *, transitions_between_runs: b
         If True, draw the transition legend on these axes.
     show : bool
         If True, display the figure after drawing.
+    save : str, optional
+        Output format. Use ``"pdf"`` to save ``transition_diagram.pdf`` in
+        the current directory.
     """
-    colors_lst, _, _ = colors.color_scheme()
-    occured_clr = colors_lst[0]
-    success_clr = colors_lst[1]
-    missing_clr = colors_lst[4]
+    colors_lst, missing_clr, _ = colors.color_scheme(scheme="Leon")
+    occured_clr = colors_lst[2]
+    success_clr = colors_lst[3]
+    fulfilled_alpha = 0.75
     node_perim = "black"
     node_face = "white"
     text_color = "black"
@@ -1689,6 +1860,17 @@ def plot_transition_diagram(transitions: Counter, *, transitions_between_runs: b
 
     H = max(max(i, j) for (i, j) in all_edges).bit_length()
     H = max(H, 1)
+
+    if only_hamming_transitions:
+        transitions = Counter({
+            edge: count for edge, count in transitions.items()
+            if helpers_builders.hamming_distance_int(*edge) == 1
+        })
+        if missing_edges is not None:
+            missing_edges = [
+                edge for edge in missing_edges
+                if helpers_builders.hamming_distance_int(*edge) == 1
+            ]
 
     def state_label(state) -> str | None:
         if state is None:
@@ -1711,8 +1893,7 @@ def plot_transition_diagram(transitions: Counter, *, transitions_between_runs: b
         node_width = 0.5
         node_height = 0.25
         node_fontsize = font_size
-        missing_alpha = 0.8
-        missing_lw = 1.2
+        missing_lw = 2.6
     else:
         if created_ax:
             fig, ax = plt.subplots(figsize=(12, 8))
@@ -1721,8 +1902,7 @@ def plot_transition_diagram(transitions: Counter, *, transitions_between_runs: b
         node_width = 0.16
         node_height = 0.12
         node_fontsize = font_size
-        missing_alpha = 0.75
-        missing_lw = 1.5
+        missing_lw = 3.0
 
     # ---- nodes ----
     if only_reached_nodes:
@@ -1767,16 +1947,21 @@ def plot_transition_diagram(transitions: Counter, *, transitions_between_runs: b
         rev_exists = (dst, src) in transitions
         rad = 0.18 if rev_exists and src < dst else (-0.18 if rev_exists else 0.0)
 
-        lw = 2.5 + 4.0 * count / max_count
+        lw = 1.6 + 2.8 * count / max_count
 
         if edge_zero_loss_count[(src, dst)] > 0:
             edge_color = success_clr   # or "cyan"
         else:
             edge_color = occured_clr
 
-        arrow = FancyArrowPatch((x1, y1), (x2, y2), arrowstyle="-|>", mutation_scale=22, lw=lw, color=edge_color,
-                                shrinkA=20, shrinkB=20, connectionstyle=f"arc3,rad={rad}")
-        ax.add_patch(arrow)
+        shaft = FancyArrowPatch((x1, y1), (x2, y2), arrowstyle="-", lw=lw,
+                                color=edge_color, alpha=fulfilled_alpha, shrinkA=38, shrinkB=30,
+                                connectionstyle=f"arc3,rad={rad}", zorder=1)
+        head = FancyArrowPatch((x1, y1), (x2, y2), arrowstyle="-|>", mutation_scale=30, lw=0,
+                               color=edge_color, alpha=fulfilled_alpha, shrinkA=38, shrinkB=20,
+                               connectionstyle=f"arc3,rad={rad}", zorder=2)
+        ax.add_patch(shaft)
+        ax.add_patch(head)
 
     if missing_edges:
         observed_edges = set(transitions.keys())
@@ -1790,21 +1975,29 @@ def plot_transition_diagram(transitions: Counter, *, transitions_between_runs: b
             rev_exists = (dst, src) in observed_edges or (dst, src) in missing_edges
             rad = 0.12 if rev_exists and src < dst else (-0.12 if rev_exists else 0.0)
 
-            arrow = FancyArrowPatch((x1, y1), (x2, y2), arrowstyle="-|>", mutation_scale=14, lw=missing_lw,
-                                    linestyle="--", color=missing_clr, alpha=missing_alpha, shrinkA=22, shrinkB=22,
-                                    connectionstyle=f"arc3,rad={rad}", zorder=0)
-            ax.add_patch(arrow)
+            shaft = FancyArrowPatch((x1, y1), (x2, y2), arrowstyle="-", lw=missing_lw,
+                                    linestyle=":", color=missing_clr, alpha=1.0, shrinkA=38, shrinkB=34,
+                                    connectionstyle=f"arc3,rad={rad}", zorder=3)
+            head = FancyArrowPatch((x1, y1), (x2, y2), arrowstyle="-|>", mutation_scale=34, lw=0,
+                                   color=missing_clr, alpha=1.0, shrinkA=38, shrinkB=22,
+                                   connectionstyle=f"arc3,rad={rad}", zorder=4)
+            ax.add_patch(shaft)
+            ax.add_patch(head)
 
     # ------- legend ------
     legend_handles = []
 
     if transitions_between_runs:
-        legend_handles += [Line2D([0], [0], color=success_clr, lw=3, label="successful transition"),
-                           Line2D([0], [0], color=occured_clr, lw=3, label="unintentional")]
+        legend_handles += [Line2D([0], [0], color=success_clr, alpha=fulfilled_alpha,
+                                  lw=2.5, label="successful transition"),
+                           Line2D([0], [0], color=occured_clr, alpha=fulfilled_alpha,
+                                  lw=2.5, label="unintentional")]
     else:
-        legend_handles += [Line2D([0], [0], color=occured_clr, lw=3, label="occurred")]
+        legend_handles += [Line2D([0], [0], color=occured_clr, alpha=fulfilled_alpha,
+                                  lw=2.5, label="occurred")]
 
-    legend_handles += [Line2D([0], [0], color=missing_clr, lw=2, linestyle="--", label="missing")]
+    legend_handles += [Line2D([0], [0], color=missing_clr, alpha=1.0,
+                              lw=3.0, linestyle=":", label="missing")]
 
     if show_legend:
         ax.legend(
@@ -1836,6 +2029,10 @@ def plot_transition_diagram(transitions: Counter, *, transitions_between_runs: b
         ax.set_title(title, fontsize=font_size, fontweight="bold", pad=12)
     if created_ax:
         fig.tight_layout()
+    if save is not None:
+        if save.lower() != "pdf":
+            raise ValueError('plot_transition_diagram currently supports only save="pdf".')
+        fig.savefig("transition_diagram.pdf", format="pdf", bbox_inches="tight")
     if show:
         plt.show()
     return fig, ax
@@ -1946,12 +2143,15 @@ def plot_ring_transition_diagrams(
             show=False,
         )
 
-    colors_lst, _, _ = colors.color_scheme()
+    colors_lst, missing_clr, _ = colors.color_scheme(scheme="Leon")
+    fulfilled_alpha = 0.75
     legend_handles = [
-        Line2D([0], [0], color=colors_lst[1], lw=4, label="successful transition"),
-        Line2D([0], [0], color=colors_lst[0], lw=4,
+        Line2D([0], [0], color=colors_lst[3], alpha=fulfilled_alpha,
+               lw=2.5, label="successful transition"),
+        Line2D([0], [0], color=colors_lst[2], alpha=fulfilled_alpha, lw=2.5,
                label="unintentional" if transitions_between_runs else "occurred"),
-        Line2D([0], [0], color=colors_lst[4], lw=2, linestyle="--", label="missing"),
+        Line2D([0], [0], color=missing_clr, alpha=1.0,
+               lw=3.0, linestyle=":", label="missing"),
     ]
     if not transitions_between_runs:
         legend_handles.pop(0)

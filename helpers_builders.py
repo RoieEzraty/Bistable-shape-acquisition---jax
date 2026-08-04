@@ -1259,14 +1259,15 @@ def build_transition_counts(folder: Path, only_init_and_final_buckles: bool = Fa
     Legacy aggregated sweep files contain many independent grid trials and use
     ``state[0] -> state[t]``. Per-target ``init_*_finalTip_*`` sweep files
     contain one ordered path and use consecutive initial -> middle -> final
-    transitions.
+    transitions. Their initial state is read from the filename because the
+    first saved row can already be a fractional move with a changed buckle.
 
     Parameters
     ----------
     folder                      : path, all csv run files, from every init to every desired
     only_init_and_final_buckles : bool, True = transition is only from initial to final (not necessarily the desired)
                                   desired transition colored Cyan, undesired colored purple
-    omit_inverted               : bool, True = do not account for  "_inverted.csv" output files
+    omit_inverted               : bool, True = omit files containing ``_inverted`` in their stem
 
     Returns
     -------
@@ -1286,14 +1287,14 @@ def build_transition_counts(folder: Path, only_init_and_final_buckles: bool = Fa
         "tip_grid_buckle_sweep_*.csv",  # legacy filename
         "tip_buckle*.csv",
     )
-    target_sweep_patterns = ("init_*_finalTip_x=*_y=*_theta=*.csv",)
+    target_sweep_patterns = ("init_*_finalTip_x=*_y=*.csv",)
     sweep_patterns = aggregate_sweep_patterns + target_sweep_patterns
     file_patterns = training_patterns + sweep_patterns
     files = sorted({file for pattern in file_patterns for file in folder.glob(pattern)})
     if not files:
         raise FileNotFoundError(f"No files matching {file_patterns} in {folder}")
-    if omit_inverted:  # neglect all files ending with "_inverted.csv"
-        files = [f for f in files if not f.name.endswith("_inverted.csv")]
+    if omit_inverted:
+        files = [f for f in files if "_inverted" not in f.stem]
 
     for file in files:
         is_sweep_file = any(file.match(pattern) for pattern in sweep_patterns)
@@ -1317,6 +1318,14 @@ def build_transition_counts(folder: Path, only_init_and_final_buckles: bool = Fa
             for _, row in df[buckle_cols].iterrows():
                 state = buckle_to_index(row.to_numpy())
                 states.append(state)
+
+        if is_target_sweep_file:
+            init_match = re.search(r"init_([01]+)", file.name)
+            if init_match is None:
+                raise ValueError(f"Could not read initial buckle from {file.name}.")
+            initial_state = int(init_match.group(1), 2)
+            if not states or states[0] != initial_state:
+                states.insert(0, initial_state)
         if not states:
             per_file_transitions[file.name] = []
             continue
