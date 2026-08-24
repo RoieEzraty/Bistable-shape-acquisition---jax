@@ -600,10 +600,12 @@ def export_tip_grid_buckle_map_npz(path_npz: str | Path, Sprvsr: "SupervisorClas
                                    r_num: Optional[int] = None,
                                    phi_num: Optional[int] = None, snake: bool = True,
                                    init_buckle: Optional[NDArray] = None) -> Path:
-    """Export final and first-transition buckle states on a tip sweep grid.
+    """Export final and ordered transition buckle states on a tip sweep grid.
 
-    For polar arc sweeps, ``first_buckle_ids`` records the first buckle change
-    after arrival at the spatial grid point. Fractional travel is excluded.
+    ``transition_ids`` stores every ordered buckle-state change from the initial
+    state through positioning and the angle sweep. ``transition_counts`` gives
+    the valid length of each padded cell sequence. ``first_buckle_ids`` remains
+    the first post-arrival transition for backwards compatibility.
     """
     path_npz = Path(path_npz)
     path_npz.parent.mkdir(parents=True, exist_ok=True)
@@ -637,16 +639,18 @@ def export_tip_grid_buckle_map_npz(path_npz: str | Path, Sprvsr: "SupervisorClas
         )
 
     first_buckle_ids = None
+    transition_sequences: list[list[int]] | None = None
     if init_buckle is not None:
         init_buckle_arr = np.asarray(init_buckle, dtype=np.int32).reshape(frames.shape[1:])
         first_ids = np.full(len(target_indices), -1, dtype=np.int32)
+        transition_sequences = []
         fractions = (
             np.asarray(Sprvsr.tip_grid_path_fraction_in_t, dtype=float)
             if is_polar_grid else None
         )
         for target_i, (start, final) in enumerate(zip(start_indices, target_indices)):
             baseline = init_buckle_arr
-            first_frame = int(start)
+            post_arrival_first_frame = int(start)
             if is_polar_grid:
                 arrival_offsets = np.flatnonzero(
                     np.isclose(fractions[start:final + 1], 1.0)
@@ -657,12 +661,37 @@ def export_tip_grid_buckle_map_npz(path_npz: str | Path, Sprvsr: "SupervisorClas
                     )
                 arrival_frame = int(start + arrival_offsets[0])
                 baseline = frames[arrival_frame]
-                first_frame = arrival_frame + 1
+                post_arrival_first_frame = arrival_frame + 1
 
-            for buckle in frames[first_frame:final + 1]:
-                if not np.array_equal(buckle, baseline):
-                    first_ids[target_i] = helpers_builders.buckle_to_index(buckle.reshape(-1))
-                    break
+            post_arrival_sequence: list[int] = []
+            previous = baseline
+            for buckle in frames[post_arrival_first_frame:final + 1]:
+                if np.array_equal(buckle, previous):
+                    continue
+                post_arrival_sequence.append(
+                    helpers_builders.buckle_to_index(buckle.reshape(-1))
+                )
+                previous = buckle
+
+            sequence: list[int] = []
+            previous = init_buckle_arr
+            for buckle in frames[int(start):final + 1]:
+                if np.array_equal(buckle, previous):
+                    continue
+                sequence.append(helpers_builders.buckle_to_index(buckle.reshape(-1)))
+                previous = buckle
+            transition_sequences.append(sequence)
+            if post_arrival_sequence:
+                first_ids[target_i] = post_arrival_sequence[0]
+
+    max_transitions = (
+        max((len(sequence) for sequence in transition_sequences), default=0)
+        if transition_sequences is not None else 0
+    )
+    transition_ids = np.full(
+        (first_num, second_num, max_transitions), -1, dtype=np.int32
+    )
+    transition_counts = np.zeros((first_num, second_num), dtype=np.int32)
 
     if is_polar_grid:
         buckle_matrix = np.zeros(
@@ -679,6 +708,9 @@ def export_tip_grid_buckle_map_npz(path_npz: str | Path, Sprvsr: "SupervisorClas
             buckle_ids[phi_idx, r_idx] = helpers_builders.buckle_to_index(buckle.reshape(-1))
             if init_buckle is not None:
                 first_buckle_ids[phi_idx, r_idx] = first_ids[target_i]
+                sequence = transition_sequences[target_i]
+                transition_counts[phi_idx, r_idx] = len(sequence)
+                transition_ids[phi_idx, r_idx, :len(sequence)] = sequence
             valid_mask[phi_idx, r_idx] = True
     else:
         buckle_matrix = target_buckles[1:].reshape(
@@ -694,8 +726,19 @@ def export_tip_grid_buckle_map_npz(path_npz: str | Path, Sprvsr: "SupervisorClas
         ], dtype=np.int32).reshape(first_num, second_num)
         if init_buckle is not None:
             first_buckle_ids = first_ids[1:].reshape(first_num, second_num)
+            canonical_sequences = np.empty((first_num, second_num), dtype=object)
+            for flat_i, sequence in enumerate(transition_sequences[1:]):
+                canonical_sequences[np.unravel_index(
+                    flat_i, canonical_sequences.shape
+                )] = sequence
             if snake:
                 first_buckle_ids[1::2] = first_buckle_ids[1::2, ::-1].copy()
+                canonical_sequences[1::2] = canonical_sequences[1::2, ::-1].copy()
+            for first_i in range(first_num):
+                for second_i in range(second_num):
+                    sequence = canonical_sequences[first_i, second_i]
+                    transition_counts[first_i, second_i] = len(sequence)
+                    transition_ids[first_i, second_i, :len(sequence)] = sequence
 
     arrays: dict[str, Any] = {
         "buckle_matrix": buckle_matrix,
@@ -720,6 +763,8 @@ def export_tip_grid_buckle_map_npz(path_npz: str | Path, Sprvsr: "SupervisorClas
     if init_buckle is not None:
         arrays["init_buckle"] = np.asarray(init_buckle, dtype=np.int32)
         arrays["first_buckle_ids"] = first_buckle_ids
+        arrays["transition_ids"] = transition_ids
+        arrays["transition_counts"] = transition_counts
     if hasattr(Sprvsr, "tip_grid_angle_sequences"):
         arrays["angle_sequences"] = np.asarray(
             Sprvsr.tip_grid_angle_sequences, dtype=np.float32
@@ -731,6 +776,175 @@ def export_tip_grid_buckle_map_npz(path_npz: str | Path, Sprvsr: "SupervisorClas
 
     np.savez_compressed(path_npz, **arrays)
     return path_npz
+
+
+def tip_grid_transition_arrays_from_csvs(
+        csv_folder: str | Path, init_buckle: str, grid_points: NDArray,
+        valid_mask: NDArray, y_scale: float,
+        ) -> tuple[NDArray[np.int32], NDArray[np.int32], NDArray[np.int32]]:
+    """Reconstruct complete paths and first post-arrival transitions from CSVs."""
+    csv_folder = Path(csv_folder)
+    csv_paths = sorted(csv_folder.glob(f"init_{init_buckle}_finalTip_*.csv"))
+    expected_csvs = int(np.count_nonzero(valid_mask))
+    if len(csv_paths) != expected_csvs:
+        raise ValueError(
+            f"Expected {expected_csvs} CSVs for initial buckle {init_buckle}, "
+            f"found {len(csv_paths)} in {csv_folder}."
+        )
+
+    valid_flat_indices = np.flatnonzero(valid_mask)
+    saved_targets = np.column_stack((
+        grid_points[:, :, 0][valid_mask] * y_scale,
+        grid_points[:, :, 1][valid_mask] * y_scale,
+        grid_points[:, :, 2][valid_mask] * 180.0 / np.pi,
+    ))
+    sequences = np.empty(valid_mask.shape, dtype=object)
+    sequences.fill(None)
+    first_ids = np.full(valid_mask.shape, -1, dtype=np.int32)
+    assigned = np.zeros(valid_mask.shape, dtype=bool)
+    init_arr = np.asarray(
+        [1 if bit == "1" else -1 for bit in init_buckle], dtype=np.int32
+    )
+    required_columns = [
+        "path_fraction", "upd_x_tip", "upd_y_tip", "upd_tip_angle",
+        "buckle_arr_update",
+    ]
+
+    for csv_path in csv_paths:
+        trajectory = pd.read_csv(csv_path, usecols=required_columns)
+        final_target = trajectory.iloc[-1][
+            ["upd_x_tip", "upd_y_tip", "upd_tip_angle"]
+        ].to_numpy(dtype=float)
+        errors = np.max(np.abs(saved_targets - final_target), axis=1)
+        nearest_i = int(np.argmin(errors))
+        if errors[nearest_i] > 1e-3:
+            raise ValueError(f"Could not match {csv_path.name} to an NPZ grid point.")
+
+        grid_i = np.unravel_index(
+            int(valid_flat_indices[nearest_i]), valid_mask.shape
+        )
+        if assigned[grid_i]:
+            raise ValueError(f"Multiple CSVs match NPZ grid point {grid_i}.")
+        assigned[grid_i] = True
+
+        arrival_rows = np.flatnonzero(np.isclose(
+            trajectory["path_fraction"].to_numpy(dtype=float), 1.0
+        ))
+        if not len(arrival_rows):
+            raise ValueError(f"{csv_path.name} has no path_fraction=1 arrival row.")
+        arrival_i = int(arrival_rows[0])
+        arrival_buckle = helpers_builders.buckle_cell_to_array(
+            trajectory.iloc[arrival_i]["buckle_arr_update"]
+        ).reshape(-1)
+
+        sequence: list[int] = []
+        previous = init_arr
+        for cell in trajectory["buckle_arr_update"]:
+            buckle = helpers_builders.buckle_cell_to_array(cell).reshape(-1)
+            if not np.array_equal(buckle, previous):
+                sequence.append(helpers_builders.buckle_to_index(buckle))
+                previous = buckle
+        sequences[grid_i] = sequence
+
+        previous = arrival_buckle
+        for cell in trajectory.iloc[arrival_i + 1:]["buckle_arr_update"]:
+            buckle = helpers_builders.buckle_cell_to_array(cell).reshape(-1)
+            if not np.array_equal(buckle, previous):
+                first_ids[grid_i] = helpers_builders.buckle_to_index(buckle)
+                break
+
+    max_transitions = max(
+        (len(sequence) for sequence in sequences[valid_mask]), default=0
+    )
+    transition_ids = np.full(
+        (*valid_mask.shape, max_transitions), -1, dtype=np.int32
+    )
+    transition_counts = np.zeros(valid_mask.shape, dtype=np.int32)
+    for grid_i in zip(*np.nonzero(valid_mask)):
+        sequence = sequences[grid_i]
+        transition_counts[grid_i] = len(sequence)
+        transition_ids[grid_i][:len(sequence)] = sequence
+    return transition_ids, transition_counts, first_ids
+
+
+def upgrade_tip_grid_buckle_map_npz_from_csvs(
+        path_npz: str | Path, csv_folder: str | Path, *,
+        output_path: Optional[str | Path] = None,
+        ) -> Path:
+    """Add complete ordered transition histories to an existing grid NPZ.
+
+    The existing archive supplies only grid geometry and final-state metadata;
+    all transition states are reconstructed from the per-point trajectory CSVs.
+    No simulation is run. By default an ``_all_transitions`` copy is written so
+    the original archive remains untouched.
+
+    Parameters
+    ----------
+    path_npz : str or Path
+        Existing tip-grid buckle-map archive.
+    csv_folder : str or Path
+        Folder containing the matching ``init_<bits>_finalTip_*.csv`` files.
+    output_path : str or Path, optional
+        Destination archive. If omitted, use the source filename with an
+        ``_all_transitions`` suffix.
+
+    Returns
+    -------
+    Path
+        Path of the upgraded compressed archive.
+    """
+    path_npz = Path(path_npz)
+    csv_folder = Path(csv_folder)
+    if output_path is None:
+        output_path = path_npz.with_name(f"{path_npz.stem}_all_transitions.npz")
+    output_path = Path(output_path)
+
+    with np.load(path_npz, allow_pickle=False) as data:
+        arrays = {key: np.asarray(data[key]) for key in data.files}
+
+    required_arrays = {"buckle_matrix", "buckle_ids", "grid_points"}
+    missing_arrays = required_arrays - arrays.keys()
+    if missing_arrays:
+        raise ValueError(
+            f"{path_npz.name} is missing required arrays: {sorted(missing_arrays)}"
+        )
+
+    grid_points = np.asarray(arrays["grid_points"], dtype=float)
+    if grid_points.ndim != 3 or grid_points.shape[2] != 3:
+        raise ValueError("Saved grid_points must have shape (grid_1, grid_2, 3).")
+    valid_mask = (
+        np.asarray(arrays["valid_mask"], dtype=bool)
+        if "valid_mask" in arrays else np.all(np.isfinite(grid_points), axis=2)
+    )
+    y_scale = float(arrays.get("y_scale", 1000.0))
+    if "init_buckle" in arrays:
+        init_buckle = np.asarray(arrays["init_buckle"], dtype=int)
+        init_buckle_str = correct_buckle_string(init_buckle)
+    else:
+        match = re.search(r"tip_grid_buckle_map_([01]+)", path_npz.stem)
+        if match is None:
+            raise ValueError(
+                "Could not determine the initial buckle from the NPZ contents or filename."
+            )
+        init_buckle_str = match.group(1)
+        init_buckle = np.asarray(
+            [1 if bit == "1" else -1 for bit in init_buckle_str], dtype=np.int32
+        ).reshape(np.asarray(arrays["buckle_matrix"]).shape[2:])
+        arrays["init_buckle"] = init_buckle
+
+    transition_ids, transition_counts, first_buckle_ids = (
+        tip_grid_transition_arrays_from_csvs(
+            csv_folder, init_buckle_str, grid_points, valid_mask, y_scale
+        )
+    )
+
+    arrays["transition_ids"] = transition_ids
+    arrays["transition_counts"] = transition_counts
+    arrays["first_buckle_ids"] = first_buckle_ids
+    arrays["transition_csv_mode"] = np.asarray("all_accepted_steps_xy_filename")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    np.savez_compressed(output_path, **arrays)
+    return output_path
 
 
 def load_tip_grid_buckle_maps_from_csvs(

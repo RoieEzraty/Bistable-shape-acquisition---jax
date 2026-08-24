@@ -5,6 +5,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
 
+plt.rcParams["pdf.fonttype"] = 42
 from IPython.display import HTML
 from matplotlib import patches
 from matplotlib.ticker import MaxNLocator
@@ -571,73 +572,26 @@ def _grid_values_to_edges(values: NDArray) -> NDArray[np.float64]:
     ))
 
 
+def _transition_ids_from_csvs(
+        csv_folder: str | Path, init_buckle: str, grid_points: NDArray,
+        valid_mask: NDArray, y_scale: float,
+        ) -> tuple[NDArray[np.int32], NDArray[np.int32], NDArray[np.int32]]:
+    """Delegate CSV reconstruction to the shared file utility."""
+    import file_funcs
+
+    return file_funcs.tip_grid_transition_arrays_from_csvs(
+        csv_folder, init_buckle, grid_points, valid_mask, y_scale
+    )
+
+
 def _first_buckle_ids_from_csvs(
         csv_folder: str | Path, init_buckle: str, grid_points: NDArray,
         valid_mask: NDArray, y_scale: float,
         ) -> NDArray[np.int32]:
-    """Read the first post-arrival buckle transition from grid CSVs.
-
-    The first row whose ``path_fraction`` equals one defines the buckle state
-    on arrival at the spatial grid point. Changes during fractional travel to
-    that point are ignored; the returned state is the first different buckle
-    encountered by the subsequent angle arc.
-    """
-    csv_folder = Path(csv_folder)
-    csv_paths = sorted(csv_folder.glob(f"init_{init_buckle}_finalTip_*.csv"))
-    if not csv_paths:
-        raise FileNotFoundError(
-            f"No transition CSVs for initial buckle {init_buckle} in {csv_folder}."
-        )
-
-    valid_flat_indices = np.flatnonzero(valid_mask)
-    saved_targets = np.column_stack((
-        grid_points[:, :, 0][valid_mask] * y_scale,
-        grid_points[:, :, 1][valid_mask] * y_scale,
-        grid_points[:, :, 2][valid_mask] * 180.0 / np.pi,
-    ))
-    first_ids = np.full(valid_mask.shape, -1, dtype=np.int32)
-    assigned = np.zeros(valid_mask.shape, dtype=bool)
-
-    required_columns = [
-        "path_fraction", "upd_x_tip", "upd_y_tip", "upd_tip_angle",
-        "buckle_arr_update",
-    ]
-    for csv_path in csv_paths:
-        trajectory = pd.read_csv(csv_path, usecols=required_columns)
-        target_columns = ["upd_x_tip", "upd_y_tip", "upd_tip_angle"]
-        final_target = trajectory.iloc[-1][target_columns].to_numpy(dtype=float)
-        errors = np.max(np.abs(saved_targets - final_target), axis=1)
-        nearest_i = int(np.argmin(errors))
-        if errors[nearest_i] > 1e-3:
-            raise ValueError(f"Could not match {csv_path.name} to an NPZ grid point.")
-
-        flat_i = int(valid_flat_indices[nearest_i])
-        grid_i = np.unravel_index(flat_i, valid_mask.shape)
-        if assigned[grid_i]:
-            raise ValueError(f"Multiple transition CSVs match grid point {grid_i}.")
-        assigned[grid_i] = True
-
-        arrival_rows = np.flatnonzero(np.isclose(
-            trajectory["path_fraction"].to_numpy(dtype=float), 1.0
-        ))
-        if not len(arrival_rows):
-            raise ValueError(f"{csv_path.name} has no path_fraction=1 arrival row.")
-        arrival_i = int(arrival_rows[0])
-        arrival_buckle = helpers_builders.buckle_cell_to_array(
-            trajectory.iloc[arrival_i]["buckle_arr_update"]
-        ).reshape(-1)
-
-        for cell in trajectory.iloc[arrival_i + 1:]["buckle_arr_update"]:
-            buckle = helpers_builders.buckle_cell_to_array(cell).reshape(-1)
-            if not np.array_equal(buckle, arrival_buckle):
-                first_ids[grid_i] = helpers_builders.buckle_to_index(buckle)
-                break
-
-    missing_count = int(np.count_nonzero(valid_mask & ~assigned))
-    if missing_count:
-        raise ValueError(
-            f"Missing transition CSVs for {missing_count} completed NPZ grid points."
-        )
+    """Read the first post-arrival buckle transition from grid CSVs."""
+    _, _, first_ids = _transition_ids_from_csvs(
+        csv_folder, init_buckle, grid_points, valid_mask, y_scale
+    )
     return first_ids
 
 
@@ -740,7 +694,10 @@ def plot_tip_grid_buckle_ids_from_npz(path_npz: str | Path, *,
     maps are drawn as filled annular sectors around their saved polar center.
     ``buckle_to_plot="last"`` plots the final state at each grid point;
     ``buckle_to_plot="first"`` plots the first buckle transition after arrival
-    at each spatial grid point when ``csv_folder`` is provided. Changes during
+    at each spatial grid point. ``buckle_to_plot="all"`` assigns one categorical
+    color to each distinct ordered transition path and lists the full path in
+    the legend. When ``csv_folder`` is provided, first/all transitions are
+    rebuilt from it. Changes during
     fractional travel to the point are ignored. Points with no post-arrival
     buckle transition are colored with the shim color. Without ``csv_folder``,
     the archive's precomputed ``first_buckle_ids`` are used. If ``path_npz`` is
@@ -749,8 +706,8 @@ def plot_tip_grid_buckle_ids_from_npz(path_npz: str | Path, *,
     ``tip_grid_buckle_ids_<buckle>.pdf`` (or its ``_first`` variant) in the
     current directory, or ``save_path`` to choose an explicit output path.
     """
-    if buckle_to_plot not in {"first", "last"}:
-        raise ValueError('buckle_to_plot must be "first" or "last".')
+    if buckle_to_plot not in {"first", "last", "all"}:
+        raise ValueError('buckle_to_plot must be "first", "last", or "all".')
 
     save_pdf = False
     if save is not None:
@@ -773,6 +730,14 @@ def plot_tip_grid_buckle_ids_from_npz(path_npz: str | Path, *,
             np.asarray(data["first_buckle_ids"], dtype=np.int32)
             if "first_buckle_ids" in data else None
         )
+        transition_ids = (
+            np.asarray(data["transition_ids"], dtype=np.int32)
+            if "transition_ids" in data else None
+        )
+        transition_counts = (
+            np.asarray(data["transition_counts"], dtype=np.int32)
+            if "transition_counts" in data else None
+        )
         grid_points = np.asarray(data["grid_points"], dtype=float)
         y_scale = float(data["y_scale"]) if "y_scale" in data else 1000.0
         grid_axes = str(data["grid_axes"]) if "grid_axes" in data else "ytheta"
@@ -787,19 +752,21 @@ def plot_tip_grid_buckle_ids_from_npz(path_npz: str | Path, *,
         init_buckle = "".join(
             "1" if value > 0 else "0" for value in saved_init_buckle.reshape(-1)
         )
-    if buckle_to_plot == "first" and csv_folder is not None:
+    if buckle_to_plot in {"first", "all"} and csv_folder is not None:
         if init_buckle is None:
             raise ValueError("init_buckle is required when reading transition CSVs.")
         completed_mask = (
             valid_mask if valid_mask is not None
             else np.all(np.isfinite(grid_points), axis=2)
         )
-        first_buckle_ids = _first_buckle_ids_from_csvs(
+        transition_ids, transition_counts, first_buckle_ids = (
+            _transition_ids_from_csvs(
             csv_folder, init_buckle, grid_points, completed_mask, y_scale
+            )
         )
     if save_pdf:
         buckle_suffix = f"_{init_buckle}" if init_buckle is not None else ""
-        state_suffix = "_first" if buckle_to_plot == "first" else ""
+        state_suffix = "" if buckle_to_plot == "last" else f"_{buckle_to_plot}"
         save_path = Path(f"tip_grid_buckle_ids{buckle_suffix}{state_suffix}.pdf")
 
     if buckle_to_plot == "first":
@@ -809,13 +776,20 @@ def plot_tip_grid_buckle_ids_from_npz(path_npz: str | Path, *,
                 "file_funcs.export_tip_grid_buckle_map_npz() or provide csv_folder."
             )
         plotted_buckle_ids = first_buckle_ids
+    elif buckle_to_plot == "all":
+        if transition_ids is None or transition_counts is None:
+            raise ValueError(
+                "This NPZ does not contain all transition IDs; regenerate it with "
+                "file_funcs.export_tip_grid_buckle_map_npz() or provide csv_folder."
+            )
+        plotted_buckle_ids = transition_ids
     else:
         plotted_buckle_ids = saved_buckle_ids
-    plot_title = (
-        "First buckle transition state"
-        if buckle_to_plot == "first"
-        else "Buckle state after update sweep"
-    )
+    plot_title = {
+        "first": "First buckle transition state",
+        "last": "Buckle state after update sweep",
+        "all": "Ordered buckle-transition paths",
+    }[buckle_to_plot]
 
     if buckle_matrix.ndim != 4:
         raise ValueError(
@@ -851,6 +825,56 @@ def plot_tip_grid_buckle_ids_from_npz(path_npz: str | Path, *,
 
         n_bits = int(np.prod(buckle_matrix.shape[2:]))
         cmap, norm = buckle_state_colormap(n_bits)
+        sequence_ids = None
+        sequence_labels: list[str] = []
+        sequence_cmap = None
+        if buckle_to_plot == "all":
+            if saved_init_buckle is not None:
+                initial_id = helpers_builders.buckle_to_index(
+                    saved_init_buckle.reshape(-1)
+                )
+            elif init_buckle is not None:
+                initial_id = int(init_buckle, 2)
+            else:
+                raise ValueError("The all-transition plot needs init_buckle.")
+            cell_sequences: dict[tuple[int, int], tuple[int, ...]] = {}
+            for phi_i, r_i in zip(phi_indices, r_indices):
+                count = int(transition_counts[phi_i, r_i])
+                key = (
+                    int(initial_id),
+                    *map(int, transition_ids[phi_i, r_i, :count]),
+                )
+                cell_sequences[(phi_i, r_i)] = key
+            ordered_sequences = sorted(set(cell_sequences.values()))
+            sequence_keys = {
+                sequence: sequence_i
+                for sequence_i, sequence in enumerate(ordered_sequences)
+            }
+            sequence_ids = np.full(valid_mask.shape, -1, dtype=np.int32)
+            for grid_i, sequence in cell_sequences.items():
+                sequence_ids[grid_i] = sequence_keys[sequence]
+            _, sequence_red, custom_cmap = colors.color_scheme(scheme="Leon")
+            if len(ordered_sequences) == 1:
+                sequence_palette = [sequence_red]
+            else:
+                sequence_palette = [
+                    custom_cmap(value)
+                    for value in np.linspace(0.0, 1.0, len(ordered_sequences) - 1)
+                ]
+                sequence_palette.append(sequence_red)
+            sequence_cmap = ListedColormap(sequence_palette, name="transition_sequences")
+            sequence_labels = [
+                (
+                    f"{helpers_builders.index_to_buckle(sequence[0], n_bits=n_bits)} "
+                    "(no transition)"
+                    if len(sequence) == 1 else
+                    " → ".join(
+                        helpers_builders.index_to_buckle(state, n_bits=n_bits)
+                        for state in sequence
+                    )
+                )
+                for sequence in ordered_sequences
+            ]
         created_ax = ax is None
         if created_ax:
             fig, ax = plt.subplots(figsize=(7, 5))
@@ -860,16 +884,18 @@ def plot_tip_grid_buckle_ids_from_npz(path_npz: str | Path, *,
         for phi_i, r_i in zip(phi_indices, r_indices):
             inner_radius = r_edges[r_i] * y_scale
             outer_radius = r_edges[r_i + 1] * y_scale
+            if buckle_to_plot == "all":
+                facecolor = sequence_cmap(sequence_ids[phi_i, r_i])
+            else:
+                buckle_id = plotted_buckle_ids[phi_i, r_i]
+                facecolor = shim if buckle_id < 0 else cmap(norm(buckle_id))
             ax.add_patch(patches.Wedge(
                 center_mm,
                 outer_radius,
                 theta1=np.degrees(phi_edges[phi_i]),
                 theta2=np.degrees(phi_edges[phi_i + 1]),
                 width=outer_radius - inner_radius,
-                facecolor=(
-                    shim if plotted_buckle_ids[phi_i, r_i] < 0
-                    else cmap(norm(plotted_buckle_ids[phi_i, r_i]))
-                ),
+                facecolor=facecolor,
                 edgecolor="none",
             ))
         ax.autoscale_view()
@@ -882,21 +908,29 @@ def plot_tip_grid_buckle_ids_from_npz(path_npz: str | Path, *,
         if font_size is not None:
             ax.tick_params(axis="both", labelsize=font_size)
 
-        observed_ids = sorted(
-            int(idx) for idx in np.unique(plotted_buckle_ids[valid_mask]) if idx >= 0
-        )
-        handles = [patches.Patch(
-                facecolor=cmap(norm(idx)),
-                label=helpers_builders.index_to_buckle(idx, n_bits=n_bits),
-            ) for idx in observed_ids]
-        if np.any(plotted_buckle_ids[valid_mask] < 0):
+        if buckle_to_plot == "all":
+            handles = [
+                patches.Patch(facecolor=sequence_cmap(sequence_i), label=label)
+                for sequence_i, label in enumerate(sequence_labels)
+            ]
+        else:
+            observed_ids = sorted(
+                int(idx) for idx in np.unique(plotted_buckle_ids[valid_mask])
+                if idx >= 0
+            )
+            handles = [patches.Patch(
+                    facecolor=cmap(norm(idx)),
+                    label=helpers_builders.index_to_buckle(idx, n_bits=n_bits),
+                ) for idx in observed_ids]
+        if buckle_to_plot != "all" and np.any(plotted_buckle_ids[valid_mask] < 0):
             handles.append(patches.Patch(facecolor=shim, label="no buckle"))
         if handles:
             legend_kwargs = {}
             if font_size is not None:
                 legend_kwargs = {"fontsize": font_size, "title_fontsize": font_size}
             ax.legend(
-                handles=handles, title="buckle",
+                handles=handles,
+                title="transition path" if buckle_to_plot == "all" else "buckle",
                 bbox_to_anchor=(1.02, 1), loc="upper left",
                 **legend_kwargs,
             )
@@ -904,7 +938,10 @@ def plot_tip_grid_buckle_ids_from_npz(path_npz: str | Path, *,
             fig.savefig(save_path, dpi=200, bbox_inches="tight")
         if show and created_ax:
             plt.show()
-        return fig, ax, plotted_buckle_ids
+        return fig, ax, sequence_ids if buckle_to_plot == "all" else plotted_buckle_ids
+
+    if buckle_to_plot == "all":
+        raise ValueError('buckle_to_plot="all" is supported for polar x/y grids only.')
 
     frames = buckle_matrix.reshape(y_num * theta_num, *buckle_matrix.shape[2:])
     x_min = float(np.min(grid_points[:, :, 2]))
