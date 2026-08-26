@@ -1736,7 +1736,9 @@ def buckle_transitions(folder: str | Path, only_init_and_final_buckles: bool = F
     -------
     transitions          : Counter[(src, dst)] = number of times observed across all files
     per_file_transitions : dict[file_name, list[(src, dst)]]
-    per_file_loss        : dict[file_name, float]
+    per_file_training_time : dict[file_name, float]
+        Final training-step time for successful training files. Sweep files and
+        unsuccessful training files are omitted.
     edge_zero_loss_count : Counter[(src, dst)] = number of zero-loss files on this edge
     missing_edges        : ???
     """
@@ -1744,9 +1746,11 @@ def buckle_transitions(folder: str | Path, only_init_and_final_buckles: bool = F
     if transition_mode not in {"hamming", "ring", "all_to_all"}:
         raise ValueError("transition_mode must be 'hamming', 'ring', or 'all_to_all'")
 
-    transitions, per_file_transitions, per_file_loss, edge_zero_loss_count = helpers_builders.build_transition_counts(folder,
-                                                                                                                      only_init_and_final_buckles=only_init_and_final_buckles,
-                                                                                                                      omit_inverted=omit_inverted)
+    transitions, per_file_transitions, per_file_training_time, edge_zero_loss_count = helpers_builders.build_transition_counts(
+        folder,
+        only_init_and_final_buckles=only_init_and_final_buckles,
+        omit_inverted=omit_inverted,
+    )
 
     n_bits = _infer_buckle_n_bits(folder, omit_inverted=omit_inverted)
     reciprocity = _as_bool(reciprocity)
@@ -1771,7 +1775,7 @@ def buckle_transitions(folder: str | Path, only_init_and_final_buckles: bool = F
     for (a, b), c in transitions.most_common(20):
         print(f"{helpers_builders.index_to_buckle(a, n_bits)} -> {helpers_builders.index_to_buckle(b, n_bits)}: {c}")
 
-    return transitions, per_file_transitions, per_file_loss, edge_zero_loss_count, missing_edges
+    return transitions, per_file_transitions, per_file_training_time, edge_zero_loss_count, missing_edges
 
 
 # ---------------------------------------------------------------

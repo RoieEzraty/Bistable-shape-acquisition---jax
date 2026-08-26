@@ -1273,12 +1273,14 @@ def build_transition_counts(folder: Path, only_init_and_final_buckles: bool = Fa
     -------
     transitions          : Counter[(src, dst)] = number of times observed across all files
     per_file_transitions : dict[file_name, list[(src, dst)]]
-    per_file_loss        : dict[file_name, float]
+    per_file_training_time : dict[file_name, float]
+        Final training-step time for successful training files. Sweep files and
+        unsuccessful training files are omitted.
     edge_zero_loss_count : Counter[(src, dst)] = number of zero-loss files on this edge
     """
     transitions = Counter()
     per_file_transitions = {}
-    per_file_loss = {}
+    per_file_training_time = {}
     edge_zero_loss_count = Counter()  # all zeros initially
 
     training_patterns = ("final_loss_*.csv",)
@@ -1334,8 +1336,14 @@ def build_transition_counts(folder: Path, only_init_and_final_buckles: bool = Fa
             loss = file_funcs.loss_from_filename(file)
         except AttributeError:
             loss = np.nan
-        if only_init_and_final_buckles:
-            per_file_loss[file.name] = loss
+        if (
+            not is_sweep_file
+            and not np.isnan(loss)
+            and loss <= 1e-6
+            and "t" in df.columns
+            and not df.empty
+        ):
+            per_file_training_time[file.name] = float(df["t"].iloc[-1])
 
         edges_this_file = []
         if only_init_and_final_buckles and not is_sweep_file:  # final run step sometimes screwed
@@ -1366,7 +1374,7 @@ def build_transition_counts(folder: Path, only_init_and_final_buckles: bool = Fa
 
         per_file_transitions[file.name] = edges_this_file
 
-    return transitions, per_file_transitions, per_file_loss, edge_zero_loss_count
+    return transitions, per_file_transitions, per_file_training_time, edge_zero_loss_count
 
 
 def all_binary_states(n_bits: int) -> list[str]:
