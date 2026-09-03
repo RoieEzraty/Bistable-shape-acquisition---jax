@@ -23,7 +23,8 @@ from typing import TYPE_CHECKING, Callable, Union, Optional, Sequence
 
 import colors, helpers_builders
 
-colors_lst, red, custom_cmap, shim = colors.color_scheme(scheme="Leon", add_shim=True)
+# colors_lst, red, custom_cmap, shim = colors.color_scheme(scheme="Leon", add_shim=True)
+colors_lst, red, custom_cmap, shim = colors.color_scheme(scheme="mine", add_shim=True)
 
 # -------------------------------------------------
 # Plot importants
@@ -206,6 +207,7 @@ def plot_arm(
     font_size: Optional[float] = None,
     save: Optional[str] = None,
     show_encastre: bool = True,
+    trajectory: Optional[Union[str, Path]] = None,
 ) -> None:
     """
     Plot arm configuration together with buckle direction arrows.
@@ -229,6 +231,8 @@ def plot_arm(
                 the current directory with a filename describing the chain.
     show_encastre - bool, draw a grey fixed support at the chain base. Its
                     diagonal hatching extends away from the chain.
+    trajectory - Optional CSV filename whose first two columns contain the
+                 tip x and y coordinates to superimpose on the arm plot.
     """
     # ------ prelims ------
     pos_vec = np.asarray(pos_vec).copy()
@@ -246,6 +250,21 @@ def plot_arm(
 
     xs, ys = pos_vec[:, 0], pos_vec[:, 1]
     tip_angle_deg = np.rad2deg(float(helpers_builders._get_tip_angle(pos_vec)))
+
+    trajectory_xy = None
+    if trajectory is not None:
+        trajectory_xy = pd.read_csv(trajectory, usecols=[0, 1]).to_numpy(dtype=float)/1000
+        if invert_x:
+            trajectory_xy[:, 0] *= -1
+        if invert_y:
+            trajectory_xy[:, 1] *= -1
+        ax.plot(
+            trajectory_xy[:, 0],
+            trajectory_xy[:, 1],
+            color=colors_lst[1],
+            linewidth=2,
+            zorder=0,
+        )
 
     if modality in {"measurement", "desired"}:
         # clr = colors_lst[0]
@@ -352,6 +371,9 @@ def plot_arm(
             f"_x={xs[-1]:.3f}_y={ys[-1]:.3f}_theta={tip_angle_deg:.3f}.pdf"
         )
         ax.figure.savefig(filename, format="pdf", bbox_inches="tight")
+
+    # release color
+    ax.set_clip_on(False)
 
     if show and created_ax:
         plt.show()
@@ -574,13 +596,14 @@ def _grid_values_to_edges(values: NDArray) -> NDArray[np.float64]:
 
 def _transition_ids_from_csvs(
         csv_folder: str | Path, init_buckle: str, grid_points: NDArray,
-        valid_mask: NDArray, y_scale: float,
+        valid_mask: NDArray, y_scale: float, *, include_rotation: bool = True,
         ) -> tuple[NDArray[np.int32], NDArray[np.int32], NDArray[np.int32]]:
     """Delegate CSV reconstruction to the shared file utility."""
     import file_funcs
 
     return file_funcs.tip_grid_transition_arrays_from_csvs(
-        csv_folder, init_buckle, grid_points, valid_mask, y_scale
+        csv_folder, init_buckle, grid_points, valid_mask, y_scale,
+        include_rotation=include_rotation,
     )
 
 
@@ -648,7 +671,8 @@ def plot_tip_grid_buckle_ids(buckle_grid_frames: NDArray, y_num: int, theta_num:
     text_kwargs = {} if font_size is None else {"fontsize": font_size}
     ax.set_xlabel("tip angle [rad]", **text_kwargs)
     ax.set_ylabel("tip y [mm]", **text_kwargs)
-    ax.set_title(title or "Buckle state after update sweep", **text_kwargs)
+    ax.set_title("Buckle state after update sweep" if title is None else title,
+                 **text_kwargs)
     if font_size is not None:
         ax.tick_params(axis="both", labelsize=font_size)
 
@@ -683,6 +707,8 @@ def plot_tip_grid_buckle_ids_from_npz(path_npz: str | Path, *,
                                       init_buckle: Optional[str] = None,
                                       buckle_to_plot: str = "last",
                                       csv_folder: Optional[str | Path] = None,
+                                      include_rotation: bool = True,
+                                      plot_grid_points: bool = False,
                                       save_path: Optional[str | Path] = None,
                                       save: Optional[str] = None,
                                       show: bool = True,
@@ -697,14 +723,16 @@ def plot_tip_grid_buckle_ids_from_npz(path_npz: str | Path, *,
     at each spatial grid point. ``buckle_to_plot="all"`` assigns one categorical
     color to each distinct ordered transition path and lists the full path in
     the legend. When ``csv_folder`` is provided, first/all transitions are
-    rebuilt from it. Changes during
-    fractional travel to the point are ignored. Points with no post-arrival
+    rebuilt from it. ``include_rotation=False`` reads only the first CSV row.
+    Changes during fractional travel to the point are ignored. Points with no post-arrival
     buckle transition are colored with the shim color. Without ``csv_folder``,
     the archive's precomputed ``first_buckle_ids`` are used. If ``path_npz`` is
     a directory, ``init_buckle`` selects its
     ``tip_grid_buckle_map_<buckle>.npz`` archive. Use ``save="pdf"`` to save
     ``tip_grid_buckle_ids_<buckle>.pdf`` (or its ``_first`` variant) in the
     current directory, or ``save_path`` to choose an explicit output path.
+    Set ``plot_grid_points=True`` to draw every completed sample as a marker,
+    instead of a filled cell, using the same categorical color scheme.
     """
     if buckle_to_plot not in {"first", "last", "all"}:
         raise ValueError('buckle_to_plot must be "first", "last", or "all".')
@@ -761,7 +789,8 @@ def plot_tip_grid_buckle_ids_from_npz(path_npz: str | Path, *,
         )
         transition_ids, transition_counts, first_buckle_ids = (
             _transition_ids_from_csvs(
-            csv_folder, init_buckle, grid_points, completed_mask, y_scale
+                csv_folder, init_buckle, grid_points, completed_mask, y_scale,
+                include_rotation=include_rotation,
             )
         )
     if save_pdf:
@@ -785,12 +814,6 @@ def plot_tip_grid_buckle_ids_from_npz(path_npz: str | Path, *,
         plotted_buckle_ids = transition_ids
     else:
         plotted_buckle_ids = saved_buckle_ids
-    plot_title = {
-        "first": "First buckle transition state",
-        "last": "Buckle state after update sweep",
-        "all": "Ordered buckle-transition paths",
-    }[buckle_to_plot]
-
     if buckle_matrix.ndim != 4:
         raise ValueError(
             "Saved buckle_matrix must have shape (y_num, theta_num, hinges, shims)."
@@ -854,14 +877,10 @@ def plot_tip_grid_buckle_ids_from_npz(path_npz: str | Path, *,
             for grid_i, sequence in cell_sequences.items():
                 sequence_ids[grid_i] = sequence_keys[sequence]
             _, sequence_red, custom_cmap = colors.color_scheme(scheme="Leon")
-            if len(ordered_sequences) == 1:
-                sequence_palette = [sequence_red]
-            else:
-                sequence_palette = [
-                    custom_cmap(value)
-                    for value in np.linspace(0.0, 1.0, len(ordered_sequences) - 1)
-                ]
-                sequence_palette.append(sequence_red)
+            sequence_palette = list(custom_cmap(np.linspace(
+                0.0, 1.0, len(ordered_sequences) - 1, endpoint=False
+            )))
+            sequence_palette.append(sequence_red)
             sequence_cmap = ListedColormap(sequence_palette, name="transition_sequences")
             sequence_labels = [
                 (
@@ -880,31 +899,49 @@ def plot_tip_grid_buckle_ids_from_npz(path_npz: str | Path, *,
             fig, ax = plt.subplots(figsize=(7, 5))
         else:
             fig = ax.figure
-        center_mm = (center_x * y_scale, center_y * y_scale)
-        for phi_i, r_i in zip(phi_indices, r_indices):
-            inner_radius = r_edges[r_i] * y_scale
-            outer_radius = r_edges[r_i + 1] * y_scale
-            if buckle_to_plot == "all":
-                facecolor = sequence_cmap(sequence_ids[phi_i, r_i])
-            else:
-                buckle_id = plotted_buckle_ids[phi_i, r_i]
-                facecolor = shim if buckle_id < 0 else cmap(norm(buckle_id))
-            ax.add_patch(patches.Wedge(
-                center_mm,
-                outer_radius,
-                theta1=np.degrees(phi_edges[phi_i]),
-                theta2=np.degrees(phi_edges[phi_i + 1]),
-                width=outer_radius - inner_radius,
-                facecolor=facecolor,
-                edgecolor="none",
-            ))
+        if buckle_to_plot == "all":
+            point_colors = [
+                sequence_cmap(sequence_ids[phi_i, r_i])
+                for phi_i, r_i in zip(phi_indices, r_indices)
+            ]
+        else:
+            point_colors = [
+                shim if plotted_buckle_ids[phi_i, r_i] < 0
+                else cmap(norm(plotted_buckle_ids[phi_i, r_i]))
+                for phi_i, r_i in zip(phi_indices, r_indices)
+            ]
+        if plot_grid_points:
+            ax.scatter(
+                grid_points[:, :, 0][valid_mask] * y_scale,
+                grid_points[:, :, 1][valid_mask] * y_scale,
+                c=point_colors,
+                s=18,
+                edgecolors="none",
+                clip_on=False,
+                zorder=3,
+            )
+        else:
+            center_mm = (center_x * y_scale, center_y * y_scale)
+            for (phi_i, r_i), facecolor in zip(
+                    zip(phi_indices, r_indices), point_colors):
+                inner_radius = r_edges[r_i] * y_scale
+                outer_radius = r_edges[r_i + 1] * y_scale
+                ax.add_patch(patches.Wedge(
+                    center_mm,
+                    outer_radius,
+                    theta1=np.degrees(phi_edges[phi_i]),
+                    theta2=np.degrees(phi_edges[phi_i + 1]),
+                    width=outer_radius - inner_radius,
+                    facecolor=facecolor,
+                    edgecolor="none",
+                    clip_on=False,
+                ))
         ax.autoscale_view()
         ax.margins(0.02)
         ax.set_aspect("equal")
         text_kwargs = {} if font_size is None else {"fontsize": font_size}
         ax.set_xlabel("tip x [mm]", **text_kwargs)
         ax.set_ylabel("tip y [mm]", **text_kwargs)
-        ax.set_title(plot_title, **text_kwargs)
         if font_size is not None:
             ax.tick_params(axis="both", labelsize=font_size)
 
@@ -934,6 +971,7 @@ def plot_tip_grid_buckle_ids_from_npz(path_npz: str | Path, *,
                 bbox_to_anchor=(1.02, 1), loc="upper left",
                 **legend_kwargs,
             )
+        ax.set_clip_on(False)
         if save_path is not None:
             fig.savefig(save_path, dpi=200, bbox_inches="tight")
         if show and created_ax:
@@ -946,6 +984,7 @@ def plot_tip_grid_buckle_ids_from_npz(path_npz: str | Path, *,
     frames = buckle_matrix.reshape(y_num * theta_num, *buckle_matrix.shape[2:])
     x_min = float(np.min(grid_points[:, :, 2]))
     x_max = float(np.max(grid_points[:, :, 2]))
+    created_ax = ax is None
     fig, ax, buckle_ids = plot_tip_grid_buckle_ids(
         frames,
         y_num=y_num,
@@ -957,13 +996,41 @@ def plot_tip_grid_buckle_ids_from_npz(path_npz: str | Path, *,
         grid_start=0,
         snake=False,
         y_scale=y_scale,
-        save_path=save_path,
-        show=show,
+        save_path=None,
+        show=False,
         font_size=font_size,
         ax=ax,
         buckle_ids_override=plotted_buckle_ids,
-        title=plot_title,
+        title="",
     )
+    if plot_grid_points:
+        ax.images[-1].remove()
+        n_bits = int(np.prod(buckle_matrix.shape[2:]))
+        cmap, norm = buckle_state_colormap(n_bits)
+        completed_mask = (
+            valid_mask if valid_mask is not None
+            else np.all(np.isfinite(grid_points), axis=2)
+        )
+        point_colors = [
+            shim if buckle_id < 0 else cmap(norm(buckle_id))
+            for buckle_id in plotted_buckle_ids[completed_mask]
+        ]
+        ax.scatter(
+            grid_points[:, :, 2][completed_mask],
+            grid_points[:, :, 1][completed_mask] * y_scale,
+            c=point_colors,
+            s=18,
+            edgecolors="none",
+            clip_on=False,
+            zorder=3,
+        )
+    else:
+        ax.images[-1].set_clip_on(False)
+    ax.set_clip_on(False)
+    if save_path is not None:
+        fig.savefig(save_path, dpi=200, bbox_inches="tight")
+    if show and created_ax:
+        plt.show()
     return fig, ax, buckle_ids
 
 
@@ -2072,6 +2139,9 @@ def plot_transition_diagram(transitions: Counter, *, transitions_between_runs: b
         fig.savefig("transition_diagram.pdf", format="pdf", bbox_inches="tight")
     if show:
         plt.show()
+
+    # release color
+    ax.set_clip_on(False)
     return fig, ax
 
 

@@ -438,22 +438,12 @@ class SupervisorClass:
             )[1:]
             negative_first = np.concatenate((negative_leg, negative_to_positive))
 
-            positive_leg = np.linspace(0.0, CFG.Train.tip_grid_theta_max,
-                                       theta_steps + 1, dtype=np.float32)
-            positive_to_negative = np.linspace(
-                CFG.Train.tip_grid_theta_max, CFG.Train.tip_grid_theta_min,
-                2 * theta_steps + 1, dtype=np.float32
-            )[1:]
-            positive_first = np.concatenate((positive_leg, positive_to_negative))
             point_positions = np.asarray(grid_points, dtype=np.float32)
             total_angles = np.asarray([
                 helpers_builders._get_total_angle(pos, 0.0, Strctr.L)
                 for pos in point_positions
             ], dtype=np.float32)
-            angle_sequences = np.asarray([
-                positive_first if point_i % 2 == 0 else negative_first
-                for point_i in range(len(point_positions))
-            ], dtype=np.float32)
+            angle_sequences = np.tile(negative_first, (len(point_positions), 1))
 
             self.tip_grid_point_positions = point_positions
             self.tip_grid_point_indices = np.asarray(grid_indices, dtype=np.int32)

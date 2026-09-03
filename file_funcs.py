@@ -780,9 +780,9 @@ def export_tip_grid_buckle_map_npz(path_npz: str | Path, Sprvsr: "SupervisorClas
 
 def tip_grid_transition_arrays_from_csvs(
         csv_folder: str | Path, init_buckle: str, grid_points: NDArray,
-        valid_mask: NDArray, y_scale: float,
+        valid_mask: NDArray, y_scale: float, *, include_rotation: bool = True,
         ) -> tuple[NDArray[np.int32], NDArray[np.int32], NDArray[np.int32]]:
-    """Reconstruct complete paths and first post-arrival transitions from CSVs."""
+    """Reconstruct transitions, optionally from only each CSV's first row."""
     csv_folder = Path(csv_folder)
     csv_paths = sorted(csv_folder.glob(f"init_{init_buckle}_finalTip_*.csv"))
     expected_csvs = int(np.count_nonzero(valid_mask))
@@ -798,6 +798,8 @@ def tip_grid_transition_arrays_from_csvs(
         grid_points[:, :, 1][valid_mask] * y_scale,
         grid_points[:, :, 2][valid_mask] * 180.0 / np.pi,
     ))
+    if not include_rotation:
+        saved_targets = saved_targets[:, :2]
     sequences = np.empty(valid_mask.shape, dtype=object)
     sequences.fill(None)
     first_ids = np.full(valid_mask.shape, -1, dtype=np.int32)
@@ -811,10 +813,18 @@ def tip_grid_transition_arrays_from_csvs(
     ]
 
     for csv_path in csv_paths:
-        trajectory = pd.read_csv(csv_path, usecols=required_columns)
-        final_target = trajectory.iloc[-1][
-            ["upd_x_tip", "upd_y_tip", "upd_tip_angle"]
-        ].to_numpy(dtype=float)
+        trajectory = pd.read_csv(
+            csv_path,
+            usecols=required_columns,
+            nrows=None if include_rotation else 1,
+        )
+        if include_rotation:
+            final_target = trajectory.iloc[-1][
+                ["upd_x_tip", "upd_y_tip", "upd_tip_angle"]
+            ].to_numpy(dtype=float)
+        else:
+            x_target, y_target = csv_path.stem.split("_finalTip_x=")[1].split("_y=")
+            final_target = np.asarray([float(x_target), float(y_target.split("_theta=")[0])])
         errors = np.max(np.abs(saved_targets - final_target), axis=1)
         nearest_i = int(np.argmin(errors))
         if errors[nearest_i] > 1e-3:
@@ -827,12 +837,11 @@ def tip_grid_transition_arrays_from_csvs(
             raise ValueError(f"Multiple CSVs match NPZ grid point {grid_i}.")
         assigned[grid_i] = True
 
-        arrival_rows = np.flatnonzero(np.isclose(
-            trajectory["path_fraction"].to_numpy(dtype=float), 1.0
-        ))
-        if not len(arrival_rows):
-            raise ValueError(f"{csv_path.name} has no path_fraction=1 arrival row.")
-        arrival_i = int(arrival_rows[0])
+        arrival_i = 0
+        if include_rotation:
+            arrival_i = int(np.flatnonzero(np.isclose(
+                trajectory["path_fraction"].to_numpy(dtype=float), 1.0
+            ))[0])
         arrival_buckle = helpers_builders.buckle_cell_to_array(
             trajectory.iloc[arrival_i]["buckle_arr_update"]
         ).reshape(-1)
