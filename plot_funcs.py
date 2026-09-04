@@ -2283,7 +2283,7 @@ def plot_ring_transition_diagrams(
 
 
 def plot_cumulative_transition_curve(coverage_df: pd.DataFrame, *,
-                                     x_col: str = "training_task",
+                                     x_col: str = "step",
                                      y_col: str = "cumulative_unique_hamming_transitions",
                                      x_label: str | None = None,
                                      label: str | None = None,
@@ -2298,7 +2298,7 @@ def plot_cumulative_transition_curve(coverage_df: pd.DataFrame, *,
     Pass a shared ``ax`` with different labels and color indices to compare
     several coverage curves on one plot.
     """
-    colors_lst, _, _ = colors.color_scheme()
+    colors_lst, _, _ = colors.color_scheme(scheme="Leon")
     created_ax = ax is None
     if created_ax:
         fig, ax = plt.subplots(figsize=(7, 4))
