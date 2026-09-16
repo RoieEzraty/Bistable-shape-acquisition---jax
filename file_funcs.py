@@ -14,7 +14,7 @@ from collections import deque
 from typing import Tuple, List
 from numpy import array, zeros
 from numpy.typing import NDArray
-from typing import TYPE_CHECKING, Callable, Union, Optional, Literal, Dict, Any
+from typing import TYPE_CHECKING, Callable, Union, Optional, Literal, Dict, Any, Sequence
 
 import helpers_builders
 
@@ -1410,13 +1410,24 @@ def build_loss_columns(folder: str | Path, old: bool = False, omit_inverted: boo
                 continue
             loss_MSE = np.mean(df[loss_cols].to_numpy(dtype=float)**2, axis=1)
 
+        init_bits = init_match.group(1)
+        desired_bits = desired_match.group(1)
+
         if "Hamming_distance" in df.columns:
             Hamming = df["Hamming_distance"].to_numpy(dtype=float)
+        elif "buckle_arr_meas" in df.columns:
+            desired_buckle = np.asarray(
+                [1.0 if bit == "1" else -1.0 for bit in desired_bits])
+            Hamming = np.asarray([
+                np.count_nonzero(
+                    np.asarray(json.loads(buckle), dtype=float).reshape(-1)
+                    != desired_buckle
+                )
+                for buckle in df["buckle_arr_meas"]
+            ], dtype=float)
         else:
             Hamming = np.full(loss_MSE.shape, np.nan, dtype=float)
 
-        init_bits = init_match.group(1)
-        desired_bits = desired_match.group(1)
         init_idx = 1 if loss_MSE.size > 1 else 0
         records.append((int(init_bits, 2), int(desired_bits, 2),
                         [float(loss_MSE[init_idx]), float(loss_MSE[-1])],
@@ -1460,6 +1471,52 @@ def build_loss_columns(folder: str | Path, old: bool = False, omit_inverted: boo
                                                  task_Hammings[reciprocal_task])
 
     return loss_columns, Hamming_columns, buckle_pairs_arr
+
+
+def build_best_loss_columns(folders: Sequence[str | Path], *,
+                            omit_inverted: bool = False,
+                            include_symm: bool = False) -> Tuple[NDArray[np.float64],
+                                                                 NDArray[np.float64], NDArray]:
+    """Select one complete run per buckle pair using the smallest final loss.
+
+    Runs are matched by their ``(initial, desired)`` buckle pair across all
+    folders. The selected run contributes both its full loss row and its full
+    Hamming row; the two metrics are never minimized independently.
+    """
+    runs_by_pair: dict[tuple[str, str], list[tuple[NDArray[np.float64],
+                                                   NDArray[np.float64]]]] = {}
+    for folder in folders:
+        losses, Hammings, pairs = build_loss_columns(
+            folder, omit_inverted=omit_inverted, include_symm=False)
+        for loss, Hamming, pair in zip(losses, Hammings, pairs):
+            key = (str(pair[0]), str(pair[1]))
+            runs_by_pair.setdefault(key, []).append((loss, Hamming))
+
+    selected_losses = []
+    selected_Hammings = []
+    selected_pairs = []
+    for pair in sorted(runs_by_pair):
+        candidates = list(runs_by_pair[pair])
+        if include_symm:
+            n_bits = len(pair[0])
+            reciprocal_indices = helpers_builders.reciprocal_transition(
+                (int(pair[0], 2), int(pair[1], 2)), n_bits)
+            reciprocal_pair = tuple(format(state, f"0{n_bits}b")
+                                    for state in reciprocal_indices)
+            candidates.extend(runs_by_pair.get(reciprocal_pair, []))
+
+        best_loss, best_Hamming = min(
+            candidates,
+            key=lambda candidate: (np.inf if np.isnan(candidate[0][-1])
+                                   else candidate[0][-1]),
+        )
+        selected_losses.append(best_loss.copy())
+        selected_Hammings.append(best_Hamming.copy())
+        selected_pairs.append(pair)
+
+    return (np.asarray(selected_losses, dtype=float),
+            np.asarray(selected_Hammings, dtype=float),
+            np.asarray(selected_pairs, dtype=str))
 
 
 def build_success_matrix(folder: Path, old: bool = False, N: int = 16, near_miss: bool = False,
